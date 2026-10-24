@@ -44,8 +44,9 @@ import (
 )
 
 var (
-	ErrGzipReadFailed = errors.New("cannot read decompressed data")
-	ErrGzipTooLarge   = errors.New("decompressed data too large")
+	ErrGzipReadFailed      = errors.New("cannot read decompressed data")
+	ErrGzipTooLarge        = errors.New("decompressed data too large")
+	ErrRequestBodyTooLarge = errors.New("request body too large")
 )
 
 var gzipReaderPool = sync.Pool{
@@ -100,9 +101,55 @@ func boolValue(s string) bool {
 }
 
 func RemoveDoubleSlashes(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-	if strings.HasPrefix(r.URL.Path, "//") {
+	// Path and RawPath must move together: once they disagree, EscapedPath()
+	// re-encodes from Path and every escape in the request is lost.
+	if strings.HasPrefix(r.URL.EscapedPath(), "//") {
 		r.URL.Path = r.URL.Path[1:]
+		if r.URL.RawPath != "" {
+			r.URL.RawPath = r.URL.RawPath[1:]
+		}
 	}
+	next(w, r)
+}
+
+// WithPathNormalization applies RemoveDoubleSlashes ahead of h, so routing and every
+// middleware below it see one path form.
+func WithPathNormalization(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		RemoveDoubleSlashes(w, r, h.ServeHTTP)
+	})
+}
+
+// RequestBodyLimiter bounds the size of an incoming HTTP request body so that
+// large messages cannot exhaust memory. The Twirp handlers decode the whole
+// body before any grant check runs, so the limit is applied here, up front.
+//
+// It does not decode the body itself: a request whose Content-Length exceeds
+// the limit is rejected with 413, and the body is wrapped with
+// http.MaxBytesReader so a missing or dishonest Content-Length is still caught
+// by the downstream decoder.
+type RequestBodyLimiter struct {
+	maxBytes int64
+}
+
+func NewRequestBodyLimiter(maxBytes int64) *RequestBodyLimiter {
+	return &RequestBodyLimiter{maxBytes: maxBytes}
+}
+
+func (l *RequestBodyLimiter) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	if l.maxBytes <= 0 || r.Body == nil {
+		next(w, r)
+		return
+	}
+
+	// reject early when the declared size already exceeds the limit
+	if r.ContentLength > l.maxBytes {
+		HandleError(w, r, http.StatusRequestEntityTooLarge, ErrRequestBodyTooLarge)
+		return
+	}
+
+	// bound the read in case Content-Length is missing or wrong
+	r.Body = http.MaxBytesReader(w, r.Body, l.maxBytes)
 	next(w, r)
 }
 

@@ -51,3 +51,16 @@ func TestDataStats(t *testing.T) {
 	require.EqualValues(t, 100, r.Bytes)
 	require.NotZero(t, r.Bitrate)
 }
+
+func TestDataStatsActiveBitrateAndDuration(t *testing.T) {
+	stats := NewDataStats(DataStatsParam{WindowDuration: 10 * time.Second})
+
+	// 1000 bytes over a 1.5 second window is 8000 bits / 1.5 s
+	stats.windowStart = time.Now().Add(-1500 * time.Millisecond).UnixNano()
+	stats.windowBytes = 1000
+
+	r := stats.ToProtoActive()
+	require.EqualValues(t, 1000, r.Bytes)
+	require.InDelta(t, 1.5, r.Duration, 0.1)
+	require.InDelta(t, 8000/1.5, r.Bitrate, 0.1*8000/1.5)
+}

@@ -16,7 +16,6 @@ package temporallayerselector
 
 import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/mediatransportutil/pkg/codec"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -37,14 +36,23 @@ func (v *VP8) Select(extPkt *buffer.ExtPacket, current int32, target int32) (thi
 		return
 	}
 
-	vp8, ok := extPkt.Payload.(codec.VP8)
-	if !ok {
+	vp8 := extPkt.VP8
+	if vp8 == nil {
 		return
 	}
 
 	tid := extPkt.Temporal
 	if current < target {
-		if tid > current && tid <= target && vp8.S {
+		// Up-switch only where nothing dropped can be referenced: a layer sync
+		// (Y) frame depends only on TL0 (RFC 7741), a key frame refreshes all
+		// reference buffers. Key frames also cover encoders that never set Y.
+		// A sync frame raises one layer at a time, the layers in between would
+		// otherwise forward frames that reference their dropped frames.
+		switch {
+		case vp8.IsKeyFrame && tid <= target:
+			this = target
+			next = target
+		case tid == current+1 && tid <= target && vp8.S && vp8.Y:
 			this = tid
 			next = tid
 		}

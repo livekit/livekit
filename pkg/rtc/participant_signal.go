@@ -81,7 +81,9 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 		return nil
 	}
 
-	if !p.IsReady() {
+	// read under the lock the flush takes, so an update either queues before the flush
+	// or goes out after the connection has opened
+	if !p.IsReady() || p.signaller.HandshakePending() {
 		// queue up updates
 		p.queuedUpdates = append(p.queuedUpdates, participantsToUpdate...)
 		p.updateLock.Unlock()
@@ -173,34 +175,107 @@ func (p *ParticipantImpl) SendRoomMovedResponse(roomMovedResponse *livekit.RoomM
 	return p.signaller.WriteMessage(p.signalling.SignalRoomMovedResponse(roomMovedResponse))
 }
 
-func (p *ParticipantImpl) HandleReconnectAndSendResponse(reconnectReason livekit.ReconnectReason, reconnectResponse *livekit.ReconnectResponse) error {
+func (p *ParticipantImpl) HandleReconnectAndSendResponse(
+	reconnectReason livekit.ReconnectReason,
+	reconnectResponse *livekit.ReconnectResponse,
+	recentlyDisconnectedParticipants []*livekit.ParticipantInfo, // when migrating in, these are the participants disconnected received from migrate out node
+) error {
 	p.TransportManager.HandleClientReconnect(reconnectReason)
 
 	if !p.params.ClientInfo.CanHandleReconnectResponse() {
-		return nil
+		// no ReconnectResponse opens this connection, so nothing to hold back
+		return p.reconnectResponseSentAndFlush()
 	}
-	if err := p.signaller.WriteMessage(p.signalling.SignalReconnectResponse(reconnectResponse)); err != nil {
+
+	// send reconnect response
+	err := p.signaller.WriteMessage(p.signalling.SignalReconnectResponse(reconnectResponse))
+
+	// mark sent after sending the message, so that nothing could slip through before
+	// ReconnectResponse is sent. Marked on a failed write too: the sink is gone in that
+	// case, and leaving it unmarked would hold back every message after it.
+	flushErr := p.reconnectResponseSentAndFlush()
+	if err != nil {
 		return err
+	}
+	if flushErr != nil {
+		return flushErr
 	}
 
 	if p.params.ProtocolVersion.SupportsDisconnectedUpdate() {
+		if len(recentlyDisconnectedParticipants) != 0 {
+			if err := p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(recentlyDisconnectedParticipants)); err != nil {
+				return err
+			}
+		}
 		return p.sendDisconnectUpdatesForReconnect()
 	}
 
 	return nil
 }
 
+// reconnectResponseSentAndFlush makes a migrating in participant ready and sends what was
+// queued up while the connection was waiting for its ReconnectResponse.
+func (p *ParticipantImpl) reconnectResponseSentAndFlush() error {
+	// a successful write opens the connection by itself, this covers the paths that do
+	// not write one, i. e. a client that cannot handle it and a failed write
+	p.signaller.OpenHandshake()
+
+	p.updateLock.Lock()
+	p.reconnectResponseSent.Store(true)
+	queuedUpdates := p.queuedUpdates
+	p.queuedUpdates = nil
+	p.updateLock.Unlock()
+
+	if len(queuedUpdates) > 0 {
+		return p.SendParticipantUpdate(queuedUpdates)
+	}
+
+	return nil
+}
+
+// flushQueuedUpdates sends the updates queued while the connection was closed for the
+// handshake. Called when the connection opens, including when it opens without a
+// ReconnectResponse having been written.
+func (p *ParticipantImpl) flushQueuedUpdates() {
+	p.updateLock.Lock()
+	queuedUpdates := p.queuedUpdates
+	p.queuedUpdates = nil
+	p.updateLock.Unlock()
+
+	if len(queuedUpdates) == 0 {
+		return
+	}
+
+	if err := p.SendParticipantUpdate(queuedUpdates); err != nil {
+		p.params.Logger.Warnw("could not send queued participant updates", err)
+	}
+}
+
 func (p *ParticipantImpl) sendDisconnectUpdatesForReconnect() error {
-	lastSignalAt := p.TransportManager.LastSeenSignalAt()
-	var disconnectedParticipants []*livekit.ParticipantInfo
+	recentlyDisconnectedParticipants := p.GetRecentlyDisconnectedParticipants()
+	if len(recentlyDisconnectedParticipants) != 0 {
+		return p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(recentlyDisconnectedParticipants))
+	}
+	return nil
+}
+
+func (p *ParticipantImpl) GetRecentlyDisconnectedParticipants() []*livekit.ParticipantInfo {
+	// look back a little more than last signal receive time as WebSocket close
+	// on client side might have flushed messages and client application may have
+	// lost connectivity earlier.
+	lastSignalAt := p.TransportManager.LastSeenSignalAt().Add(-3 * time.Second)
+	var recentlyDisconnectedParticipants []*livekit.ParticipantInfo
 	p.updateLock.Lock()
 	keys := p.updateCache.Keys()
 	for i := len(keys) - 1; i >= 0; i-- {
-		if info, ok := p.updateCache.Get(keys[i]); ok {
+		// Peek, as Get would move each entry to the front and reverse the eviction order
+		if info, ok := p.updateCache.Peek(keys[i]); ok {
 			if info.updatedAt.Before(lastSignalAt) {
-				break
-			} else if info.state == livekit.ParticipantInfo_DISCONNECTED {
-				disconnectedParticipants = append(disconnectedParticipants, &livekit.ParticipantInfo{
+				continue
+			}
+
+			if info.state == livekit.ParticipantInfo_DISCONNECTED {
+				recentlyDisconnectedParticipants = append(recentlyDisconnectedParticipants, &livekit.ParticipantInfo{
 					Sid:      string(keys[i]),
 					Identity: string(info.identity),
 					Version:  info.version,
@@ -211,7 +286,7 @@ func (p *ParticipantImpl) sendDisconnectUpdatesForReconnect() error {
 	}
 	p.updateLock.Unlock()
 
-	return p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(disconnectedParticipants))
+	return recentlyDisconnectedParticipants
 }
 
 func (p *ParticipantImpl) sendICECandidate(ic *webrtc.ICECandidate, target livekit.SignalTarget) error {

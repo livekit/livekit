@@ -29,8 +29,10 @@ import (
 )
 
 const (
-	h264MainProfilePacketizationMode0Fmtp = "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=4d001f"
-	h264MainProfilePacketizationMode1Fmtp = "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f"
+	h264MainProfilePacketizationMode0Fmtp     = "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=4d001f"
+	h264MainProfilePacketizationMode1Fmtp     = "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f"
+	h264BaselineProfilePacketizationMode0Fmtp = "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42001f"
+	h264BaselineProfilePacketizationMode1Fmtp = "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f"
 )
 
 func TestIsCodecEnabled(t *testing.T) {
@@ -68,6 +70,23 @@ func TestIsCodecEnabled(t *testing.T) {
 			MimeType:    mime.MimeTypeH264.String(),
 			SDPFmtpLine: h264MainProfilePacketizationMode0Fmtp,
 		}, true))
+	})
+}
+
+func TestSelectAlternativeVideoCodec(t *testing.T) {
+	// RTX and FEC have the video/ prefix but are not real codecs. The fallback must skip them.
+	t.Run("skips rtx and fec, picks real codec", func(t *testing.T) {
+		enabled := []*livekit.Codec{
+			{Mime: mime.MimeTypeRTX.String()},
+			{Mime: mime.MimeTypeFlexFEC03.String()},
+			{Mime: mime.MimeTypeH264.String()},
+		}
+		require.Equal(t, mime.MimeTypeH264.String(), selectAlternativeVideoCodec(enabled))
+	})
+
+	t.Run("falls back to vp8 when only rtx is enabled", func(t *testing.T) {
+		enabled := []*livekit.Codec{{Mime: mime.MimeTypeRTX.String()}}
+		require.Equal(t, mime.MimeTypeVP8.String(), selectAlternativeVideoCodec(enabled))
 	})
 }
 
@@ -148,31 +167,33 @@ func defaultEnabledCodecs() []*livekit.Codec {
 }
 
 func TestRegisterCodecsH264Profiles(t *testing.T) {
-	t.Run("baseline and constrained baseline are offered by default", func(t *testing.T) {
+	t.Run("constrained baseline are offered by default", func(t *testing.T) {
 		codecs := offeredVideoCodecs(t, defaultEnabledCodecs(), false)
 
 		for _, fmtp := range []string{
 			"level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42e01f",
 			"level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
-			"level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42001f",
-			"level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f",
 			"level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=640032",
 		} {
 			require.True(t, hasOfferedFmtp(codecs, mime.MimeTypeH264, fmtp), "missing %q in %v", fmtp, codecs)
 		}
 	})
 
-	t.Run("main profile is not offered unless explicitly enabled", func(t *testing.T) {
+	t.Run("main/baseline profile is not offered unless explicitly enabled", func(t *testing.T) {
 		codecs := offeredVideoCodecs(t, defaultEnabledCodecs(), false)
 
 		require.False(t, hasOfferedFmtp(codecs, mime.MimeTypeH264, h264MainProfilePacketizationMode0Fmtp), "%v", codecs)
 		require.False(t, hasOfferedFmtp(codecs, mime.MimeTypeH264, h264MainProfilePacketizationMode1Fmtp), "%v", codecs)
+		require.False(t, hasOfferedFmtp(codecs, mime.MimeTypeH264, h264BaselineProfilePacketizationMode0Fmtp), "%v", codecs)
+		require.False(t, hasOfferedFmtp(codecs, mime.MimeTypeH264, h264BaselineProfilePacketizationMode1Fmtp), "%v", codecs)
 	})
 
-	t.Run("main profile is offered when explicitly enabled", func(t *testing.T) {
+	t.Run("main/baseline profile is offered when explicitly enabled", func(t *testing.T) {
 		for _, fmtp := range []string{
 			h264MainProfilePacketizationMode0Fmtp,
 			h264MainProfilePacketizationMode1Fmtp,
+			h264BaselineProfilePacketizationMode0Fmtp,
+			h264BaselineProfilePacketizationMode1Fmtp,
 		} {
 			t.Run(fmtp, func(t *testing.T) {
 				enabled := append(defaultEnabledCodecs(), &livekit.Codec{
@@ -194,7 +215,7 @@ func TestRegisterCodecsH264Profiles(t *testing.T) {
 
 		// the other profiles survive the filter
 		require.True(t, hasOfferedFmtp(codecs, mime.MimeTypeH264,
-			"level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f"), "%v", codecs)
+			"level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f"), "%v", codecs)
 	})
 }
 

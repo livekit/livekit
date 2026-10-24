@@ -100,6 +100,7 @@ type TransportManagerParams struct {
 	FireOnTrackBySdp                  bool
 	EnableDataTracks                  bool
 	ExcludeIPv6LocalCandidates        bool
+	EnableWarp                        bool
 }
 
 type TransportManager struct {
@@ -172,6 +173,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		FireOnTrackBySdp:                  params.FireOnTrackBySdp,
 		EnableDataTracks:                  params.EnableDataTracks,
 		ExcludeIPv6LocalCandidates:        params.ExcludeIPv6LocalCandidates,
+		EnableWarp:                        params.EnableWarp,
 	})
 	if err != nil {
 		return nil, err
@@ -200,6 +202,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 			FireOnTrackBySdp:                  params.FireOnTrackBySdp,
 			EnableDataTracks:                  params.EnableDataTracks,
 			ExcludeIPv6LocalCandidates:        params.ExcludeIPv6LocalCandidates,
+			EnableWarp:                        params.EnableWarp,
 		})
 		if err != nil {
 			return nil, err
@@ -229,12 +232,16 @@ func (t *TransportManager) SubscriberClose() {
 	t.subscriber.Close()
 }
 
+func (t *TransportManager) HasPublisherICEEverConnected() bool {
+	return t.publisher.ICEHasEverConnected()
+}
+
 func (t *TransportManager) HasPublisherEverConnected() bool {
-	return t.publisher.HasEverConnected()
+	return t.publisher.PeerConnectionHasEverConnected()
 }
 
 func (t *TransportManager) PublisherFirstConnectedAt() time.Time {
-	return t.publisher.FirstConnectedAt()
+	return t.publisher.PeerConnectionFirstConnectedAt()
 }
 
 func (t *TransportManager) IsPublisherEstablished() bool {
@@ -269,19 +276,27 @@ func (t *TransportManager) GetSubscriberRTT() (float64, bool) {
 	}
 }
 
+func (t *TransportManager) HasSubscriberICEEverConnected() bool {
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
+		return t.publisher.ICEHasEverConnected()
+	} else {
+		return t.subscriber.ICEHasEverConnected()
+	}
+}
+
 func (t *TransportManager) HasSubscriberEverConnected() bool {
 	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
-		return t.publisher.HasEverConnected()
+		return t.publisher.PeerConnectionHasEverConnected()
 	} else {
-		return t.subscriber.HasEverConnected()
+		return t.subscriber.PeerConnectionHasEverConnected()
 	}
 }
 
 func (t *TransportManager) SubscriberFirstConnectedAt() time.Time {
 	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
-		return t.publisher.FirstConnectedAt()
+		return t.publisher.PeerConnectionFirstConnectedAt()
 	} else {
-		return t.subscriber.FirstConnectedAt()
+		return t.subscriber.PeerConnectionFirstConnectedAt()
 	}
 }
 
@@ -508,12 +523,9 @@ func (t *TransportManager) GetUnmatchMediaForOffer(parsedOffer *sdp.SessionDescr
 	return
 }
 
-func (t *TransportManager) LastPublisherOffer() *webrtc.SessionDescription {
-	return t.publisher.CurrentRemoteDescription()
-}
-
-func (t *TransportManager) LastPublisherOfferPending() *webrtc.SessionDescription {
-	return t.publisher.PendingRemoteDescription()
+// LastPublisherOfferParsed returns the parsed form of the last offer set on the publisher peer connection
+func (t *TransportManager) LastPublisherOfferParsed() *sdp.SessionDescription {
+	return t.publisher.RemoteOfferParsed()
 }
 
 func (t *TransportManager) HandleOffer(offer webrtc.SessionDescription, offerId uint32, shouldPend bool) error {
@@ -663,7 +675,7 @@ func (t *TransportManager) GetICEConfig() *livekit.ICEConfig {
 	if t.iceConfig == nil {
 		return nil
 	}
-	return utils.CloneProto(t.iceConfig)
+	return proto.CloneOf(t.iceConfig)
 }
 
 func (t *TransportManager) resetTransportConfigureLocked(reconfigured bool) {
@@ -976,6 +988,11 @@ func (t *TransportManager) onMediaLossUpdate(loss uint8) {
 				t.lock.Unlock()
 
 				t.params.Logger.Infow("udp connection unstable, switch to tcp", "signalingRTT", t.signalingRTT)
+				// switch ICE preference to TCP before asking the client to resume,
+				// the raw params handler only sends a leave request and does not
+				// reconfigure the transport, so the client would reconnect over UDP
+				// again and this path would keep firing
+				t.handleConnectionFailed(true)
 				if t.params.UseSinglePeerConnection {
 					t.params.PublisherHandler.OnFailed(true, t.publisher.GetICEConnectionInfo())
 				} else {

@@ -163,6 +163,13 @@ func (p *PublicationMonitor) Check() error {
 	return nil
 }
 
+func (p *PublicationMonitor) hasPublishedTrack() bool {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	return p.publishedTrack != nil
+}
+
 func (p *PublicationMonitor) IsIdle() bool {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
@@ -170,7 +177,10 @@ func (p *PublicationMonitor) IsIdle() bool {
 	return p.desiredPublishes.Len() == 0 && p.publishedTrack == nil
 }
 
+// update is the only place the front of desiredPublishes moves.
+// Any other pop must also re-arm the publish timer.
 func (p *PublicationMonitor) update() {
+	popped := false
 	for {
 		var pub *publish
 		if p.desiredPublishes.Len() > 0 {
@@ -184,7 +194,14 @@ func (p *PublicationMonitor) update() {
 		if (pub.isStart && p.publishedTrack == nil) || (!pub.isStart && p.publishedTrack != nil) {
 			// put it back as the condition is not satisfied
 			p.desiredPublishes.PushFront(pub)
+
+			// a queued publish reached the front, start its publish window from now
+			if popped && pub.isStart {
+				p.unmutedAt = time.Time{}
+				p.maybeStartMonitor()
+			}
 			return
 		}
+		popped = true
 	}
 }

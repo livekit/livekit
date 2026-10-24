@@ -174,7 +174,6 @@ func GetNodeStats(nodeStartedAt int64, prevStats []*livekit.NodeStats, rateInter
 		ParticipantRtcCanceled:     participantRTCCanceled.Load(),
 		ParticipantRtcActive:       participantRTCActive.Load(),
 		ForwardLatency:             forwardLatency.Load(),
-		ForwardJitter:              forwardJitter.Load(),
 		NumCpus:                    uint32(cpuStats.NumCPU()), // this will round down to the nearest integer
 		CpuLoad:                    float32(cpuStats.GetCPULoad()),
 		MemoryTotal:                memTotal,

@@ -67,6 +67,14 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedbac
 	}
 	codecsToRegister = append(codecsToRegister,
 		codecToRegister{
+			RTPCodecParameters: protoCodecs.H264ProfileLevelId42001fPacketizationMode0CodecParameters,
+			strictFmtp:         true,
+		},
+		codecToRegister{
+			RTPCodecParameters: protoCodecs.H264ProfileLevelId42001fPacketizationMode1CodecParameters,
+			strictFmtp:         true,
+		},
+		codecToRegister{
 			RTPCodecParameters: protoCodecs.H264ProfileLevelId4d001fPacketizationMode0CodecParameters,
 			strictFmtp:         true,
 		},
@@ -154,6 +162,10 @@ func isCodecEnabledWithFmtp(codecs []*livekit.Codec, cap webrtc.RTPCodecCapabili
 
 func selectAlternativeVideoCodec(enabledCodecs []*livekit.Codec) string {
 	for _, c := range enabledCodecs {
+		// RTX and FEC are not real codecs, skip them
+		if mime.IsMimeTypeStringRTX(c.Mime) || mime.IsMimeTypeStringFlexFEC03(c.Mime) {
+			continue
+		}
 		if mime.IsMimeTypeStringVideo(c.Mime) {
 			return c.Mime
 		}

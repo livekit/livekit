@@ -1,4 +1,4 @@
-// Copyright 2023 LiveKit, Inc.
+// Copyright 2026 LiveKit, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,12 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build tools
-// +build tools
-
-package tools
+package wire
 
 import (
-	_ "github.com/google/wire/cmd/wire"
-	_ "github.com/maxbrunsfeld/counterfeiter/v6"
+	"github.com/quic-go/webtransport-go"
+
+	"github.com/livekit/protocol/livekit"
 )
+
+// StreamCode converts a protocol reset code to the WebTransport code that
+// carries it. HSR_ABORT is zero, so a teardown with nothing to say sends the
+// plain cancel code.
+func StreamCode(c livekit.AgentHttp_HttpStreamResetCode) webtransport.StreamErrorCode {
+	return webtransport.StreamErrorCode(c)
+}

@@ -50,6 +50,10 @@ type RedPrimaryReceiver struct {
 
 	// bitset for upstream packet receive history [lastSeq-8, lastSeq-1], bit 1 represents packet received
 	pktHistory byte
+
+	// forwarded packet, reused since ForwardRTP runs on one goroutine and
+	// down tracks do not keep the packet past WriteRTP
+	sendExtPkt buffer.ExtPacket
 }
 
 func NewRedPrimaryReceiver(receiver TrackReceiver, dsp utils.DownTrackSpreaderParams) REDTransformer {
@@ -73,11 +77,7 @@ func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int3
 
 	if pkt.Packet.PayloadType != r.redPT {
 		// forward non-red packet directly
-		var writeCount atomic.Int32
-		r.downTrackSpreader.Broadcast(func(dt TrackSender) {
-			writeCount.Add(dt.WriteRTP(pkt, spatialLayer))
-		})
-		return writeCount.Load()
+		return utils.BroadcastRTP(r.downTrackSpreader, pkt, spatialLayer)
 	}
 
 	pkts, err := r.getSendPktsFromRed(pkt.Packet)
@@ -86,9 +86,10 @@ func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int3
 		return 0
 	}
 
-	var writeCount atomic.Int32
+	var writeCount int32
 	for i, sendPkt := range pkts {
-		pPkt := *pkt
+		pPkt := &r.sendExtPkt
+		*pPkt = *pkt
 		if i != len(pkts)-1 {
 			// patch extended sequence number and time stamp for all but the last packet,
 			// last packet is the primary payload
@@ -115,7 +116,7 @@ func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int3
 					"packetExtractedTS", pkts[i].Timestamp,
 					"packetETS", pPkt.ExtTimestamp,
 					"pktHistory", r.pktHistory,
-					"redHeader", pkt.Packet.Payload[:10],
+					"redHeader", pkt.Packet.Payload[:min(len(pkt.Packet.Payload), 10)],
 					"payloadSize", len(pkt.Packet.Payload),
 					"lastSeq", r.lastSeq,
 					"highestFowardedExtSequenceNumber", r.highestForwardedExtSequenceNumber,
@@ -129,11 +130,9 @@ func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int3
 
 		// not modify the ExtPacket.RawPacket here for performance since it is not used by the DownTrack,
 		// otherwise it should be set to the correct value (marshal the primary rtp packet)
-		r.downTrackSpreader.Broadcast(func(dt TrackSender) {
-			writeCount.Add(dt.WriteRTP(&pPkt, spatialLayer))
-		})
+		writeCount += utils.BroadcastRTP(r.downTrackSpreader, pPkt, spatialLayer)
 	}
-	return writeCount.Load()
+	return writeCount
 }
 
 func (r *RedPrimaryReceiver) ForwardRTCPSenderReport(
@@ -155,7 +154,9 @@ func (r *RedPrimaryReceiver) AddDownTrack(track TrackSender) error {
 		r.logger.Infow("subscriberID already exists, replacing downtrack", "subscriberID", track.SubscriberID())
 	}
 
-	r.downTrackSpreader.Store(track)
+	if !r.downTrackSpreader.TryStore(track) {
+		return ErrReceiverClosed
+	}
 	r.logger.Debugw("red primary receiver downtrack added", "subscriberID", track.SubscriberID())
 	return nil
 }
@@ -195,7 +196,7 @@ func (r *RedPrimaryReceiver) CanClose() bool {
 
 func (r *RedPrimaryReceiver) Close() {
 	r.closed.Store(true)
-	closeTrackSenders(r.downTrackSpreader.ResetAndGetDownTracks())
+	closeTrackSenders(r.downTrackSpreader.CloseAndGetDownTracks())
 }
 
 func (r *RedPrimaryReceiver) ReadRTP(buf []byte, layer uint8, esn uint64) (int, error) {

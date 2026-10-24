@@ -17,6 +17,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -75,8 +76,11 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 
 		authToken = authHeader[len(bearerPrefix):]
 	} else {
-		// attempt to find from request header
-		authToken = r.FormValue(accessTokenParam)
+		// fall back to the query string rather than a form body, which must
+		// survive intact for requests proxied further (agent HTTP endpoints).
+		if r.URL != nil {
+			authToken = r.URL.Query().Get(accessTokenParam)
+		}
 	}
 
 	if authToken != "" {
@@ -88,13 +92,13 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 
 		secret := m.provider.GetSecret(v.APIKey())
 		if secret == "" {
-			HandleError(w, r, http.StatusUnauthorized, errors.New("invalid API key: "+v.APIKey()))
+			HandleError(w, r, http.StatusUnauthorized, ErrInvalidAPIKey, "apiKey", v.APIKey())
 			return
 		}
 
 		claims, grants, err := v.Verify(secret)
 		if err != nil {
-			HandleError(w, r, http.StatusUnauthorized, errors.New("invalid token: "+authToken+", error: "+err.Error()))
+			HandleError(w, r, http.StatusUnauthorized, fmt.Errorf("%w: %s", ErrInvalidAuthorizationToken, err.Error()))
 			return
 		}
 

@@ -81,7 +81,9 @@ type IngressStore interface {
 type RoomAllocator interface {
 	AutoCreateEnabled(ctx context.Context) bool
 	SelectRoomNode(ctx context.Context, roomName livekit.RoomName, nodeID livekit.NodeID) error
-	CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest, isExplicit bool) (*livekit.Room, *livekit.RoomInternal, bool, error)
+	// CreateRoom also returns the request with its room preset applied,
+	// or req unchanged when the implementation does not resolve presets
+	CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest, isExplicit bool) (*livekit.Room, *livekit.RoomInternal, *livekit.CreateRoomRequest, bool, error)
 	ValidateCreateRoom(ctx context.Context, roomName livekit.RoomName) error
 }
 
