@@ -524,20 +524,24 @@ func TestDownTrackCapsRetransmissions(t *testing.T) {
 		return dh, cp, source
 	}
 
-	nextSN := uint16(30000)
+	// extended, so the sequence number can wrap
+	nextSN := uint64(30000)
+	nextTS := uint32(1000)
 	writeMedia := func(t *testing.T, dh *downTrackHarness, payloadSize int) []uint16 {
 		var sns []uint16
 		for i := 0; i < numPackets; i++ {
+			nextTS += 960
 			ep, err := testutils.GetTestExtPacket(&testutils.TestExtPacketParams{
-				SequenceNumber: nextSN,
-				Timestamp:      uint32(nextSN) * 960,
+				SequenceNumber: uint16(nextSN),
+				SNCycles:       int(nextSN >> 16),
+				Timestamp:      nextTS,
 				SSRC:           0x44444444,
 				PayloadType:    111,
 				PayloadSize:    payloadSize,
 			})
 			require.NoError(t, err)
 			require.Equal(t, int32(1), dh.dt.WriteRTP(ep, 0), "packet %d should be forwarded", nextSN)
-			sns = append(sns, nextSN)
+			sns = append(sns, uint16(nextSN))
 			nextSN++
 		}
 		return sns
@@ -604,6 +608,45 @@ func TestDownTrackCapsRetransmissions(t *testing.T) {
 			return len(cp.rtxPackets()) == 6
 		}, 5*time.Second, 20*time.Millisecond, "expected capped packets to be retransmitted after the refill")
 		require.ElementsMatch(t, append(sns[numPackets-3:], capped[len(capped)-3:]...), rtxSeqs(cp))
+	})
+
+	// the budget floor of 1500 bytes sends three 612-byte packets: they must be the three
+	// newest of the NACK, whatever its order
+	newestOf := func(t *testing.T, start uint64, nackIndexes []int, newestIndexes []int) {
+		dh, cp, _ := setup(t)
+		dh.dt.SetRTXBudgetForTest(RTXBudgetLimit{MaxRatio: 0.5})
+
+		nextSN = start
+		sns := writeMedia(t, dh, 40)
+		require.Eventually(t, func() bool {
+			return dh.capture.count() >= numPackets
+		}, 10*time.Second, 20*time.Millisecond, "expected the media to arrive")
+		// past the window the sequencer keeps after a packet is sent
+		time.Sleep(NACKIgnoreWindowForTest + 20*time.Millisecond)
+
+		var nacked []uint16
+		for _, i := range nackIndexes {
+			nacked = append(nacked, sns[i])
+		}
+		sendNACK(t, dh, nacked)
+
+		var want []uint16
+		for _, i := range newestIndexes {
+			want = append(want, sns[i])
+		}
+		require.Eventually(t, func() bool {
+			return dh.dt.RTXCappedForTest() == uint64(len(nacked)-len(want))
+		}, 5*time.Second, 20*time.Millisecond, "expected all but the newest to be capped")
+		require.Equal(t, want, rtxSeqs(cp))
+	}
+
+	t.Run("newest first for a NACK in mixed order", func(t *testing.T) {
+		newestOf(t, 31000, []int{10, 19, 0, 15, 5}, []int{19, 15, 10})
+	})
+
+	t.Run("newest first across the sequence number wrap", func(t *testing.T) {
+		// packets 65530..65535 then 0..13: three before the wrap and three after it, out of order
+		newestOf(t, 65530, []int{4, 8, 1, 6, 9, 2}, []int{9, 8, 6})
 	})
 }
 

@@ -15,12 +15,14 @@
 package sfu
 
 import (
+	"cmp"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"math"
 	"math/rand"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -2478,13 +2480,15 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	numRepeatedNACKs := uint32(0)
 	var capped []extPacketMeta
 	epms := d.sequencer.getExtPacketMetas(filtered)
-	for k := range epms {
-		i := k
-		if d.rtxBudget != nil {
-			// newest first: when the budget runs short, the oldest packets are the least
-			// likely to still arrive in time for the receiver's jitter buffer
-			i = len(epms) - 1 - k
-		}
+	if d.rtxBudget != nil {
+		// newest first: when the budget runs short, the oldest packets are the least likely
+		// to still arrive in time for the receiver's jitter buffer. A batch can hold several
+		// NACK messages, so sort instead of relying on their order.
+		slices.SortFunc(epms, func(a, b extPacketMeta) int {
+			return cmp.Compare(b.extSequenceNumber, a.extSequenceNumber)
+		})
+	}
+	for i := range epms {
 		epm := &epms[i]
 		if disallowedLayers[epm.layer] {
 			continue
