@@ -20,6 +20,7 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/observability/roomobs"
@@ -61,16 +62,25 @@ type analyticsService struct {
 	events    rpc.AnalyticsRecorderService_IngestEventsClient
 	stats     rpc.AnalyticsRecorderService_IngestStatsClient
 	nodeRooms rpc.AnalyticsRecorderService_IngestNodeRoomStatesClient
+
+	// forwarder is nil unless stats forwarding is configured (disha self-host POC).
+	forwarder *statsForwarder
 }
 
-func NewAnalyticsService(_ *config.Config, currentNode routing.LocalNode) AnalyticsService {
+func NewAnalyticsService(conf *config.Config, currentNode routing.LocalNode, keyProvider auth.KeyProvider) AnalyticsService {
+	nodeID := string(currentNode.NodeID())
 	return &analyticsService{
 		analyticsKey: "", // TODO: conf.AnalyticsKey
-		nodeID:       string(currentNode.NodeID()),
+		nodeID:       nodeID,
+		forwarder:    newStatsForwarder(conf.Analytics, conf.WebHook.APIKey, nodeID, keyProvider),
 	}
 }
 
 func (a *analyticsService) SendStats(_ context.Context, stats []*livekit.AnalyticsStat) {
+	if a.forwarder != nil {
+		a.forwarder.forward(stats)
+	}
+
 	if a.stats == nil {
 		return
 	}
@@ -86,6 +96,10 @@ func (a *analyticsService) SendStats(_ context.Context, stats []*livekit.Analyti
 }
 
 func (a *analyticsService) SendEvent(_ context.Context, event *livekit.AnalyticsEvent) {
+	if a.forwarder != nil {
+		a.forwarder.recordEvent(event)
+	}
+
 	if a.events == nil {
 		return
 	}

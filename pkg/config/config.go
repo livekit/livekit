@@ -121,6 +121,8 @@ type Config struct {
 	EnableParticipantDataBlob bool `yaml:"enable_participant_data_blob,omitempty"`
 
 	API APIConfig `yaml:"api,omitempty"`
+
+	Analytics AnalyticsConfig `yaml:"analytics,omitempty"`
 }
 
 // WebTransportConfig is the node's HTTP/3 listener. QUIC has no plaintext mode,
@@ -556,6 +558,20 @@ type ForwardStatsConfig struct {
 	ReportWindow    time.Duration `yaml:"report_window,omitempty"`
 }
 
+// AnalyticsConfig configures forwarding of per-participant media stats to an
+// external HTTP endpoint (the self-host packet-loss timeline POC). When StatsURL
+// is empty, stats forwarding is disabled and the server behaves like the stock
+// image (SendStats stays a no-op).
+type AnalyticsConfig struct {
+	// StatsURL is the disha endpoint that receives per-flush participant audio stats.
+	StatsURL string `yaml:"stats_url,omitempty"`
+	// APIKey selects which configured key signs the forwarding request. Defaults to
+	// the webhook API key so the receiver can verify it the same way it verifies webhooks.
+	APIKey string `yaml:"api_key,omitempty"`
+	// Timeout bounds each forwarding HTTP request.
+	Timeout time.Duration `yaml:"timeout,omitempty"`
+}
+
 type TracingConfig struct {
 	// JaegerURL configures Jaeger as a global tracer.
 	//
@@ -683,6 +699,9 @@ var DefaultConfig = Config{
 	NodeStats:        DefaultNodeStatsConfig,
 	API:              DefaultAPIConfig(),
 	EnableDataTracks: true,
+	Analytics: AnalyticsConfig{
+		Timeout: 5 * time.Second,
+	},
 }
 
 func NewConfig(confString string, strictMode bool, c *cli.Command, baseFlags []cli.Flag) (*Config, error) {
