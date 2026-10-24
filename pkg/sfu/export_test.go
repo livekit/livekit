@@ -84,6 +84,11 @@ func (d *DownTrack) RetransmitForTest(
 	return d.retransmitPacket(&epm, sourcePkt, false)
 }
 
+// SetRTXCapForTest replaces the down track's retransmission budget.
+func (d *DownTrack) SetRTXCapForTest(config RTXCapConfig) {
+	d.rtxBudget = newRTXBudget(config)
+}
+
 const KeyFrameIntervalMaxForTest = keyFrameIntervalMax * time.Millisecond
 
 func (d *DownTrack) KeyFrameRequesterWakeupsForTest() uint32 {

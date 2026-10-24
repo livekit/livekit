@@ -19,6 +19,7 @@ import (
 	"github.com/pion/webrtc/v4"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
@@ -60,6 +61,7 @@ type DirectionConfig struct {
 	RTPHeaderExtension RTPHeaderExtensionConfig
 	RTCPFeedback       RTCPFeedbackConfig
 	FlexFEC            FlexFECDirectionConfig
+	RTX                sfu.RTXConfig
 }
 
 // FlexFECDirectionConfig enables flexfec-03 for a transport direction.
@@ -93,6 +95,9 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 		rtcConf.PacketBufferSizeAudio = rtcConf.PacketBufferSize
 	}
 
+	subscriberConfig := getSubscriberConfig(rtcConf.CongestionControl.UseSendSideBWEInterceptor || rtcConf.CongestionControl.UseSendSideBWE)
+	subscriberConfig.RTX = rtcConf.RTX
+
 	return &WebRTCConfig{
 		WebRTCConfig: *webRTCConfig,
 		Receiver: ReceiverConfig{
@@ -100,7 +105,7 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 			PacketBufferSizeAudio: rtcConf.PacketBufferSizeAudio,
 		},
 		Publisher:  getPublisherConfig(false, flexFEC),
-		Subscriber: getSubscriberConfig(rtcConf.CongestionControl.UseSendSideBWEInterceptor || rtcConf.CongestionControl.UseSendSideBWE),
+		Subscriber: subscriberConfig,
 		flexFEC:    flexFEC,
 	}, nil
 }
@@ -110,7 +115,9 @@ func (c *WebRTCConfig) UpdatePublisherConfig(consolidated bool) {
 }
 
 func (c *WebRTCConfig) UpdateSubscriberConfig(ccConf config.CongestionControlConfig) {
+	rtx := c.Subscriber.RTX
 	c.Subscriber = getSubscriberConfig(ccConf.UseSendSideBWEInterceptor || ccConf.UseSendSideBWE)
+	c.Subscriber.RTX = rtx
 }
 
 func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {

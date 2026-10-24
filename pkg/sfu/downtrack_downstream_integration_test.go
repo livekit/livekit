@@ -62,6 +62,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
+	"github.com/livekit/livekit-server/pkg/sfu"
 	. "github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe"
@@ -492,6 +493,81 @@ func TestDownTrackRetransmitsPacketsAsIs(t *testing.T) {
 
 	for want := uint16(40000); want < 40000+numPackets; want++ {
 		require.True(t, seen[want], "retransmitted sequence number %d did not arrive", want)
+	}
+}
+
+// TestDownTrackCapsRetransmissions forwards media, NACKs all of it, and checks that a
+// capped down track retransmits only what its budget allows, while an uncapped one
+// retransmits everything. The capped budget starts full at exactly three packets and all
+// media is sent before the NACK, so the burst is the limit, and the capped packets are
+// never read from the receiver.
+func TestDownTrackCapsRetransmissions(t *testing.T) {
+	const (
+		numPackets   = 20
+		burstPackets = 3
+	)
+	for _, tc := range []struct {
+		name   string
+		capped bool
+	}{
+		{"uncapped", false},
+		{"capped", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := vnettest.NewHosts(t)
+			factory := buffer.NewFactoryOfBufferFactory(500, 500).CreateBufferFactory()
+			cp := &capturingPacer{inner: pacer.NewPassThrough(logger.GetLogger(), newNullBWE())}
+			t.Cleanup(cp.Stop)
+
+			// every NACKed packet is read back from the receiver as this source packet
+			source, err := (&rtp.Packet{
+				Header:  rtp.Header{Version: 2, PayloadType: 111, SSRC: 0x44444444},
+				Payload: distinctivePayload(7, 600),
+			}).Marshal()
+			require.NoError(t, err)
+			dh := newBoundDownTrack(t, h, factory, opusCodecParams, cp, vnettest.MediaEngineConfig{}, func(r *sfufakes.FakeTrackReceiver) {
+				r.ReadRTPCalls(func(buf []byte, _ uint8, _ uint64) (int, error) {
+					return copy(buf, source), nil
+				})
+			})
+			if tc.capped {
+				dh.dt.SetRTXCapForTest(sfu.RTXCapConfig{MaxRatio: 0.5, BurstBytes: burstPackets * len(source)})
+			}
+
+			sn := uint16(30000)
+			nack := rtcp.TransportLayerNack{MediaSSRC: dh.dt.SSRC()}
+			for i := 0; i < numPackets; i++ {
+				ep, err := testutils.GetTestExtPacket(&testutils.TestExtPacketParams{
+					SequenceNumber: sn + uint16(i),
+					Timestamp:      uint32(1000 + i*960),
+					SSRC:           0x44444444,
+					PayloadType:    111,
+					PayloadSize:    40,
+				})
+				require.NoError(t, err)
+				require.Equal(t, int32(1), dh.dt.WriteRTP(ep, 0), "packet %d should be forwarded", i)
+				nack.Nacks = append(nack.Nacks, rtcp.NackPair{PacketID: sn + uint16(i)})
+			}
+			require.Eventually(t, func() bool {
+				return dh.capture.count() >= numPackets
+			}, 10*time.Second, 20*time.Millisecond, "expected the media to arrive")
+
+			nackBytes, err := nack.Marshal()
+			require.NoError(t, err)
+			dh.dt.HandleRTCPForTest(nackBytes)
+
+			want := numPackets
+			if tc.capped {
+				want = burstPackets
+			}
+			require.Eventually(t, func() bool {
+				return len(cp.rtxPackets()) >= want
+			}, 5*time.Second, 20*time.Millisecond, "expected %d retransmissions", want)
+			// give a wrongly uncapped down track time to send more
+			time.Sleep(200 * time.Millisecond)
+			require.Len(t, cp.rtxPackets(), want)
+			require.Equal(t, want, dh.receiver.ReadRTPCallCount(), "a capped retransmission must not read the publisher's buffer")
+		})
 	}
 }
 

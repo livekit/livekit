@@ -49,6 +49,7 @@ import (
 	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 // -------------------------------------------------------------------
@@ -246,6 +247,7 @@ type DownTrackParams struct {
 	SupportsCodecChange            bool
 	StripPacketTrailer             bool
 	EnableStartAtDesiredQuality    bool
+	RTX                            RTXConfig
 	Listener                       DownTrackListener
 }
 
@@ -267,6 +269,7 @@ type DownTrack struct {
 	payloadTypeRTX    atomic.Uint32
 	sequencer         *sequencer
 	rtxSequenceNumber atomic.Uint64
+	rtxBudget         *rtxBudget
 
 	receiverLock sync.RWMutex
 	receiver     TrackReceiver
@@ -379,6 +382,7 @@ func NewDownTrack(params DownTrackParams) (*DownTrack, error) {
 		retransmitCh:        make(chan struct{}, 1),
 		createdAt:           time.Now().UnixNano(),
 		receiver:            params.Receiver,
+		rtxBudget:           newRTXBudget(params.RTX.forKind(kind)),
 	}
 	d.lastUnmutedAt.Store(time.Now())
 
@@ -1184,6 +1188,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 
 	headerSize := hdr.MarshalSize()
 	pacerPacket.HeaderSize = headerSize
+	d.rtxBudget.onMediaSent(headerSize + len(payload))
 	d.rtpStats.Update(
 		extPkt.Arrival,
 		tp.rtp.extSequenceNumber,
@@ -2471,11 +2476,18 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	nackAcks := uint32(0)
 	nackMisses := uint32(0)
 	numRepeatedNACKs := uint32(0)
+	numCapped := uint32(0)
 	epms := d.sequencer.getExtPacketMetas(filtered)
 	for i := range epms {
 		epm := &epms[i]
 		if disallowedLayers[epm.layer] {
 			continue
+		}
+
+		if !d.rtxBudget.allow() {
+			// over budget: skip the rest of this batch without touching the publisher's buffer
+			numCapped = uint32(len(epms) - i)
+			break
 		}
 
 		nackAcks++
@@ -2494,7 +2506,11 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			numRepeatedNACKs++
 		}
 
+		d.rtxBudget.spend(n)
 		d.retransmitPacket(epm, pktBuff[:n], false)
+	}
+	if numCapped != 0 {
+		prometheus.RecordRTXCapped(d.kind.String(), numCapped)
 	}
 
 	d.totalRepeatedNACKs.Add(numRepeatedNACKs)
