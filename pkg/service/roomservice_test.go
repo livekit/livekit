@@ -237,6 +237,57 @@ func TestPerformRpcRequestTimeout(t *testing.T) {
 	})
 }
 
+func TestParticipantNotConnected(t *testing.T) {
+	grant := &auth.ClaimGrants{
+		Video: &auth.VideoGrant{RoomAdmin: true, Room: "testroom"},
+	}
+	ctx := service.WithGrants(context.Background(), grant, "")
+
+	calls := map[string]func(ctx context.Context, svc *TestRoomService) error{
+		"RemoveParticipant": func(ctx context.Context, svc *TestRoomService) error {
+			_, err := svc.RemoveParticipant(ctx, &livekit.RoomParticipantIdentity{Room: "testroom", Identity: "p"})
+			return err
+		},
+		"MutePublishedTrack": func(ctx context.Context, svc *TestRoomService) error {
+			_, err := svc.MutePublishedTrack(ctx, &livekit.MuteRoomTrackRequest{Room: "testroom", Identity: "p"})
+			return err
+		},
+		"UpdateParticipant": func(ctx context.Context, svc *TestRoomService) error {
+			_, err := svc.UpdateParticipant(ctx, &livekit.UpdateParticipantRequest{Room: "testroom", Identity: "p"})
+			return err
+		},
+		"UpdateSubscriptions": func(ctx context.Context, svc *TestRoomService) error {
+			_, err := svc.UpdateSubscriptions(ctx, &livekit.UpdateSubscriptionsRequest{Room: "testroom", Identity: "p"})
+			return err
+		},
+	}
+
+	newSvc := func(err error) *TestRoomService {
+		svc := newTestRoomService(config.LimitConfig{})
+		svc.participantClient.RemoveParticipantReturns(nil, err)
+		svc.participantClient.MutePublishedTrackReturns(nil, err)
+		svc.participantClient.UpdateParticipantReturns(nil, err)
+		svc.participantClient.UpdateSubscriptionsReturns(nil, err)
+		return svc
+	}
+
+	for name, call := range calls {
+		t.Run(name, func(t *testing.T) {
+			err := call(ctx, newSvc(psrpc.ErrNoResponse))
+			require.ErrorIs(t, err, service.ErrParticipantNotFound)
+			var terr twirp.Error
+			require.ErrorAs(t, err, &terr)
+			require.Equal(t, twirp.NotFound, terr.Code())
+
+			cctx, cancel := context.WithCancel(ctx)
+			cancel()
+			require.ErrorIs(t, call(cctx, newSvc(psrpc.ErrNoResponse)), psrpc.ErrNoResponse)
+
+			require.ErrorIs(t, call(ctx, newSvc(psrpc.ErrRequestTimedOut)), psrpc.ErrRequestTimedOut)
+		})
+	}
+}
+
 type TestRoomService struct {
 	service.RoomService
 	router            *routingfakes.FakeRouter
