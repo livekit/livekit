@@ -30,6 +30,11 @@ type FakeDownTrackListener struct {
 	onMaxSubscribedLayerChangedArgsForCall []struct {
 		arg1 int32
 	}
+	OnRetransmissionsCappedStub        func(uint32)
+	onRetransmissionsCappedMutex       sync.RWMutex
+	onRetransmissionsCappedArgsForCall []struct {
+		arg1 uint32
+	}
 	OnRttUpdateStub        func(uint32)
 	onRttUpdateMutex       sync.RWMutex
 	onRttUpdateArgsForCall []struct {
@@ -166,6 +171,38 @@ func (fake *FakeDownTrackListener) OnMaxSubscribedLayerChangedArgsForCall(i int)
 	fake.onMaxSubscribedLayerChangedMutex.RLock()
 	defer fake.onMaxSubscribedLayerChangedMutex.RUnlock()
 	argsForCall := fake.onMaxSubscribedLayerChangedArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeDownTrackListener) OnRetransmissionsCapped(arg1 uint32) {
+	fake.onRetransmissionsCappedMutex.Lock()
+	fake.onRetransmissionsCappedArgsForCall = append(fake.onRetransmissionsCappedArgsForCall, struct {
+		arg1 uint32
+	}{arg1})
+	stub := fake.OnRetransmissionsCappedStub
+	fake.recordInvocation("OnRetransmissionsCapped", []interface{}{arg1})
+	fake.onRetransmissionsCappedMutex.Unlock()
+	if stub != nil {
+		fake.OnRetransmissionsCappedStub(arg1)
+	}
+}
+
+func (fake *FakeDownTrackListener) OnRetransmissionsCappedCallCount() int {
+	fake.onRetransmissionsCappedMutex.RLock()
+	defer fake.onRetransmissionsCappedMutex.RUnlock()
+	return len(fake.onRetransmissionsCappedArgsForCall)
+}
+
+func (fake *FakeDownTrackListener) OnRetransmissionsCappedCalls(stub func(uint32)) {
+	fake.onRetransmissionsCappedMutex.Lock()
+	defer fake.onRetransmissionsCappedMutex.Unlock()
+	fake.OnRetransmissionsCappedStub = stub
+}
+
+func (fake *FakeDownTrackListener) OnRetransmissionsCappedArgsForCall(i int) uint32 {
+	fake.onRetransmissionsCappedMutex.RLock()
+	defer fake.onRetransmissionsCappedMutex.RUnlock()
+	argsForCall := fake.onRetransmissionsCappedArgsForCall[i]
 	return argsForCall.arg1
 }
 

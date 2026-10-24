@@ -84,8 +84,8 @@ func (d *DownTrack) RetransmitForTest(
 	return d.retransmitPacket(&epm, sourcePkt, false)
 }
 
-// SetRTXCapForTest replaces the down track's retransmission budget.
-func (d *DownTrack) SetRTXCapForTest(config RTXCapConfig) {
+// SetRTXBudgetForTest replaces the down track's retransmission budget.
+func (d *DownTrack) SetRTXBudgetForTest(config RTXBudgetLimit) {
 	d.rtxBudget = newRTXBudget(config)
 }
 

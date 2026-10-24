@@ -155,7 +155,7 @@ type RTCConfig struct {
 	// Throttle periods for pli/fir rtcp packets
 	PLIThrottle sfu.PLIThrottleConfig `yaml:"pli_throttle,omitempty"`
 
-	RTX sfu.RTXConfig `yaml:"rtx,omitempty"`
+	RTXBudget sfu.RTXBudgetConfig `yaml:"rtx_budget,omitempty"`
 
 	CongestionControl CongestionControlConfig `yaml:"congestion_control,omitempty"`
 
@@ -599,7 +599,7 @@ var DefaultConfig = Config{
 		PacketBufferSizeVideo:             500,
 		PacketBufferSizeAudio:             200,
 		PLIThrottle:                       sfu.DefaultPLIThrottleConfig,
-		RTX:                               sfu.DefaultRTXConfig,
+		RTXBudget:                         sfu.DefaultRTXBudgetConfig,
 		DatachannelDataTrackTargetLatency: 100 * time.Millisecond,
 		CongestionControl: CongestionControlConfig{
 			Enabled:                   true,

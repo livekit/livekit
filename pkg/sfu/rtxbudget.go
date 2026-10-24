@@ -21,13 +21,13 @@ import (
 	"go.uber.org/atomic"
 )
 
-// RTXConfig caps the bytes a down track retransmits in response to NACKs.
-type RTXConfig struct {
-	Audio RTXCapConfig `yaml:"audio,omitempty"`
-	Video RTXCapConfig `yaml:"video,omitempty"`
+// RTXBudgetConfig caps the bytes a down track retransmits in response to NACKs.
+type RTXBudgetConfig struct {
+	Audio RTXBudgetLimit `yaml:"audio,omitempty"`
+	Video RTXBudgetLimit `yaml:"video,omitempty"`
 }
 
-type RTXCapConfig struct {
+type RTXBudgetLimit struct {
 	// retransmitted bytes allowed, as a fraction of the media bytes sent; 0 turns the cap off
 	MaxRatio float64 `yaml:"max_ratio,omitempty"`
 	// retransmitted bytes allowed at once, above the steady ratio; at least one full packet
@@ -37,12 +37,13 @@ type RTXCapConfig struct {
 // the budget never holds less than one full packet
 const minRTXBurstBytes = 1500
 
-var DefaultRTXConfig = RTXConfig{
-	Audio: RTXCapConfig{BurstBytes: 10_000},
-	Video: RTXCapConfig{BurstBytes: 150_000},
+// The bursts cover about 250 ms of total loss: a 2 Mbps video stream and a 128 kbps audio stream.
+var DefaultRTXBudgetConfig = RTXBudgetConfig{
+	Audio: RTXBudgetLimit{BurstBytes: 4_000},
+	Video: RTXBudgetLimit{BurstBytes: 64_000},
 }
 
-func (c RTXConfig) forKind(kind webrtc.RTPCodecType) RTXCapConfig {
+func (c RTXBudgetConfig) forKind(kind webrtc.RTPCodecType) RTXBudgetLimit {
 	if kind == webrtc.RTPCodecTypeAudio {
 		return c.Audio
 	}
@@ -64,7 +65,7 @@ type rtxBudget struct {
 	mediaBytesSeen uint64
 }
 
-func newRTXBudget(config RTXCapConfig) *rtxBudget {
+func newRTXBudget(config RTXBudgetLimit) *rtxBudget {
 	if config.MaxRatio <= 0 {
 		return nil
 	}

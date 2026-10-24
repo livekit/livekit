@@ -49,7 +49,6 @@ import (
 	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
-	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 // -------------------------------------------------------------------
@@ -247,7 +246,7 @@ type DownTrackParams struct {
 	SupportsCodecChange            bool
 	StripPacketTrailer             bool
 	EnableStartAtDesiredQuality    bool
-	RTX                            RTXConfig
+	RTXBudget                      RTXBudgetConfig
 	Listener                       DownTrackListener
 }
 
@@ -382,7 +381,7 @@ func NewDownTrack(params DownTrackParams) (*DownTrack, error) {
 		retransmitCh:        make(chan struct{}, 1),
 		createdAt:           time.Now().UnixNano(),
 		receiver:            params.Receiver,
-		rtxBudget:           newRTXBudget(params.RTX.forKind(kind)),
+		rtxBudget:           newRTXBudget(params.RTXBudget.forKind(kind)),
 	}
 	d.lastUnmutedAt.Store(time.Now())
 
@@ -2476,18 +2475,20 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	nackAcks := uint32(0)
 	nackMisses := uint32(0)
 	numRepeatedNACKs := uint32(0)
-	numCapped := uint32(0)
+	var capped []extPacketMeta
 	epms := d.sequencer.getExtPacketMetas(filtered)
-	for i := range epms {
+	// newest first: when the budget runs short, the oldest packets are the least likely
+	// to still arrive in time for the receiver's jitter buffer
+	for i := len(epms) - 1; i >= 0; i-- {
 		epm := &epms[i]
 		if disallowedLayers[epm.layer] {
 			continue
 		}
 
-		if !d.rtxBudget.allow() {
-			// over budget: skip the rest of this batch without touching the publisher's buffer
-			numCapped = uint32(len(epms) - i)
-			break
+		// over budget: skip without reading the publisher's buffer
+		if len(capped) != 0 || !d.rtxBudget.allow() {
+			capped = append(capped, *epm)
+			continue
 		}
 
 		nackAcks++
@@ -2506,11 +2507,14 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			numRepeatedNACKs++
 		}
 
-		d.rtxBudget.spend(n)
-		d.retransmitPacket(epm, pktBuff[:n], false)
+		if sent, err := d.retransmitPacket(epm, pktBuff[:n], false); err == nil {
+			d.rtxBudget.spend(sent)
+		}
 	}
-	if numCapped != 0 {
-		prometheus.RecordRTXCapped(d.kind.String(), numCapped)
+	if len(capped) != 0 {
+		// a capped packet was not sent, so a later NACK for it is served as a first request
+		d.sequencer.unmarkNacked(capped)
+		d.params.Listener.OnRetransmissionsCapped(uint32(len(capped)))
 	}
 
 	d.totalRepeatedNACKs.Add(numRepeatedNACKs)

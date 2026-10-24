@@ -78,6 +78,43 @@ func Test_sequencer(t *testing.T) {
 	require.Equal(t, 1, len(m))
 }
 
+func Test_sequencer_unmarkNacked(t *testing.T) {
+	newPushed := func(n uint64) *sequencer {
+		seq := newSequencer(100, false, logger.GetLogger())
+		for i := uint64(1); i <= n; i++ {
+			seq.push(time.Now().UnixNano(), i, i, 123, true, 0, nil, 0, nil, nil, 0)
+		}
+		time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
+		return seq
+	}
+
+	t.Run("an unmarked packet is served again at once, past maxAck", func(t *testing.T) {
+		seq := newPushed(50)
+		for i := 0; i < maxAck+2; i++ {
+			res := seq.getExtPacketMetas([]uint16{40})
+			require.Len(t, res, 1, "NACK %d", i)
+			seq.unmarkNacked(res)
+		}
+	})
+
+	t.Run("a reused slot is left alone", func(t *testing.T) {
+		seq := newPushed(50)
+		res := seq.getExtPacketMetas([]uint16{40})
+		require.Len(t, res, 1)
+
+		// wrap the ring so slot of 40 holds a newer packet that was NACKed once
+		for i := uint64(51); i <= 140; i++ {
+			seq.push(time.Now().UnixNano(), i, i, 123, true, 0, nil, 0, nil, nil, 0)
+		}
+		time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
+		require.Len(t, seq.getExtPacketMetas([]uint16{140}), 1)
+		require.EqualValues(t, 140, seq.meta[res[0].slot].targetSeqNo)
+
+		seq.unmarkNacked(res)
+		require.EqualValues(t, 1, seq.meta[res[0].slot].nacked)
+	})
+}
+
 func Test_sequencer_flush(t *testing.T) {
 	seq := newSequencer(500, false, logger.GetLogger())
 	off := uint16(15)

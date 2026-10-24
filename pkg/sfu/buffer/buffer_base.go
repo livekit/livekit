@@ -1373,9 +1373,8 @@ func (b *BufferBase) GetSenderReportData() *livekit.RTCPSenderReportState {
 }
 
 func (b *BufferBase) GetPacket(buff []byte, esn uint64) (int, error) {
-	// read only, so retransmissions for many subscribers do not serialize
-	b.RLock()
-	defer b.RUnlock()
+	b.Lock()
+	defer b.Unlock()
 
 	return b.getPacketLocked(buff, esn)
 }

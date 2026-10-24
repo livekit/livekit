@@ -61,7 +61,7 @@ type DirectionConfig struct {
 	RTPHeaderExtension RTPHeaderExtensionConfig
 	RTCPFeedback       RTCPFeedbackConfig
 	FlexFEC            FlexFECDirectionConfig
-	RTX                sfu.RTXConfig
+	RTXBudget          sfu.RTXBudgetConfig
 }
 
 // FlexFECDirectionConfig enables flexfec-03 for a transport direction.
@@ -96,7 +96,7 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 	}
 
 	subscriberConfig := getSubscriberConfig(rtcConf.CongestionControl.UseSendSideBWEInterceptor || rtcConf.CongestionControl.UseSendSideBWE)
-	subscriberConfig.RTX = rtcConf.RTX
+	subscriberConfig.RTXBudget = rtcConf.RTXBudget
 
 	return &WebRTCConfig{
 		WebRTCConfig: *webRTCConfig,
@@ -115,9 +115,9 @@ func (c *WebRTCConfig) UpdatePublisherConfig(consolidated bool) {
 }
 
 func (c *WebRTCConfig) UpdateSubscriberConfig(ccConf config.CongestionControlConfig) {
-	rtx := c.Subscriber.RTX
+	rtxBudget := c.Subscriber.RTXBudget
 	c.Subscriber = getSubscriberConfig(ccConf.UseSendSideBWEInterceptor || ccConf.UseSendSideBWE)
-	c.Subscriber.RTX = rtx
+	c.Subscriber.RTXBudget = rtxBudget
 }
 
 func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {

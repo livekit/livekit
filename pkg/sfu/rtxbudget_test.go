@@ -23,7 +23,7 @@ import (
 
 func TestRTXBudget(t *testing.T) {
 	t.Run("no cap without a ratio", func(t *testing.T) {
-		b := newRTXBudget(RTXCapConfig{BurstBytes: 100})
+		b := newRTXBudget(RTXBudgetLimit{BurstBytes: 100})
 		require.Nil(t, b)
 		require.True(t, b.allow())
 		b.spend(1_000_000)
@@ -32,7 +32,7 @@ func TestRTXBudget(t *testing.T) {
 	})
 
 	t.Run("starts with the burst", func(t *testing.T) {
-		b := newRTXBudget(RTXCapConfig{MaxRatio: 0.3, BurstBytes: 3000})
+		b := newRTXBudget(RTXBudgetLimit{MaxRatio: 0.3, BurstBytes: 3000})
 		require.True(t, b.allow())
 		b.spend(2999)
 		require.True(t, b.allow())
@@ -41,13 +41,13 @@ func TestRTXBudget(t *testing.T) {
 	})
 
 	t.Run("burst holds at least one full packet", func(t *testing.T) {
-		b := newRTXBudget(RTXCapConfig{MaxRatio: 0.3})
+		b := newRTXBudget(RTXBudgetLimit{MaxRatio: 0.3})
 		b.spend(minRTXBurstBytes - 1)
 		require.True(t, b.allow())
 	})
 
 	t.Run("an overdraw is paid back from media sent at the ratio", func(t *testing.T) {
-		b := newRTXBudget(RTXCapConfig{MaxRatio: 0.5, BurstBytes: 2000})
+		b := newRTXBudget(RTXBudgetLimit{MaxRatio: 0.5, BurstBytes: 2000})
 		b.spend(2900) // overdrawn by 900
 		require.False(t, b.allow())
 
@@ -58,7 +58,7 @@ func TestRTXBudget(t *testing.T) {
 	})
 
 	t.Run("refill stops at the burst", func(t *testing.T) {
-		b := newRTXBudget(RTXCapConfig{MaxRatio: 0.5, BurstBytes: 2000})
+		b := newRTXBudget(RTXBudgetLimit{MaxRatio: 0.5, BurstBytes: 2000})
 		b.onMediaSent(1_000_000)
 		require.True(t, b.allow()) // refills, but only up to the burst
 		b.spend(2000)
@@ -66,10 +66,10 @@ func TestRTXBudget(t *testing.T) {
 	})
 }
 
-func TestRTXConfigForKind(t *testing.T) {
-	c := RTXConfig{
-		Audio: RTXCapConfig{MaxRatio: 0.1},
-		Video: RTXCapConfig{MaxRatio: 0.3},
+func TestRTXBudgetConfigForKind(t *testing.T) {
+	c := RTXBudgetConfig{
+		Audio: RTXBudgetLimit{MaxRatio: 0.1},
+		Video: RTXBudgetLimit{MaxRatio: 0.3},
 	}
 	require.Equal(t, 0.1, c.forKind(webrtc.RTPCodecTypeAudio).MaxRatio)
 	require.Equal(t, 0.3, c.forKind(webrtc.RTPCodecTypeVideo).MaxRatio)
