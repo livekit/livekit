@@ -126,25 +126,28 @@ func TestGeneratedFlags(t *testing.T) {
 	require.False(t, *conf.RTC.ReconnectOnSubscriptionError)
 }
 
-func TestGeneratedDurationFlags(t *testing.T) {
-	// run a command with the generated flags, as cmd/server does, so that flag and env var values are parsed
-	run := func(t *testing.T, args ...string) (*Config, error) {
-		generatedFlags, err := GenerateCLIFlags(nil, true)
-		require.NoError(t, err)
+// runWithGeneratedFlags runs a command with the generated flags, as cmd/server does,
+// so that flag and env var values are parsed.
+func runWithGeneratedFlags(t *testing.T, args ...string) (*Config, error) {
+	generatedFlags, err := GenerateCLIFlags(nil, true)
+	require.NoError(t, err)
 
-		var conf *Config
-		c := &cli.Command{
-			Name:  "test",
-			Flags: generatedFlags,
-			Action: func(_ context.Context, c *cli.Command) error {
-				var err error
-				conf, err = NewConfig("", true, c, nil)
-				return err
-			},
-		}
-		err = c.Run(context.Background(), append([]string{"test"}, args...))
-		return conf, err
+	var conf *Config
+	c := &cli.Command{
+		Name:  "test",
+		Flags: generatedFlags,
+		Action: func(_ context.Context, c *cli.Command) error {
+			var err error
+			conf, err = NewConfig("", true, c, nil)
+			return err
+		},
 	}
+	err = c.Run(context.Background(), append([]string{"test"}, args...))
+	return conf, err
+}
+
+func TestGeneratedDurationFlags(t *testing.T) {
+	run := runWithGeneratedFlags
 
 	t.Run("flag", func(t *testing.T) {
 		conf, err := run(t, "--api.execution_timeout=5s")
@@ -165,6 +168,38 @@ func TestGeneratedDurationFlags(t *testing.T) {
 		_, err := run(t)
 		require.ErrorContains(t, err, "LIVEKIT_ROOM_CREATE_ROOM_TIMEOUT")
 	})
+}
+
+func TestGeneratedNarrowNumericFlags(t *testing.T) {
+	t.Run("in range", func(t *testing.T) {
+		t.Setenv("LIVEKIT_TURN_RELAY_RANGE_START", "50000")
+		t.Setenv("LIVEKIT_TURN_RELAY_RANGE_END", "60000")
+		t.Setenv("LIVEKIT_LIMIT_MAX_METADATA_SIZE", "4096")
+		t.Setenv("LIVEKIT_LIMIT_NUM_TRACKS", "-1")
+		t.Setenv("LIVEKIT_LIMIT_BYTES_PER_SEC", "1000000.5")
+		conf, err := runWithGeneratedFlags(t)
+		require.NoError(t, err)
+		require.Equal(t, uint16(50000), conf.TURN.RelayPortRangeStart)
+		require.Equal(t, uint16(60000), conf.TURN.RelayPortRangeEnd)
+		require.Equal(t, uint32(4096), conf.Limit.MaxMetadataSize)
+		require.Equal(t, int32(-1), conf.Limit.NumTracks)
+		require.Equal(t, float32(1000000.5), conf.Limit.BytesPerSec)
+	})
+
+	// values that do not fit the config field are rejected, as in the YAML config,
+	// instead of wrapping around
+	for env, value := range map[string]string{
+		"LIVEKIT_TURN_RELAY_RANGE_START":  "70000",      // uint16, would become 4464
+		"LIVEKIT_LIMIT_MAX_METADATA_SIZE": "4294967296", // uint32, would become 0 (no limit)
+		"LIVEKIT_LIMIT_NUM_TRACKS":        "2147483648", // int32, would become -2147483648
+		"LIVEKIT_LIMIT_BYTES_PER_SEC":     "1e39",       // float32, would become +Inf
+	} {
+		t.Run(env, func(t *testing.T) {
+			t.Setenv(env, value)
+			_, err := runWithGeneratedFlags(t)
+			require.ErrorContains(t, err, env)
+		})
+	}
 }
 
 func TestYAMLTag(t *testing.T) {
