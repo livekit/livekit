@@ -428,8 +428,10 @@ func TestSetPermissionDataTrackSubscriptions(t *testing.T) {
 	})
 
 	p.SubscribeToDataTrack(dt.ID())
+	// the data track adds the subscriber before the subscription manager records it, and a
+	// revoke only removes recorded subscriptions, so wait for both
 	require.Eventually(t, func() bool {
-		return dt.IsSubscriber(p.ID())
+		return dt.IsSubscriber(p.ID()) && len(p.GetSubscribedDataTracks()) == 1
 	}, 5*time.Second, 10*time.Millisecond, "data track subscription should be established")
 
 	// revoking canSubscribe should drop data track subscriptions, like media track subscriptions
