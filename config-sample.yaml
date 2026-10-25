@@ -158,6 +158,17 @@ rtc:
   #   low_quality: 500ms
   #   mid_quality: 1s
   #   high_quality: 1s
+  # # cap the bytes a subscriber's track retransmits in response to NACKs. Off by default.
+  # # max_ratio: retransmitted bytes allowed, as a fraction of the media bytes sent; 0 turns the cap off.
+  # # burst_bytes: retransmitted bytes allowed at once above that ratio; at least 1500.
+  # # When the budget is short, the newest packets are retransmitted first.
+  # rtx_budget:
+  #   audio:
+  #     max_ratio: 0.4
+  #     burst_bytes: 4000
+  #   video:
+  #     max_ratio: 0.2
+  #     burst_bytes: 64000
   # # when set, Livekit will collect loopback candidates, it is useful for some VM have public address mapped to its loopback interface.
   # enable_loopback_candidate: true
   # # network interface filter. If the machine has more than one network interface and you'd like it to use or skip specific interfaces
