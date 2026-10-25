@@ -84,6 +84,19 @@ func (d *DownTrack) RetransmitForTest(
 	return d.retransmitPacket(&epm, sourcePkt, false)
 }
 
+// NACKIgnoreWindowForTest is the longest time the sequencer ignores a repeat NACK for a packet.
+const NACKIgnoreWindowForTest = ignoreRetransmission * time.Millisecond
+
+// RTXCappedForTest returns the NACKed packets the budget has refused.
+func (d *DownTrack) RTXCappedForTest() uint64 {
+	return d.rtxBudget.numCapped.Load()
+}
+
+// SetRTXBudgetForTest replaces the down track's retransmission budget.
+func (d *DownTrack) SetRTXBudgetForTest(config RTXBudgetLimit) {
+	d.rtxBudget = newRTXBudget(config)
+}
+
 const KeyFrameIntervalMaxForTest = keyFrameIntervalMax * time.Millisecond
 
 func (d *DownTrack) KeyFrameRequesterWakeupsForTest() uint32 {

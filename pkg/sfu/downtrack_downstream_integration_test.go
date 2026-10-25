@@ -495,6 +495,161 @@ func TestDownTrackRetransmitsPacketsAsIs(t *testing.T) {
 	}
 }
 
+// TestDownTrackCapsRetransmissions forwards media, NACKs all of it, and checks that an
+// uncapped down track retransmits everything while a capped one retransmits only what its
+// budget allows, newest first, without reading the capped packets from the buffer. Capped
+// packets NACKed again keep failing while the budget is empty, past maxAck, and are
+// retransmitted once media refills it. Repeat NACKs are spaced past the sequencer's
+// duplicate window.
+func TestDownTrackCapsRetransmissions(t *testing.T) {
+	const numPackets = 20
+
+	setup := func(t *testing.T) (*downTrackHarness, *capturingPacer, []byte) {
+		h := vnettest.NewHosts(t)
+		factory := buffer.NewFactoryOfBufferFactory(500, 500).CreateBufferFactory()
+		cp := &capturingPacer{inner: pacer.NewPassThrough(logger.GetLogger(), newNullBWE())}
+		t.Cleanup(cp.Stop)
+
+		// every NACKed packet is read back from the receiver as this source packet
+		source, err := (&rtp.Packet{
+			Header:  rtp.Header{Version: 2, PayloadType: 111, SSRC: 0x44444444},
+			Payload: distinctivePayload(7, 600),
+		}).Marshal()
+		require.NoError(t, err)
+		dh := newBoundDownTrack(t, h, factory, opusCodecParams, cp, vnettest.MediaEngineConfig{}, func(r *sfufakes.FakeTrackReceiver) {
+			r.ReadRTPCalls(func(buf []byte, _ uint8, _ uint64) (int, error) {
+				return copy(buf, source), nil
+			})
+		})
+		return dh, cp, source
+	}
+
+	// extended, so the sequence number can wrap
+	nextSN := uint64(30000)
+	nextTS := uint32(1000)
+	writeMedia := func(t *testing.T, dh *downTrackHarness, payloadSize int) []uint16 {
+		var sns []uint16
+		for i := 0; i < numPackets; i++ {
+			nextTS += 960
+			ep, err := testutils.GetTestExtPacket(&testutils.TestExtPacketParams{
+				SequenceNumber: uint16(nextSN),
+				SNCycles:       int(nextSN >> 16),
+				Timestamp:      nextTS,
+				SSRC:           0x44444444,
+				PayloadType:    111,
+				PayloadSize:    payloadSize,
+			})
+			require.NoError(t, err)
+			require.Equal(t, int32(1), dh.dt.WriteRTP(ep, 0), "packet %d should be forwarded", nextSN)
+			sns = append(sns, uint16(nextSN))
+			nextSN++
+		}
+		return sns
+	}
+	sendNACK := func(t *testing.T, dh *downTrackHarness, sns []uint16) {
+		nack := rtcp.TransportLayerNack{MediaSSRC: dh.dt.SSRC()}
+		for _, sn := range sns {
+			nack.Nacks = append(nack.Nacks, rtcp.NackPair{PacketID: sn})
+		}
+		b, err := nack.Marshal()
+		require.NoError(t, err)
+		dh.dt.HandleRTCPForTest(b)
+	}
+	rtxSeqs := func(cp *capturingPacer) []uint16 {
+		var sns []uint16
+		for _, p := range cp.rtxPackets() {
+			sns = append(sns, p.hdr.SequenceNumber)
+		}
+		return sns
+	}
+
+	t.Run("uncapped", func(t *testing.T) {
+		dh, cp, _ := setup(t)
+		sns := writeMedia(t, dh, 40)
+		sendNACK(t, dh, sns)
+
+		require.Eventually(t, func() bool {
+			return len(cp.rtxPackets()) == numPackets
+		}, 5*time.Second, 20*time.Millisecond, "expected every packet to be retransmitted")
+		require.Equal(t, sns, rtxSeqs(cp), "without a budget the order is unchanged")
+	})
+
+	t.Run("capped", func(t *testing.T) {
+		dh, cp, source := setup(t)
+		// two and a half retransmissions: the third overdraws the budget, a fourth is refused
+		dh.dt.SetRTXBudgetForTest(RTXBudgetLimit{MaxRatio: 0.5, BurstBytes: 5 * len(source) / 2})
+
+		sns := writeMedia(t, dh, 40)
+		sendNACK(t, dh, sns)
+
+		// the capped count is added after the batch, so the retransmissions are all enqueued by then
+		require.Eventually(t, func() bool {
+			return dh.dt.RTXCappedForTest() == numPackets-3
+		}, 5*time.Second, 20*time.Millisecond, "expected the batch to be capped")
+		require.ElementsMatch(t, sns[numPackets-3:], rtxSeqs(cp), "the newest packets go first")
+		require.Equal(t, 3, dh.receiver.ReadRTPCallCount(), "a capped retransmission must not read the publisher's buffer")
+
+		// with the budget empty, the capped packets fail again on every NACK, past maxAck
+		capped := sns[:numPackets-3]
+		for i := 0; i < 4; i++ {
+			time.Sleep(NACKIgnoreWindowForTest + 20*time.Millisecond)
+			sendNACK(t, dh, capped)
+			want := uint64((i + 2) * len(capped))
+			require.Eventually(t, func() bool {
+				return dh.dt.RTXCappedForTest() == want
+			}, 5*time.Second, 20*time.Millisecond, "expected NACK %d to be capped", i+2)
+		}
+
+		// media refills the budget, and the earlier capped packets are retransmitted
+		writeMedia(t, dh, 600)
+		time.Sleep(NACKIgnoreWindowForTest + 20*time.Millisecond)
+		sendNACK(t, dh, capped)
+		require.Eventually(t, func() bool {
+			return len(cp.rtxPackets()) == 6
+		}, 5*time.Second, 20*time.Millisecond, "expected capped packets to be retransmitted after the refill")
+		require.ElementsMatch(t, append(sns[numPackets-3:], capped[len(capped)-3:]...), rtxSeqs(cp))
+	})
+
+	// the budget floor of 1500 bytes sends three 612-byte packets: they must be the three
+	// newest of the NACK, whatever its order
+	newestOf := func(t *testing.T, start uint64, nackIndexes []int, newestIndexes []int) {
+		dh, cp, _ := setup(t)
+		dh.dt.SetRTXBudgetForTest(RTXBudgetLimit{MaxRatio: 0.5})
+
+		nextSN = start
+		sns := writeMedia(t, dh, 40)
+		require.Eventually(t, func() bool {
+			return dh.capture.count() >= numPackets
+		}, 10*time.Second, 20*time.Millisecond, "expected the media to arrive")
+		// past the window the sequencer keeps after a packet is sent
+		time.Sleep(NACKIgnoreWindowForTest + 20*time.Millisecond)
+
+		var nacked []uint16
+		for _, i := range nackIndexes {
+			nacked = append(nacked, sns[i])
+		}
+		sendNACK(t, dh, nacked)
+
+		var want []uint16
+		for _, i := range newestIndexes {
+			want = append(want, sns[i])
+		}
+		require.Eventually(t, func() bool {
+			return dh.dt.RTXCappedForTest() == uint64(len(nacked)-len(want))
+		}, 5*time.Second, 20*time.Millisecond, "expected all but the newest to be capped")
+		require.Equal(t, want, rtxSeqs(cp))
+	}
+
+	t.Run("newest first for a NACK in mixed order", func(t *testing.T) {
+		newestOf(t, 31000, []int{10, 19, 0, 15, 5}, []int{19, 15, 10})
+	})
+
+	t.Run("newest first across the sequence number wrap", func(t *testing.T) {
+		// packets 65530..65535 then 0..13: three before the wrap and three after it, out of order
+		newestOf(t, 65530, []int{4, 8, 1, 6, 9, 2}, []int{9, 8, 6})
+	})
+}
+
 // TestDownTrackRetransmitsPacketsViaRTX exercises the retransmit path when an RTX
 // stream is negotiated. Each retransmitted packet must be emitted on the RTX SSRC
 // with the RTX payload type, carry the original media sequence number as the OSN

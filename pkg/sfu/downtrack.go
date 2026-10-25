@@ -15,12 +15,14 @@
 package sfu
 
 import (
+	"cmp"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"math"
 	"math/rand"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -49,6 +51,7 @@ import (
 	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 // -------------------------------------------------------------------
@@ -246,6 +249,7 @@ type DownTrackParams struct {
 	SupportsCodecChange            bool
 	StripPacketTrailer             bool
 	EnableStartAtDesiredQuality    bool
+	RTXBudget                      RTXBudgetConfig
 	Listener                       DownTrackListener
 }
 
@@ -267,6 +271,7 @@ type DownTrack struct {
 	payloadTypeRTX    atomic.Uint32
 	sequencer         *sequencer
 	rtxSequenceNumber atomic.Uint64
+	rtxBudget         *rtxBudget
 
 	receiverLock sync.RWMutex
 	receiver     TrackReceiver
@@ -379,6 +384,7 @@ func NewDownTrack(params DownTrackParams) (*DownTrack, error) {
 		retransmitCh:        make(chan struct{}, 1),
 		createdAt:           time.Now().UnixNano(),
 		receiver:            params.Receiver,
+		rtxBudget:           newRTXBudget(params.RTXBudget.forKind(kind)),
 	}
 	d.lastUnmutedAt.Store(time.Now())
 
@@ -1184,6 +1190,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 
 	headerSize := hdr.MarshalSize()
 	pacerPacket.HeaderSize = headerSize
+	d.rtxBudget.onMediaSent(headerSize + len(payload))
 	d.rtpStats.Update(
 		extPkt.Arrival,
 		tp.rtp.extSequenceNumber,
@@ -2471,10 +2478,25 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	nackAcks := uint32(0)
 	nackMisses := uint32(0)
 	numRepeatedNACKs := uint32(0)
+	var capped []extPacketMeta
 	epms := d.sequencer.getExtPacketMetas(filtered)
+	if d.rtxBudget != nil {
+		// newest first: when the budget runs short, the oldest packets are the least likely
+		// to still arrive in time for the receiver's jitter buffer. A batch can hold several
+		// NACK messages, so sort instead of relying on their order.
+		slices.SortFunc(epms, func(a, b extPacketMeta) int {
+			return cmp.Compare(b.extSequenceNumber, a.extSequenceNumber)
+		})
+	}
 	for i := range epms {
 		epm := &epms[i]
 		if disallowedLayers[epm.layer] {
+			continue
+		}
+
+		// over budget: skip without reading the publisher's buffer
+		if len(capped) != 0 || !d.rtxBudget.allow() {
+			capped = append(capped, *epm)
 			continue
 		}
 
@@ -2494,7 +2516,15 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			numRepeatedNACKs++
 		}
 
-		d.retransmitPacket(epm, pktBuff[:n], false)
+		if sent, err := d.retransmitPacket(epm, pktBuff[:n], false); err == nil {
+			d.rtxBudget.spend(sent)
+		}
+	}
+	if len(capped) != 0 {
+		// a capped packet was not sent, so it does not count toward the sequencer's NACK limit
+		d.sequencer.unmarkNacked(capped)
+		d.rtxBudget.numCapped.Add(uint64(len(capped)))
+		prometheus.RecordRTXCapped(d.kind.String(), uint32(len(capped)))
 	}
 
 	d.totalRepeatedNACKs.Add(numRepeatedNACKs)
