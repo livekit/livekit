@@ -1206,6 +1206,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 	if extPkt.IsKeyFrame {
 		d.isNACKThrottled.Store(false)
 		d.rtpStats.UpdateKeyFrame(1)
+		prometheus.IncrementKeyFrames(prometheus.Outgoing)
 		d.params.Logger.Debugw(
 			"forwarded key frame",
 			"layer", layer,
