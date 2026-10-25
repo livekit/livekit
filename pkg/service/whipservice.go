@@ -142,6 +142,13 @@ func (s *WHIPService) validateCreate(w http.ResponseWriter, r *http.Request) (*c
 		return nil, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrParticipantIdentityExceedsLimits, s.config.Limit.MaxParticipantIdentityLength)
 	}
 
+	if err := s.roomAllocator.ValidateCreateRoom(r.Context(), roomName); err != nil {
+		if errors.Is(err, ErrRoomNotFound) {
+			return nil, http.StatusNotFound, err
+		}
+		return nil, http.StatusInternalServerError, err
+	}
+
 	var clientInfo struct {
 		ClientIP                        string              `json:"clientIp"`
 		SubscribedParticipantTrackNames map[string][]string `json:"subscribedParticipantTrackNames"`
