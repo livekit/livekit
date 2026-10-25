@@ -36,6 +36,7 @@ import (
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/mediatransportutil/pkg/bucket"
 	"github.com/livekit/mediatransportutil/pkg/codec"
 	"github.com/livekit/mediatransportutil/pkg/nack"
@@ -1211,6 +1212,7 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 		if b.rtpStats != nil {
 			b.rtpStats.UpdateKeyFrame(1)
 		}
+		prometheus.IncrementKeyFrames(prometheus.Incoming)
 	}
 
 	if len(videoSize) > 0 {

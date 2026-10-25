@@ -62,6 +62,7 @@ var (
 	promStreamLabels          = []string{"direction", "source", "type", "country"}
 	promNackTotal             *prometheus.CounterVec
 	promRTXCappedTotal        *prometheus.CounterVec
+	promKeyFrameTotal         *prometheus.CounterVec
 	promPliTotal              *prometheus.CounterVec
 	promFirTotal              *prometheus.CounterVec
 	promPacketLossTotal       *prometheus.CounterVec
@@ -114,6 +115,13 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Help:        "NACKed packets not retransmitted because the down track was over its retransmission budget.",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, []string{"kind"})
+	promKeyFrameTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "keyframe",
+		Name:        "total",
+		Help:        "Key frames received from publishers (incoming) and forwarded to subscribers (outgoing, once per subscriber).",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+	}, []string{"direction"})
 	promPliTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "pli",
@@ -211,6 +219,7 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promFECPacketBytes)
 	prometheus.MustRegister(promNackTotal)
 	prometheus.MustRegister(promRTXCappedTotal)
+	prometheus.MustRegister(promKeyFrameTotal)
 	prometheus.MustRegister(promPliTotal)
 	prometheus.MustRegister(promFirTotal)
 	prometheus.MustRegister(promPacketLossTotal)
@@ -286,6 +295,13 @@ func RecordRTXCapped(kind string, packets uint32) {
 		return
 	}
 	promRTXCappedTotal.WithLabelValues(kind).Add(float64(packets))
+}
+
+func IncrementKeyFrames(direction Direction) {
+	if promKeyFrameTotal == nil {
+		return
+	}
+	promKeyFrameTotal.WithLabelValues(string(direction)).Inc()
 }
 
 func IncrementRTCP(country string, direction Direction, nack, pli, fir uint32) {
