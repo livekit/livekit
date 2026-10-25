@@ -16,12 +16,14 @@ package service_test
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
@@ -167,6 +169,23 @@ func TestRoomCompositeEgressOnCreateRoom(t *testing.T) {
 		})
 		require.ErrorIs(t, err, service.ErrEgressNotConnected)
 	})
+}
+
+func TestStartSessionNameLimit(t *testing.T) {
+	conf, err := config.NewConfig("", true, nil, nil)
+	require.NoError(t, err)
+	rm := newTestRoomManager(t, conf, nil)
+
+	err = rm.StartSession(context.Background(), routing.ParticipantInit{
+		Identity: "participant",
+		Grants: &auth.ClaimGrants{
+			Name:  strings.Repeat("a", conf.Limit.MaxParticipantNameLength+1),
+			Video: &auth.VideoGrant{RoomJoin: true, Room: "room-a"},
+		},
+		Client:     &livekit.ClientInfo{},
+		CreateRoom: &livekit.CreateRoomRequest{Name: "room-a"},
+	}, &routingfakes.FakeMessageSource{}, &routingfakes.FakeMessageSink{}, false)
+	require.ErrorIs(t, err, service.ErrNameExceedsLimits)
 }
 
 const roomPresetConfig = `

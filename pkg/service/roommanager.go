@@ -297,6 +297,9 @@ func (r *RoomManager) StartSession(
 	sessionStartTime := time.Now()
 
 	if pi.Identity != "" && pi.Grants != nil {
+		if !r.config.Limit.CheckParticipantNameLength(pi.Grants.Name) {
+			return ErrNameExceedsLimits
+		}
 		if !r.config.Limit.CheckMetadataSize(pi.Grants.Metadata) {
 			return ErrMetadataExceedsLimits
 		}
