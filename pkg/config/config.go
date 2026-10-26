@@ -135,7 +135,8 @@ type KevlarAuthHandlerConfig struct {
 	Timeout time.Duration `yaml:"timeout,omitempty"`
 	// TokenAttribute is the participant attribute key carrying the Kevlar AT (default "at").
 	TokenAttribute string `yaml:"token_attribute,omitempty"`
-	// TenantAttribute is the attribute key for optional x-tenant-id (default "x-tenant-id").
+	// TenantAttribute is the participant attribute key for tenant (default "tenant").
+	// Value is forwarded to icap-gateway as header x-tenant-id.
 	TenantAttribute string `yaml:"tenant_attribute,omitempty"`
 	// RequireAccountMatch rejects the join when gateway accountId != participant identity.
 	RequireAccountMatch bool `yaml:"require_account_match,omitempty"`

@@ -284,7 +284,7 @@ keys:
 #   url: https://chat.pg.flipkart.com/icap-gateway/v1/validate
 #   timeout: 2s
 #   token_attribute: at
-#   tenant_attribute: x-tenant-id
+#   tenant_attribute: tenant
 #   require_account_match: false
 
 # Signal Relay

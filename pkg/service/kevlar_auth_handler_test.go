@@ -28,18 +28,25 @@ func TestKevlarAuthHandler_ValidateConnect_SuccessAndStrip(t *testing.T) {
 	defer srv.Close()
 
 	h := NewKevlarAuthHandler(config.KevlarAuthHandlerConfig{URL: srv.URL})
-	attrs := map[string]string{"at": "kevlar-at", "x-tenant-id": "FLIPKART", "keep": "1"}
+	attrs := map[string]string{"at": "kevlar-at", "tenant": "FLIPKART", "keep": "1"}
 	err := h.ValidateConnect(context.Background(), logger.GetLogger(), "acc-1", livekit.ParticipantInfo_STANDARD, attrs, nil)
 	require.NoError(t, err)
 	_, hasAt := attrs["at"]
 	require.False(t, hasAt)
+	require.Equal(t, "FLIPKART", attrs["tenant"])
 	require.Equal(t, "1", attrs["keep"])
 }
 
 func TestKevlarAuthHandler_ValidateConnect_MissingToken(t *testing.T) {
 	h := NewKevlarAuthHandler(config.KevlarAuthHandlerConfig{URL: "http://example.invalid"})
-	err := h.ValidateConnect(context.Background(), logger.GetLogger(), "acc", livekit.ParticipantInfo_STANDARD, map[string]string{}, nil)
+	err := h.ValidateConnect(context.Background(), logger.GetLogger(), "acc", livekit.ParticipantInfo_STANDARD, map[string]string{"tenant": "FLIPKART"}, nil)
 	require.ErrorIs(t, err, ErrKevlarAuthHandlerMissingToken)
+}
+
+func TestKevlarAuthHandler_ValidateConnect_MissingTenant(t *testing.T) {
+	h := NewKevlarAuthHandler(config.KevlarAuthHandlerConfig{URL: "http://example.invalid"})
+	err := h.ValidateConnect(context.Background(), logger.GetLogger(), "acc", livekit.ParticipantInfo_STANDARD, map[string]string{"at": "t"}, nil)
+	require.ErrorIs(t, err, ErrKevlarAuthHandlerMissingTenant)
 }
 
 func TestKevlarAuthHandler_ValidateConnect_GatewayReject(t *testing.T) {
@@ -49,7 +56,7 @@ func TestKevlarAuthHandler_ValidateConnect_GatewayReject(t *testing.T) {
 	defer srv.Close()
 
 	h := NewKevlarAuthHandler(config.KevlarAuthHandlerConfig{URL: srv.URL})
-	err := h.ValidateConnect(context.Background(), logger.GetLogger(), "acc", livekit.ParticipantInfo_STANDARD, map[string]string{"at": "bad"}, nil)
+	err := h.ValidateConnect(context.Background(), logger.GetLogger(), "acc", livekit.ParticipantInfo_STANDARD, map[string]string{"at": "bad", "tenant": "FLIPKART"}, nil)
 	require.ErrorIs(t, err, ErrKevlarAuthHandlerRejected)
 }
 
@@ -66,6 +73,6 @@ func TestKevlarAuthHandler_ValidateConnect_RequireAccountMatch(t *testing.T) {
 	defer srv.Close()
 
 	h := NewKevlarAuthHandler(config.KevlarAuthHandlerConfig{URL: srv.URL, RequireAccountMatch: true})
-	err := h.ValidateConnect(context.Background(), logger.GetLogger(), "other-id", livekit.ParticipantInfo_STANDARD, map[string]string{"at": "t"}, nil)
+	err := h.ValidateConnect(context.Background(), logger.GetLogger(), "other-id", livekit.ParticipantInfo_STANDARD, map[string]string{"at": "t", "tenant": "FLIPKART"}, nil)
 	require.ErrorIs(t, err, ErrKevlarAuthHandlerIdentity)
 }

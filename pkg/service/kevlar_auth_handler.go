@@ -23,13 +23,14 @@ import (
 const (
 	defaultKevlarAuthHandlerTimeout         = 2 * time.Second
 	defaultKevlarAuthHandlerTokenAttribute  = "at"
-	defaultKevlarAuthHandlerTenantAttribute = "x-tenant-id"
+	defaultKevlarAuthHandlerTenantAttribute = "tenant"
 )
 
 var (
-	ErrKevlarAuthHandlerMissingToken = errors.New("missing kevlar access token for kevlar_auth_handler")
-	ErrKevlarAuthHandlerRejected     = errors.New("kevlar_auth_handler rejected connection")
-	ErrKevlarAuthHandlerIdentity     = errors.New("kevlar_auth_handler accountId does not match participant identity")
+	ErrKevlarAuthHandlerMissingToken  = errors.New("missing kevlar access token for kevlar_auth_handler")
+	ErrKevlarAuthHandlerMissingTenant = errors.New("missing tenant for kevlar_auth_handler")
+	ErrKevlarAuthHandlerRejected      = errors.New("kevlar_auth_handler rejected connection")
+	ErrKevlarAuthHandlerIdentity      = errors.New("kevlar_auth_handler accountId does not match participant identity")
 )
 
 // KevlarAuthHandler validates a Kevlar AT via icap-gateway before RTC join.
@@ -105,6 +106,9 @@ func (h *KevlarAuthHandler) ValidateConnect(
 	if tenant == "" && tokenAttributes != nil {
 		tenant = tokenAttributes[h.tenantAttribute]
 	}
+	if tenant == "" {
+		return ErrKevlarAuthHandlerMissingTenant
+	}
 
 	accountID, err := h.validate(ctx, at, tenant)
 	if err != nil {
@@ -130,11 +134,9 @@ func (h *KevlarAuthHandler) validate(ctx context.Context, at, tenant string) (st
 	if err != nil {
 		return "", err
 	}
-	// Gateway contract: header "at" + optional "x-tenant-id" (not the attribute key names).
+	// Participant attrs use "at" + "tenant"; gateway HTTP expects "at" + "x-tenant-id".
 	req.Header.Set("at", at)
-	if tenant != "" {
-		req.Header.Set("x-tenant-id", tenant)
-	}
+	req.Header.Set("x-tenant-id", tenant)
 
 	resp, err := h.httpClient.Do(req)
 	if err != nil {
