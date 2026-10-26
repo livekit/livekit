@@ -287,6 +287,23 @@ func TestOrphanedRoomSweeper(t *testing.T) {
 		require.True(t, found)
 	})
 
+	t.Run("restores a participant whose record is replaced by a departed one", func(t *testing.T) {
+		ot := newOrphanedRoomTest(t)
+		ot.createRoom("hosted", sweepingNode, longAgo, 300)
+		require.NoError(t, ot.store.StoreParticipant(ot.ctx, "hosted", &livekit.ParticipantInfo{Sid: "PA_bob", Identity: "bob"}))
+		ot.hosted = []service.HostedRoom{&fakeHostedRoom{
+			room:         &livekit.Room{Sid: "RM_hosted", Name: "hosted", CreationTime: longAgo.Unix(), EmptyTimeout: 300},
+			participants: []*livekit.ParticipantInfo{{Sid: "PA_alice", Identity: "alice"}},
+			store:        ot.store,
+		}}
+
+		ot.sweeper(0).Sweep(ot.ctx)
+
+		found, err := ot.store.HasParticipant(ot.ctx, "hosted", "alice")
+		require.NoError(t, err)
+		require.True(t, found)
+	})
+
 	t.Run("does not restore a hosted room reassigned to another node", func(t *testing.T) {
 		ot := newOrphanedRoomTest(t)
 		require.NoError(t, ot.router.SetNodeForRoom(ot.ctx, "hosted", liveNode))
@@ -415,7 +432,13 @@ func (r *fakeHostedRoom) Name() livekit.RoomName          { return livekit.RoomN
 func (r *fakeHostedRoom) IsClosed() bool                  { return r.closed }
 func (r *fakeHostedRoom) ToProto() *livekit.Room          { return r.room }
 func (r *fakeHostedRoom) Internal() *livekit.RoomInternal { return nil }
-func (r *fakeHostedRoom) ParticipantCount() int           { return len(r.participants) }
+func (r *fakeHostedRoom) ParticipantIdentities() []livekit.ParticipantIdentity {
+	var identities []livekit.ParticipantIdentity
+	for _, p := range r.participants {
+		identities = append(identities, livekit.ParticipantIdentity(p.Identity))
+	}
+	return identities
+}
 
 func (r *fakeHostedRoom) StoreParticipants(ctx context.Context) error {
 	for _, p := range r.participants {

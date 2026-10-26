@@ -287,14 +287,14 @@ type hostedRoom struct {
 	records *participantRecords
 }
 
-func (h hostedRoom) ParticipantCount() int {
-	count := 0
+func (h hostedRoom) ParticipantIdentities() []livekit.ParticipantIdentity {
+	var identities []livekit.ParticipantIdentity
 	for _, p := range h.GetParticipants() {
 		if !p.IsDisconnected() {
-			count++
+			identities = append(identities, p.Identity())
 		}
 	}
-	return count
+	return identities
 }
 
 func (h hostedRoom) StoreParticipants(ctx context.Context) error {
