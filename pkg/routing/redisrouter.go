@@ -39,6 +39,16 @@ const (
 	// hash of room_name => node_id
 	NodeRoomKey = "room_node_map"
 
+	// assigns a room to the given node unless it is assigned to another node
+	assignRoomIfUnassignedScript = `local nodeID = redis.call("hget", KEYS[1], ARGV[1])
+	if not nodeID then
+		redis.call("hset", KEYS[1], ARGV[1], ARGV[2])
+		return 1
+	elseif nodeID == ARGV[2] then
+		return 1
+	else return 0
+	end`
+
 	// deletes a room's node assignment only while it still points at the given node,
 	// an empty node matches a room without assignment
 	clearRoomForNodeScript = `local nodeID = redis.call("hget", KEYS[1], ARGV[1])
@@ -63,7 +73,8 @@ type RedisRouter struct {
 	ctx       context.Context
 	isStarted atomic.Bool
 
-	clearRoomForNode *redis.Script
+	assignRoomIfUnassigned *redis.Script
+	clearRoomForNode       *redis.Script
 
 	cancel func()
 }
@@ -74,7 +85,8 @@ func NewRedisRouter(lr *LocalRouter, rc redis.UniversalClient, kps rpc.Keepalive
 		rc:          rc,
 		kps:         kps,
 
-		clearRoomForNode: redis.NewScript(clearRoomForNodeScript),
+		assignRoomIfUnassigned: redis.NewScript(assignRoomIfUnassignedScript),
+		clearRoomForNode:       redis.NewScript(clearRoomForNodeScript),
 	}
 	rr.ctx, rr.cancel = context.WithCancel(context.Background())
 	return rr
@@ -145,6 +157,16 @@ func (r *RedisRouter) ListRoomNodes(ctx context.Context) (map[livekit.RoomName]l
 		roomNodes[livekit.RoomName(roomName)] = livekit.NodeID(nodeID)
 	}
 	return roomNodes, nil
+}
+
+// AssignRoomIfUnassigned assigns the room to nodeID unless it is assigned to another node.
+// Returns whether the room is assigned to nodeID.
+func (r *RedisRouter) AssignRoomIfUnassigned(ctx context.Context, roomName livekit.RoomName, nodeID livekit.NodeID) (bool, error) {
+	res, err := r.assignRoomIfUnassigned.Run(ctx, r.rc, []string{NodeRoomKey}, string(roomName), string(nodeID)).Int64()
+	if err != nil {
+		return false, errors.Wrap(err, "could not assign room")
+	}
+	return res == 1, nil
 }
 
 // ClearRoomStateForNode clears the room's node assignment only if it is still assigned to nodeID,

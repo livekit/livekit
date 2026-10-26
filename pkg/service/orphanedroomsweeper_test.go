@@ -42,6 +42,7 @@ type orphanedRoomTest struct {
 	rc     redis.UniversalClient
 	router *routing.RedisRouter
 	store  *service.RedisStore
+	hosted []service.HostedRoom
 }
 
 func newOrphanedRoomTest(t *testing.T) *orphanedRoomTest {
@@ -84,7 +85,11 @@ func (ot *orphanedRoomTest) createRoomWithDepartureTimeout(name livekit.RoomName
 }
 
 func (ot *orphanedRoomTest) sweeper(gracePeriod time.Duration) *service.OrphanedRoomSweeper {
-	return service.NewOrphanedRoomSweeper(ot.router, ot.store, sweepingNode, gracePeriod)
+	return service.NewOrphanedRoomSweeper(ot.router, ot.store, sweepingNode, ot.hostedRooms, gracePeriod)
+}
+
+func (ot *orphanedRoomTest) hostedRooms() []service.HostedRoom {
+	return ot.hosted
 }
 
 func (ot *orphanedRoomTest) requireRoom(name livekit.RoomName, nodeID livekit.NodeID) {
@@ -167,11 +172,69 @@ func TestOrphanedRoomSweeper(t *testing.T) {
 			RedisRouter: ot.router,
 			roomName:    "rejoined",
 			nodeID:      liveNode,
-		}, ot.store, sweepingNode, 0)
+		}, ot.store, sweepingNode, ot.hostedRooms, 0)
 
 		sweeper.Sweep(ot.ctx)
 
 		ot.requireRoom("rejoined", liveNode)
+	})
+
+	t.Run("keeps a room whose node recovered during the sweep", func(t *testing.T) {
+		ot := newOrphanedRoomTest(t)
+		ot.registerNode(deadNode, longAgo)
+		ot.createRoom("recovered", deadNode, longAgo, 300)
+		sweeper := service.NewOrphanedRoomSweeper(&recoveringRouter{
+			RedisRouter: ot.router,
+			recover:     func() { ot.registerNode(deadNode, time.Now()) },
+		}, ot.store, sweepingNode, ot.hostedRooms, 0)
+
+		sweeper.Sweep(ot.ctx)
+
+		ot.requireRoom("recovered", deadNode)
+	})
+
+	t.Run("restores a hosted room deleted while its node was unavailable", func(t *testing.T) {
+		ot := newOrphanedRoomTest(t)
+		ot.hosted = []service.HostedRoom{&fakeHostedRoom{
+			room:         &livekit.Room{Sid: "RM_hosted", Name: "hosted", CreationTime: longAgo.Unix(), EmptyTimeout: 300},
+			participants: []*livekit.ParticipantInfo{{Sid: "PA_1", Identity: "p1"}},
+		}}
+
+		ot.sweeper(0).Sweep(ot.ctx)
+
+		ot.requireRoom("hosted", sweepingNode)
+		found, err := ot.store.HasParticipant(ot.ctx, "hosted", "p1")
+		require.NoError(t, err)
+		require.True(t, found)
+	})
+
+	t.Run("does not restore a hosted room reassigned to another node", func(t *testing.T) {
+		ot := newOrphanedRoomTest(t)
+		require.NoError(t, ot.router.SetNodeForRoom(ot.ctx, "hosted", liveNode))
+		ot.hosted = []service.HostedRoom{&fakeHostedRoom{
+			room: &livekit.Room{Sid: "RM_hosted", Name: "hosted", CreationTime: longAgo.Unix(), EmptyTimeout: 300},
+		}}
+
+		ot.sweeper(0).Sweep(ot.ctx)
+
+		exists, err := ot.store.RoomExists(ot.ctx, "hosted")
+		require.NoError(t, err)
+		require.False(t, exists)
+		roomNodes, err := ot.router.ListRoomNodes(ot.ctx)
+		require.NoError(t, err)
+		require.Equal(t, liveNode, roomNodes["hosted"])
+	})
+
+	t.Run("does not restore a closed room", func(t *testing.T) {
+		ot := newOrphanedRoomTest(t)
+		ot.hosted = []service.HostedRoom{&fakeHostedRoom{
+			room:   &livekit.Room{Sid: "RM_closed", Name: "closed", CreationTime: longAgo.Unix(), EmptyTimeout: 300},
+			closed: true,
+		}}
+
+		ot.sweeper(0).Sweep(ot.ctx)
+
+		ot.requireNoRoom("closed")
 	})
 
 	t.Run("does nothing while its own node is stale", func(t *testing.T) {
@@ -198,7 +261,7 @@ func TestOrphanedRoomSweeper(t *testing.T) {
 		ot := newOrphanedRoomTest(t)
 		ot.createRoom("orphaned", deadNode, longAgo, 300)
 		store := &failingDeleteStore{RedisStore: ot.store, failures: 1}
-		sweeper := service.NewOrphanedRoomSweeper(ot.router, store, sweepingNode, 0)
+		sweeper := service.NewOrphanedRoomSweeper(ot.router, store, sweepingNode, ot.hostedRooms, 0)
 
 		sweeper.Sweep(ot.ctx)
 		exists, err := ot.store.RoomExists(ot.ctx, "orphaned")
@@ -246,3 +309,26 @@ func (s *failingDeleteStore) DeleteRoom(ctx context.Context, roomName livekit.Ro
 	}
 	return s.RedisStore.DeleteRoom(ctx, roomName)
 }
+
+// recoveringRouter simulates a node heartbeating right after the sweeper observed it unavailable
+type recoveringRouter struct {
+	*routing.RedisRouter
+	recover func()
+}
+
+func (r *recoveringRouter) ListRoomNodes(ctx context.Context) (map[livekit.RoomName]livekit.NodeID, error) {
+	r.recover()
+	return r.RedisRouter.ListRoomNodes(ctx)
+}
+
+type fakeHostedRoom struct {
+	room         *livekit.Room
+	participants []*livekit.ParticipantInfo
+	closed       bool
+}
+
+func (r *fakeHostedRoom) Name() livekit.RoomName                       { return livekit.RoomName(r.room.Name) }
+func (r *fakeHostedRoom) IsClosed() bool                               { return r.closed }
+func (r *fakeHostedRoom) ToProto() *livekit.Room                       { return r.room }
+func (r *fakeHostedRoom) Internal() *livekit.RoomInternal              { return nil }
+func (r *fakeHostedRoom) ParticipantInfos() []*livekit.ParticipantInfo { return r.participants }

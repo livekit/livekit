@@ -22,6 +22,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
+	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/selector"
 )
 
@@ -33,7 +34,9 @@ const (
 // OrphanedRoomRouter is implemented by routers that share room assignments across nodes
 type OrphanedRoomRouter interface {
 	ListNodes() ([]*livekit.Node, error)
+	GetNode(nodeID livekit.NodeID) (*livekit.Node, error)
 	ListRoomNodes(ctx context.Context) (map[livekit.RoomName]livekit.NodeID, error)
+	AssignRoomIfUnassigned(ctx context.Context, roomName livekit.RoomName, nodeID livekit.NodeID) (bool, error)
 	ClearRoomStateForNode(ctx context.Context, roomName livekit.RoomName, nodeID livekit.NodeID) (bool, error)
 }
 
@@ -43,13 +46,26 @@ type OrphanedRoomStore interface {
 	UnlockRoom(ctx context.Context, roomName livekit.RoomName, uid string) error
 	LoadRoom(ctx context.Context, roomName livekit.RoomName, includeInternal bool) (*livekit.Room, *livekit.RoomInternal, error)
 	ListRoomNames(ctx context.Context) ([]livekit.RoomName, error)
+	StoreRoom(ctx context.Context, room *livekit.Room, internal *livekit.RoomInternal) error
+	StoreParticipant(ctx context.Context, roomName livekit.RoomName, participant *livekit.ParticipantInfo) error
 	DeleteRoom(ctx context.Context, roomName livekit.RoomName) error
+}
+
+// HostedRoom is a room hosted by this node
+type HostedRoom interface {
+	Name() livekit.RoomName
+	IsClosed() bool
+	ToProto() *livekit.Room
+	Internal() *livekit.RoomInternal
+	ParticipantInfos() []*livekit.ParticipantInfo
 }
 
 // orphanedRoom is a room assigned to a node that is not available, or stored without assignment
 type orphanedRoom struct {
 	nodeID livekit.NodeID
-	since  time.Time
+	// stats update time of the node when first seen orphaned, 0 when not registered
+	nodeUpdatedAt int64
+	since         time.Time
 }
 
 // OrphanedRoomSweeper removes rooms assigned to a node that has left the cluster without closing them,
@@ -60,20 +76,32 @@ type orphanedRoom struct {
 // A room is deleted only once it has been seen orphaned for the grace period and its own timeouts have
 // passed, i.e. when its node would have closed it too. A join reassigns an orphaned room to a live node,
 // which takes it out of the sweeper's hands.
+//
+// A node that recovers while its rooms are being deleted cannot be told apart atomically, as node and room
+// state live in different keys. Instead, a node restores the state of rooms it still hosts that were
+// deleted while it was unavailable.
 type OrphanedRoomSweeper struct {
 	router      OrphanedRoomRouter
 	roomStore   OrphanedRoomStore
 	nodeID      livekit.NodeID
+	hostedRooms func() []HostedRoom
 	gracePeriod time.Duration
 
 	orphaned map[livekit.RoomName]orphanedRoom
 }
 
-func NewOrphanedRoomSweeper(router OrphanedRoomRouter, roomStore OrphanedRoomStore, nodeID livekit.NodeID, gracePeriod time.Duration) *OrphanedRoomSweeper {
+func NewOrphanedRoomSweeper(
+	router OrphanedRoomRouter,
+	roomStore OrphanedRoomStore,
+	nodeID livekit.NodeID,
+	hostedRooms func() []HostedRoom,
+	gracePeriod time.Duration,
+) *OrphanedRoomSweeper {
 	return &OrphanedRoomSweeper{
 		router:      router,
 		roomStore:   roomStore,
 		nodeID:      nodeID,
+		hostedRooms: hostedRooms,
 		gracePeriod: gracePeriod,
 		orphaned:    make(map[livekit.RoomName]orphanedRoom),
 	}
@@ -87,10 +115,12 @@ func (s *OrphanedRoomSweeper) Sweep(ctx context.Context) {
 		return
 	}
 	liveNodes := make(map[livekit.NodeID]bool, len(nodes))
+	nodeUpdatedAt := make(map[livekit.NodeID]int64, len(nodes))
 	for _, n := range nodes {
 		if selector.IsAvailable(n) {
 			liveNodes[livekit.NodeID(n.Id)] = true
 		}
+		nodeUpdatedAt[livekit.NodeID(n.Id)] = n.GetStats().GetUpdatedAt()
 	}
 	// when this node's own stats are stale, the message bus is lagging and peers' stale stats
 	// do not mean they are gone. start observing again once it recovers.
@@ -109,7 +139,26 @@ func (s *OrphanedRoomSweeper) Sweep(ctx context.Context) {
 		logger.Warnw("could not list rooms for orphaned rooms", err)
 		return
 	}
+	storedRooms := make(map[livekit.RoomName]bool, len(roomNames))
 	for _, roomName := range roomNames {
+		storedRooms[roomName] = true
+	}
+
+	for _, room := range s.hostedRooms() {
+		roomName := room.Name()
+		nodeID, routed := roomNodes[roomName]
+		if routed && (nodeID != s.nodeID || storedRooms[roomName]) {
+			continue
+		}
+		if err := s.restoreRoom(ctx, room); err != nil {
+			logger.Warnw("could not restore hosted room", err, "room", roomName)
+			continue
+		}
+		roomNodes[roomName] = s.nodeID
+		storedRooms[roomName] = true
+	}
+
+	for roomName := range storedRooms {
 		if _, ok := roomNodes[roomName]; !ok {
 			roomNodes[roomName] = ""
 		}
@@ -122,8 +171,8 @@ func (s *OrphanedRoomSweeper) Sweep(ctx context.Context) {
 			continue
 		}
 		o, ok := s.orphaned[roomName]
-		if !ok || o.nodeID != nodeID {
-			o = orphanedRoom{nodeID: nodeID, since: now}
+		if !ok || o.nodeID != nodeID || o.nodeUpdatedAt != nodeUpdatedAt[nodeID] {
+			o = orphanedRoom{nodeID: nodeID, nodeUpdatedAt: nodeUpdatedAt[nodeID], since: now}
 		}
 		orphaned[roomName] = o
 	}
@@ -144,7 +193,7 @@ func (s *OrphanedRoomSweeper) Sweep(ctx context.Context) {
 	}
 }
 
-// deleteIfOrphaned returns whether the room is no longer orphaned, either deleted or reassigned
+// deleteIfOrphaned returns whether the room is no longer orphaned, either deleted, reassigned or its node recovered
 func (s *OrphanedRoomSweeper) deleteIfOrphaned(ctx context.Context, roomName livekit.RoomName, o orphanedRoom, now time.Time) (bool, error) {
 	// a node creating or joining the room holds this lock while loading it
 	token, err := s.roomStore.LockRoom(ctx, roomName, 5*time.Second)
@@ -154,6 +203,17 @@ func (s *OrphanedRoomSweeper) deleteIfOrphaned(ctx context.Context, roomName liv
 	defer func() {
 		_ = s.roomStore.UnlockRoom(ctx, roomName, token)
 	}()
+
+	if o.nodeID != "" {
+		// the node may have updated since the sweep started
+		node, err := s.router.GetNode(o.nodeID)
+		if err != nil && !errors.Is(err, routing.ErrNotFound) {
+			return false, err
+		}
+		if node != nil && (selector.IsAvailable(node) || node.GetStats().GetUpdatedAt() != o.nodeUpdatedAt) {
+			return true, nil
+		}
+	}
 
 	rm, _, err := s.roomStore.LoadRoom(ctx, roomName, false)
 	if err != nil && !errors.Is(err, ErrRoomNotFound) {
@@ -179,4 +239,49 @@ func (s *OrphanedRoomSweeper) deleteIfOrphaned(ctx context.Context, roomName liv
 	}
 	logger.Infow("deleted orphaned room", "room", roomName, "roomID", rm.Sid, "nodeID", o.nodeID, "orphanedFor", now.Sub(o.since))
 	return true, nil
+}
+
+// restoreRoom stores a room hosted by this node whose state was deleted while this node was unavailable
+func (s *OrphanedRoomSweeper) restoreRoom(ctx context.Context, room HostedRoom) error {
+	roomName := room.Name()
+	token, err := s.roomStore.LockRoom(ctx, roomName, 5*time.Second)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = s.roomStore.UnlockRoom(ctx, roomName, token)
+	}()
+
+	if room.IsClosed() {
+		return nil
+	}
+	assigned, err := s.router.AssignRoomIfUnassigned(ctx, roomName, s.nodeID)
+	if err != nil || !assigned {
+		// a join reassigned it to another node
+		return err
+	}
+
+	_, _, err = s.roomStore.LoadRoom(ctx, roomName, false)
+	if errors.Is(err, ErrRoomNotFound) {
+		if err = s.roomStore.StoreRoom(ctx, room.ToProto(), room.Internal()); err != nil {
+			return err
+		}
+		for _, p := range room.ParticipantInfos() {
+			if err = s.roomStore.StoreParticipant(ctx, roomName, p); err != nil {
+				return err
+			}
+		}
+		logger.Infow("restored hosted room", "room", roomName)
+	} else if err != nil {
+		return err
+	}
+
+	// closing deletes the room's state, which may have run before the room was restored
+	if room.IsClosed() {
+		if _, err = s.router.ClearRoomStateForNode(ctx, roomName, s.nodeID); err != nil {
+			return err
+		}
+		return s.roomStore.DeleteRoom(ctx, roomName)
+	}
+	return nil
 }

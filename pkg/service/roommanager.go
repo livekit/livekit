@@ -167,7 +167,7 @@ func NewLocalRoomManager(
 	or, isOrphanedRoomRouter := router.(OrphanedRoomRouter)
 	os, isOrphanedRoomStore := roomStore.(OrphanedRoomStore)
 	if isOrphanedRoomRouter && isOrphanedRoomStore {
-		r.orphanedRoomSweeper = NewOrphanedRoomSweeper(or, os, currentNode.NodeID(), OrphanedRoomGracePeriod)
+		r.orphanedRoomSweeper = NewOrphanedRoomSweeper(or, os, currentNode.NodeID(), r.hostedRooms, OrphanedRoomGracePeriod)
 	}
 
 	r.roomManagerServer, err = rpc.NewTypedRoomManagerServer(r, bus, rpc.WithServerLogger(logger.GetLogger()), middleware.WithServerMetrics(rpc.PSRPCMetricsObserver{}), psrpc.WithServerChannelSize(conf.PSRPC.BufferSize))
@@ -236,6 +236,31 @@ func (r *RoomManager) CloseIdleRooms() {
 	for _, room := range rooms {
 		room.CloseIfEmpty()
 	}
+}
+
+type hostedRoom struct {
+	*rtc.Room
+}
+
+func (h hostedRoom) ParticipantInfos() []*livekit.ParticipantInfo {
+	var infos []*livekit.ParticipantInfo
+	for _, p := range h.GetParticipants() {
+		if !p.IsDisconnected() {
+			infos = append(infos, p.ToProto())
+		}
+	}
+	return infos
+}
+
+func (r *RoomManager) hostedRooms() []HostedRoom {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	rooms := make([]HostedRoom, 0, len(r.rooms))
+	for _, room := range r.rooms {
+		rooms = append(rooms, hostedRoom{room})
+	}
+	return rooms
 }
 
 // DeleteOrphanedRooms deletes rooms left behind by nodes that are gone, when routing is shared across nodes
