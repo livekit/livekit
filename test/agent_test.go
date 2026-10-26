@@ -140,6 +140,15 @@ func TestAgentNamespaces(t *testing.T) {
 			ac1.Run(livekit.JobType_JT_ROOM, "namespace1")
 			ac2.Run(livekit.JobType_JT_ROOM, "namespace2")
 
+			testutils.WithTimeout(t, func() string {
+				if ac1.registered.Load() != 1 || ac2.registered.Load() != 1 {
+					return "worker not registered"
+				}
+				return ""
+			}, RegisterTimeout)
+
+			// a job goes only to the namespaces the server knows of when it
+			// dispatches the job, so the room is created once both have registered
 			_, err = roomClient.CreateRoom(contextWithToken(createRoomToken()), &livekit.CreateRoomRequest{
 				Name: testRoom,
 				Agents: []*livekit.RoomAgentDispatch{
@@ -150,13 +159,6 @@ func TestAgentNamespaces(t *testing.T) {
 				},
 			})
 			require.NoError(t, err)
-
-			testutils.WithTimeout(t, func() string {
-				if ac1.registered.Load() != 1 || ac2.registered.Load() != 1 {
-					return "worker not registered"
-				}
-				return ""
-			}, RegisterTimeout)
 
 			c1 := createRTCClient("c1", defaultServerPort, testRTCServicePath, nil)
 			waitUntilConnected(t, c1)
