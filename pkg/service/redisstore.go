@@ -531,7 +531,7 @@ func parseEgressEnded(value string) (roomName string, endedAt int64, err error) 
 }
 
 func (s *RedisStore) StoreIngress(ctx context.Context, info *livekit.IngressInfo) error {
-	err := s.storeIngress(ctx, info)
+	err := s.storeIngress(ctx, info, false)
 	if err != nil {
 		return err
 	}
@@ -539,7 +539,9 @@ func (s *RedisStore) StoreIngress(ctx context.Context, info *livekit.IngressInfo
 	return s.storeIngressState(ctx, info.IngressId, nil)
 }
 
-func (s *RedisStore) storeIngress(_ context.Context, info *livekit.IngressInfo) error {
+// storeIngress writes the ingress info. With mustExist it fails with ErrIngressNotFound
+// instead of recreating an ingress that was deleted since the caller loaded it.
+func (s *RedisStore) storeIngress(_ context.Context, info *livekit.IngressInfo, mustExist bool) error {
 	if info.IngressId == "" {
 		return errors.New("Missing IngressId")
 	}
@@ -563,6 +565,11 @@ func (s *RedisStore) storeIngress(_ context.Context, info *livekit.IngressInfo) 
 		oldInfo, err := s.loadIngress(tx, info.IngressId)
 		switch err {
 		case ErrIngressNotFound:
+			if mustExist {
+				// Checked inside the WATCH: a delete landing after this point
+				// fails the EXEC instead of being overwritten.
+				return err
+			}
 			// Ingress doesn't exist yet
 		case nil:
 			oldRoom = oldInfo.RoomName
@@ -613,7 +620,7 @@ func (s *RedisStore) storeIngress(_ context.Context, info *livekit.IngressInfo) 
 		}
 	}
 
-	return nil
+	return psrpc.NewError(psrpc.Unavailable, errors.Wrapf(redis.TxFailedErr, "could not store ingress %s after %d attempts", info.IngressId, maxRetries))
 }
 
 func (s *RedisStore) storeIngressState(_ context.Context, ingressId string, state *livekit.IngressState) error {
@@ -688,7 +695,7 @@ func (s *RedisStore) storeIngressState(_ context.Context, ingressId string, stat
 		}
 	}
 
-	return nil
+	return psrpc.NewError(psrpc.Unavailable, errors.Wrapf(redis.TxFailedErr, "could not store ingress state %s after %d attempts", ingressId, maxRetries))
 }
 
 func (s *RedisStore) loadIngress(c redis.Cmdable, ingressId string) (*livekit.IngressInfo, error) {
@@ -828,7 +835,7 @@ func (s *RedisStore) ListIngress(_ context.Context, roomName livekit.RoomName) (
 }
 
 func (s *RedisStore) UpdateIngress(ctx context.Context, info *livekit.IngressInfo) error {
-	return s.storeIngress(ctx, info)
+	return s.storeIngress(ctx, info, true)
 }
 
 func (s *RedisStore) UpdateIngressState(ctx context.Context, ingressId string, state *livekit.IngressState) error {
