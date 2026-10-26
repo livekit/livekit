@@ -164,8 +164,10 @@ func NewLocalRoomManager(
 		},
 	}
 
-	if or, ok := router.(OrphanedRoomRouter); ok {
-		r.orphanedRoomSweeper = NewOrphanedRoomSweeper(or, roomStore, currentNode.NodeID(), OrphanedRoomGracePeriod)
+	or, isOrphanedRoomRouter := router.(OrphanedRoomRouter)
+	os, isOrphanedRoomStore := roomStore.(OrphanedRoomStore)
+	if isOrphanedRoomRouter && isOrphanedRoomStore {
+		r.orphanedRoomSweeper = NewOrphanedRoomSweeper(or, os, currentNode.NodeID(), OrphanedRoomGracePeriod)
 	}
 
 	r.roomManagerServer, err = rpc.NewTypedRoomManagerServer(r, bus, rpc.WithServerLogger(logger.GetLogger()), middleware.WithServerMetrics(rpc.PSRPCMetricsObserver{}), psrpc.WithServerChannelSize(conf.PSRPC.BufferSize))

@@ -37,6 +37,16 @@ type OrphanedRoomRouter interface {
 	ClearRoomStateForNode(ctx context.Context, roomName livekit.RoomName, nodeID livekit.NodeID) (bool, error)
 }
 
+// OrphanedRoomStore is implemented by stores shared across nodes
+type OrphanedRoomStore interface {
+	LockRoom(ctx context.Context, roomName livekit.RoomName, duration time.Duration) (string, error)
+	UnlockRoom(ctx context.Context, roomName livekit.RoomName, uid string) error
+	LoadRoom(ctx context.Context, roomName livekit.RoomName, includeInternal bool) (*livekit.Room, *livekit.RoomInternal, error)
+	ListRoomNames(ctx context.Context) ([]livekit.RoomName, error)
+	DeleteRoom(ctx context.Context, roomName livekit.RoomName) error
+}
+
+// orphanedRoom is a room assigned to a node that is not available, or stored without assignment
 type orphanedRoom struct {
 	nodeID livekit.NodeID
 	since  time.Time
@@ -44,21 +54,22 @@ type orphanedRoom struct {
 
 // OrphanedRoomSweeper removes rooms assigned to a node that has left the cluster without closing them,
 // e.g. a node killed before it could shut down gracefully. Only the hosting node closes a room, so
-// without this such rooms are listed forever.
+// without this such rooms are listed forever. Stored rooms without assignment, such as those left by a
+// failed deletion, are removed the same way.
 //
 // A room is deleted only once it has been seen orphaned for the grace period and its own timeouts have
 // passed, i.e. when its node would have closed it too. A join reassigns an orphaned room to a live node,
 // which takes it out of the sweeper's hands.
 type OrphanedRoomSweeper struct {
 	router      OrphanedRoomRouter
-	roomStore   ObjectStore
+	roomStore   OrphanedRoomStore
 	nodeID      livekit.NodeID
 	gracePeriod time.Duration
 
 	orphaned map[livekit.RoomName]orphanedRoom
 }
 
-func NewOrphanedRoomSweeper(router OrphanedRoomRouter, roomStore ObjectStore, nodeID livekit.NodeID, gracePeriod time.Duration) *OrphanedRoomSweeper {
+func NewOrphanedRoomSweeper(router OrphanedRoomRouter, roomStore OrphanedRoomStore, nodeID livekit.NodeID, gracePeriod time.Duration) *OrphanedRoomSweeper {
 	return &OrphanedRoomSweeper{
 		router:      router,
 		roomStore:   roomStore,
@@ -92,6 +103,16 @@ func (s *OrphanedRoomSweeper) Sweep(ctx context.Context) {
 	if err != nil {
 		logger.Warnw("could not list room nodes for orphaned rooms", err)
 		return
+	}
+	roomNames, err := s.roomStore.ListRoomNames(ctx)
+	if err != nil {
+		logger.Warnw("could not list rooms for orphaned rooms", err)
+		return
+	}
+	for _, roomName := range roomNames {
+		if _, ok := roomNodes[roomName]; !ok {
+			roomNodes[roomName] = ""
+		}
 	}
 
 	now := time.Now()

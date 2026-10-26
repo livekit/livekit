@@ -242,6 +242,15 @@ func (s *RedisStore) ListRooms(_ context.Context, roomNames []livekit.RoomName) 
 	return rooms, nil
 }
 
+// ListRoomNames returns the names of all stored rooms
+func (s *RedisStore) ListRoomNames(_ context.Context) ([]livekit.RoomName, error) {
+	names, err := s.rc.HKeys(s.ctx, RoomsKey).Result()
+	if err != nil {
+		return nil, errors.Wrap(err, "could not list room names")
+	}
+	return livekit.StringsAsIDs[livekit.RoomName](names), nil
+}
+
 func (s *RedisStore) DeleteRoom(ctx context.Context, roomName livekit.RoomName) error {
 	_, _, err := s.LoadRoom(ctx, roomName, false)
 	if err == ErrRoomNotFound {

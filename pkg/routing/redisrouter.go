@@ -39,9 +39,13 @@ const (
 	// hash of room_name => node_id
 	NodeRoomKey = "room_node_map"
 
-	// deletes a room's node assignment only while it still points at the given node
-	clearRoomForNodeScript = `if redis.call("hget", KEYS[1], ARGV[1]) == ARGV[2] then
+	// deletes a room's node assignment only while it still points at the given node,
+	// an empty node matches a room without assignment
+	clearRoomForNodeScript = `local nodeID = redis.call("hget", KEYS[1], ARGV[1])
+	if nodeID == ARGV[2] then
 		return redis.call("hdel", KEYS[1], ARGV[1])
+	elseif not nodeID and ARGV[2] == "" then
+		return 1
 	else return 0
 	end`
 )
@@ -144,7 +148,8 @@ func (r *RedisRouter) ListRoomNodes(ctx context.Context) (map[livekit.RoomName]l
 }
 
 // ClearRoomStateForNode clears the room's node assignment only if it is still assigned to nodeID,
-// so that a room reassigned in the meantime keeps its routing. Returns whether it was cleared.
+// so that a room reassigned in the meantime keeps its routing. An empty nodeID matches a room that
+// is not assigned. Returns whether it was cleared.
 func (r *RedisRouter) ClearRoomStateForNode(ctx context.Context, roomName livekit.RoomName, nodeID livekit.NodeID) (bool, error) {
 	res, err := r.clearRoomForNode.Run(ctx, r.rc, []string{NodeRoomKey}, string(roomName), string(nodeID)).Int64()
 	if err != nil {

@@ -16,6 +16,7 @@ package service_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -183,6 +184,31 @@ func TestOrphanedRoomSweeper(t *testing.T) {
 		ot.requireRoom("orphaned", deadNode)
 	})
 
+	t.Run("deletes a stored room without routing", func(t *testing.T) {
+		ot := newOrphanedRoomTest(t)
+		ot.createRoom("unrouted", deadNode, longAgo, 300)
+		require.NoError(t, ot.router.ClearRoomState(ot.ctx, "unrouted"))
+
+		ot.sweeper(0).Sweep(ot.ctx)
+
+		ot.requireNoRoom("unrouted")
+	})
+
+	t.Run("retries a room whose deletion failed", func(t *testing.T) {
+		ot := newOrphanedRoomTest(t)
+		ot.createRoom("orphaned", deadNode, longAgo, 300)
+		store := &failingDeleteStore{RedisStore: ot.store, failures: 1}
+		sweeper := service.NewOrphanedRoomSweeper(ot.router, store, sweepingNode, 0)
+
+		sweeper.Sweep(ot.ctx)
+		exists, err := ot.store.RoomExists(ot.ctx, "orphaned")
+		require.NoError(t, err)
+		require.True(t, exists)
+
+		sweeper.Sweep(ot.ctx)
+		ot.requireNoRoom("orphaned")
+	})
+
 	t.Run("clears routing left without a room", func(t *testing.T) {
 		ot := newOrphanedRoomTest(t)
 		require.NoError(t, ot.router.SetNodeForRoom(ot.ctx, "routing-only", deadNode))
@@ -206,4 +232,17 @@ func (r *reassigningRouter) ListRoomNodes(ctx context.Context) (map[livekit.Room
 		return nil, err
 	}
 	return roomNodes, r.SetNodeForRoom(ctx, r.roomName, r.nodeID)
+}
+
+type failingDeleteStore struct {
+	*service.RedisStore
+	failures int
+}
+
+func (s *failingDeleteStore) DeleteRoom(ctx context.Context, roomName livekit.RoomName) error {
+	if s.failures > 0 {
+		s.failures--
+		return errors.New("delete failed")
+	}
+	return s.RedisStore.DeleteRoom(ctx, roomName)
 }
