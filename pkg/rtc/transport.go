@@ -387,9 +387,11 @@ func newPeerConnection(
 	}
 
 	if params.EnableWarp {
-		params.Logger.Debugw("enable warp")
+		params.Logger.Infow("warp: enabled on transport, engaging SPED+SCTP SNAP", "warp", true)
 		se.EnableSped(true)
 		se.EnableSctpSnap(true)
+	} else {
+		params.Logger.Infow("warp: NOT enabled on transport", "warp", false)
 	}
 
 	//

@@ -306,6 +306,7 @@ func (s *LivekitServer) Start() error {
 	if s.config.Region != "" {
 		values = append(values, "region", s.config.Region)
 	}
+	values = append(values, "enableWarp", s.config.RTC.EnableWarp)
 	logger.Infow("starting LiveKit server", values...)
 	if runtime.GOOS == "windows" {
 		logger.Infow("Windows detected, capacity management is unavailable")

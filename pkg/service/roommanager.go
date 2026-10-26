@@ -485,6 +485,11 @@ func (r *RoomManager) StartSession(
 	}
 
 	enableWarp := !useOneShotSignallingMode && r.config.RTC.EnableWarp
+	pLogger.Infow("warp: resolved participant warp gate",
+		"enableWarp", enableWarp,
+		"configEnableWarp", r.config.RTC.EnableWarp,
+		"oneShotSignalling", useOneShotSignallingMode,
+	)
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:                 pi.Identity,
 		Name:                     pi.Name,
