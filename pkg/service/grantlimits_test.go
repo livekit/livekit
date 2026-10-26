@@ -40,71 +40,81 @@ func grantRequest(grant *auth.ClaimGrants) *http.Request {
 	return r.WithContext(WithGrants(r.Context(), grant, "apikey"))
 }
 
+// ConnectLimitCase is a join token that is over one limit. Every join path must reject it.
+// It is exported so that TestStartSessionConnectLimits in package service_test runs the same cases.
+type ConnectLimitCase struct {
+	Name  string
+	Limit config.LimitConfig
+	Grant func() *auth.ClaimGrants // fresh grant per call, since a join path may change it
+	Err   error
+}
+
+func ConnectLimitCases() []ConnectLimitCase {
+	return []ConnectLimitCase{
+		{
+			Name:  "identity exceeds",
+			Limit: config.LimitConfig{MaxParticipantIdentityLength: 5},
+			Grant: grantWith(func(g *auth.ClaimGrants) { g.Identity = "toolongidentity" }),
+			Err:   ErrParticipantIdentityExceedsLimits,
+		},
+		{
+			Name:  "room name exceeds",
+			Limit: config.LimitConfig{MaxRoomNameLength: 3},
+			Grant: grantWith(func(g *auth.ClaimGrants) { g.Video.Room = "toolongroom" }),
+			Err:   ErrRoomNameExceedsLimits,
+		},
+		{
+			Name:  "name exceeds",
+			Limit: config.LimitConfig{MaxParticipantNameLength: 5},
+			Grant: grantWith(func(g *auth.ClaimGrants) { g.Name = "toolongname" }),
+			Err:   ErrNameExceedsLimits,
+		},
+		{
+			Name:  "metadata exceeds",
+			Limit: config.LimitConfig{MaxMetadataSize: 5},
+			Grant: grantWith(func(g *auth.ClaimGrants) { g.Metadata = "abcdefg" }),
+			Err:   ErrMetadataExceedsLimits,
+		},
+		{
+			Name:  "attributes exceeds",
+			Limit: config.LimitConfig{MaxAttributesSize: 5},
+			Grant: grantWith(func(g *auth.ClaimGrants) { g.Attributes = map[string]string{"k": "abcdefg"} }),
+			Err:   ErrAttributeExceedsLimits,
+		},
+	}
+}
+
+func baseGrant() *auth.ClaimGrants {
+	return &auth.ClaimGrants{
+		Identity: "id",
+		Name:     "name",
+		Video:    &auth.VideoGrant{RoomJoin: true, Room: "room"},
+	}
+}
+
+func grantWith(mutate func(*auth.ClaimGrants)) func() *auth.ClaimGrants {
+	return func() *auth.ClaimGrants {
+		g := baseGrant()
+		mutate(g)
+		return g
+	}
+}
+
 // TestConnectLimits checks that both HTTP join paths (WHIP ingest and the signal connection via
-// ValidateConnectRequest) reject the same over-limit tokens through checkConnectLimits.
+// ValidateConnectRequest) reject every ConnectLimitCase.
 func TestConnectLimits(t *testing.T) {
-	baseGrant := func() *auth.ClaimGrants {
-		return &auth.ClaimGrants{
-			Identity: "id",
-			Name:     "name",
-			Video:    &auth.VideoGrant{RoomJoin: true, Room: "room"},
-		}
-	}
-
-	cases := []struct {
-		name   string
-		limit  config.LimitConfig
-		mutate func(*auth.ClaimGrants)
-		err    error
-	}{
-		{
-			name:   "identity exceeds",
-			limit:  config.LimitConfig{MaxParticipantIdentityLength: 5},
-			mutate: func(g *auth.ClaimGrants) { g.Identity = "toolongidentity" },
-			err:    ErrParticipantIdentityExceedsLimits,
-		},
-		{
-			name:   "room name exceeds",
-			limit:  config.LimitConfig{MaxRoomNameLength: 3},
-			mutate: func(g *auth.ClaimGrants) { g.Video.Room = "toolongroom" },
-			err:    ErrRoomNameExceedsLimits,
-		},
-		{
-			name:   "name exceeds",
-			limit:  config.LimitConfig{MaxParticipantNameLength: 5},
-			mutate: func(g *auth.ClaimGrants) { g.Name = "toolongname" },
-			err:    ErrNameExceedsLimits,
-		},
-		{
-			name:   "metadata exceeds",
-			limit:  config.LimitConfig{MaxMetadataSize: 5},
-			mutate: func(g *auth.ClaimGrants) { g.Metadata = "abcdefg" },
-			err:    ErrMetadataExceedsLimits,
-		},
-		{
-			name:   "attributes exceeds",
-			limit:  config.LimitConfig{MaxAttributesSize: 5},
-			mutate: func(g *auth.ClaimGrants) { g.Attributes = map[string]string{"k": "abcdefg"} },
-			err:    ErrAttributeExceedsLimits,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run("WHIP/"+tc.name, func(t *testing.T) {
-			g := baseGrant()
-			tc.mutate(g)
-			svc := &WHIPService{config: &config.Config{Limit: tc.limit}, roomAllocator: stubRoomAllocator{}}
-			_, code, err := svc.validateCreate(httptest.NewRecorder(), grantRequest(g))
-			require.ErrorIs(t, err, tc.err)
+	for _, tc := range ConnectLimitCases() {
+		t.Run("WHIP/"+tc.Name, func(t *testing.T) {
+			svc := &WHIPService{config: &config.Config{Limit: tc.Limit}, roomAllocator: stubRoomAllocator{}}
+			_, code, err := svc.validateCreate(httptest.NewRecorder(), grantRequest(tc.Grant()))
+			require.ErrorIs(t, err, tc.Err)
 			require.Equal(t, http.StatusBadRequest, code)
 		})
 
-		t.Run("signal/"+tc.name, func(t *testing.T) {
-			g := baseGrant()
-			tc.mutate(g)
+		t.Run("signal/"+tc.Name, func(t *testing.T) {
 			// nil router skips the node-limit check, reaching the grant checks
-			_, code, err := ValidateConnectRequest(logger.GetLogger(), grantRequest(g), tc.limit, ValidateConnectRequestParams{}, nil, stubRoomAllocator{})
-			require.ErrorIs(t, err, tc.err)
+			_, code, err := ValidateConnectRequest(logger.GetLogger(), grantRequest(tc.Grant()), tc.Limit, ValidateConnectRequestParams{}, nil, stubRoomAllocator{})
+			require.ErrorIs(t, err, tc.Err)
 			require.Equal(t, http.StatusBadRequest, code)
 		})
 	}

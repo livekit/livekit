@@ -169,6 +169,28 @@ func TestRoomCompositeEgressOnCreateRoom(t *testing.T) {
 	})
 }
 
+// TestStartSessionConnectLimits checks that StartSession on the RTC node rejects the same
+// over-limit joins as the HTTP join paths, without relying on the caller's validation.
+func TestStartSessionConnectLimits(t *testing.T) {
+	for _, tc := range service.ConnectLimitCases() {
+		t.Run(tc.Name, func(t *testing.T) {
+			conf, err := config.NewConfig("", true, nil, nil)
+			require.NoError(t, err)
+			conf.Limit = tc.Limit
+			rm := newTestRoomManager(t, conf, nil)
+
+			g := tc.Grant()
+			err = rm.StartSession(context.Background(), routing.ParticipantInit{
+				Identity:   livekit.ParticipantIdentity(g.Identity),
+				Grants:     g,
+				Client:     &livekit.ClientInfo{},
+				CreateRoom: &livekit.CreateRoomRequest{Name: g.Video.Room},
+			}, &routingfakes.FakeMessageSource{}, &routingfakes.FakeMessageSink{}, false)
+			require.ErrorIs(t, err, tc.Err)
+		})
+	}
+}
+
 const roomPresetConfig = `
 room:
   room_configurations:
