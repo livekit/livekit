@@ -109,6 +109,16 @@ func TestConnectLimits(t *testing.T) {
 		})
 	}
 
+	t.Run("signal/identity exceeds after publish suffix", func(t *testing.T) {
+		g := baseGrant()
+		g.Video.SetCanPublish(true)
+		// "id" fits a limit of 5, but the final identity "id#abcd" does not
+		params := ValidateConnectRequestParams{publish: "abcd"}
+		_, code, err := ValidateConnectRequest(logger.GetLogger(), grantRequest(g), config.LimitConfig{MaxParticipantIdentityLength: 5}, params, nil, stubRoomAllocator{})
+		require.ErrorIs(t, err, ErrParticipantIdentityExceedsLimits)
+		require.Equal(t, http.StatusBadRequest, code)
+	})
+
 	t.Run("within limits", func(t *testing.T) {
 		limit := config.LimitConfig{MaxParticipantIdentityLength: 5, MaxRoomNameLength: 10, MaxParticipantNameLength: 5, MaxMetadataSize: 5, MaxAttributesSize: 5}
 		_, code, err := ValidateConnectRequest(logger.GetLogger(), grantRequest(baseGrant()), limit, ValidateConnectRequestParams{}, nil, stubRoomAllocator{})

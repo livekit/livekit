@@ -407,11 +407,6 @@ func ValidateConnectRequest(
 		}
 	}
 
-	// check all join limits in one place, on the final identity, room name and grants
-	if code, err := checkConnectLimits(limitConfig, claims.Identity, res.roomName, claims); err != nil {
-		return res, code, err
-	}
-
 	// this is new connection for existing participant -  with publish only permissions
 	if params.publish != "" {
 		// Make sure grant has GetCanPublish set,
@@ -421,6 +416,11 @@ func ValidateConnectRequest(
 		// Make sure by default subscribe is off
 		claims.Video.SetCanSubscribe(false)
 		claims.Identity += "#" + params.publish
+	}
+
+	// after the publish suffix, so the identity checked is the one StartSession sees
+	if err := checkConnectLimits(limitConfig, claims.Identity, res.roomName, claims); err != nil {
+		return res, http.StatusBadRequest, err
 	}
 
 	// room allocator validations
@@ -454,27 +454,26 @@ func ValidateConnectRequest(
 	return res, http.StatusOK, nil
 }
 
-// checkConnectLimits validates a join's identity, room name, participant name, metadata and
-// attributes against the configured limits. It is the single place that enforces every join
-// limit and the common guard for the HTTP join paths. StartSession keeps its own name, metadata
-// and attribute checks as the backstop for paths (WHIP) that do not reach here.
-func checkConnectLimits(limitConfig config.LimitConfig, identity string, roomName livekit.RoomName, grants *auth.ClaimGrants) (int, error) {
+// checkConnectLimits checks a join's identity, room name, participant name, metadata and
+// attributes against the configured limits. Every join path runs it: the signal connection,
+// WHIP, and StartSession on the RTC node, which does not trust the caller's validation.
+func checkConnectLimits(limitConfig config.LimitConfig, identity string, roomName livekit.RoomName, grants *auth.ClaimGrants) error {
 	if !limitConfig.CheckParticipantIdentityLength(identity) {
-		return http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrParticipantIdentityExceedsLimits, limitConfig.MaxParticipantIdentityLength)
+		return fmt.Errorf("%w: max length %d", ErrParticipantIdentityExceedsLimits, limitConfig.MaxParticipantIdentityLength)
 	}
 	if !limitConfig.CheckRoomNameLength(string(roomName)) {
-		return http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, limitConfig.MaxRoomNameLength)
+		return fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, limitConfig.MaxRoomNameLength)
 	}
 	if !limitConfig.CheckParticipantNameLength(grants.Name) {
-		return http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrNameExceedsLimits, limitConfig.MaxParticipantNameLength)
+		return fmt.Errorf("%w: max length %d", ErrNameExceedsLimits, limitConfig.MaxParticipantNameLength)
 	}
 	if !limitConfig.CheckMetadataSize(grants.Metadata) {
-		return http.StatusBadRequest, fmt.Errorf("%w: max size %d", ErrMetadataExceedsLimits, limitConfig.MaxMetadataSize)
+		return fmt.Errorf("%w: max size %d", ErrMetadataExceedsLimits, limitConfig.MaxMetadataSize)
 	}
 	if !limitConfig.CheckAttributesSize(grants.Attributes) {
-		return http.StatusBadRequest, fmt.Errorf("%w: max size %d", ErrAttributeExceedsLimits, limitConfig.MaxAttributesSize)
+		return fmt.Errorf("%w: max size %d", ErrAttributeExceedsLimits, limitConfig.MaxAttributesSize)
 	}
-	return http.StatusOK, nil
+	return nil
 }
 
 func IsRTCPath(path string) bool {
