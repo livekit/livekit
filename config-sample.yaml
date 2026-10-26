@@ -276,6 +276,17 @@ keys:
 #   urls:
 #     - https://your-host.com/handler
 
+# FK fork: synchronous pre-join Kevlar AT validation via icap-gateway.
+# When url is set, RTC joins (non-agent) must pass participantAttributes.at;
+# SFU GETs this URL with header "at" and rejects the WebSocket unless 200 + accountId.
+# Use playground vs prod gateway URLs per environment (helm values).
+# kevlar_auth_handler:
+#   url: https://chat.pg.flipkart.com/icap-gateway/v1/validate
+#   timeout: 2s
+#   token_attribute: at
+#   tenant_attribute: x-tenant-id
+#   require_account_match: false
+
 # Signal Relay
 # since v1.4.0, a more reliable, psrpc based signal relay is available
 # this gives us the ability to reliably proxy messages between a signal server and RTC node
