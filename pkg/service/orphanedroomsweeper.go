@@ -46,8 +46,8 @@ type OrphanedRoomStore interface {
 	UnlockRoom(ctx context.Context, roomName livekit.RoomName, uid string) error
 	LoadRoom(ctx context.Context, roomName livekit.RoomName, includeInternal bool) (*livekit.Room, *livekit.RoomInternal, error)
 	ListRoomNames(ctx context.Context) ([]livekit.RoomName, error)
+	CountParticipants(ctx context.Context, roomNames []livekit.RoomName) (map[livekit.RoomName]int, error)
 	StoreRoom(ctx context.Context, room *livekit.Room, internal *livekit.RoomInternal) error
-	StoreParticipant(ctx context.Context, roomName livekit.RoomName, participant *livekit.ParticipantInfo) error
 	DeleteRoom(ctx context.Context, roomName livekit.RoomName) error
 }
 
@@ -57,7 +57,11 @@ type HostedRoom interface {
 	IsClosed() bool
 	ToProto() *livekit.Room
 	Internal() *livekit.RoomInternal
-	ParticipantInfos() []*livekit.ParticipantInfo
+	// ParticipantCount returns the number of connected participants
+	ParticipantCount() int
+	// StoreParticipants stores the records of connected participants, serialized with the writes made as
+	// they join, change and leave
+	StoreParticipants(ctx context.Context) error
 }
 
 // orphanedRoom is a room assigned to a node that is not available, or stored without assignment
@@ -79,7 +83,8 @@ type orphanedRoom struct {
 //
 // A node that recovers while its rooms are being deleted cannot be told apart atomically, as node and room
 // state live in different keys. Instead, a node restores the state of rooms it still hosts that were
-// deleted while it was unavailable.
+// deleted while it was unavailable. As room callbacks may recreate part of that state first, a room is
+// restored until its routing, record and participants are all present, and once more after a failure.
 type OrphanedRoomSweeper struct {
 	router      OrphanedRoomRouter
 	roomStore   OrphanedRoomStore
@@ -87,7 +92,8 @@ type OrphanedRoomSweeper struct {
 	hostedRooms func() []HostedRoom
 	gracePeriod time.Duration
 
-	orphaned map[livekit.RoomName]orphanedRoom
+	orphaned   map[livekit.RoomName]orphanedRoom
+	unrestored map[livekit.RoomName]bool
 }
 
 func NewOrphanedRoomSweeper(
@@ -104,6 +110,7 @@ func NewOrphanedRoomSweeper(
 		hostedRooms: hostedRooms,
 		gracePeriod: gracePeriod,
 		orphaned:    make(map[livekit.RoomName]orphanedRoom),
+		unrestored:  make(map[livekit.RoomName]bool),
 	}
 }
 
@@ -144,19 +151,7 @@ func (s *OrphanedRoomSweeper) Sweep(ctx context.Context) {
 		storedRooms[roomName] = true
 	}
 
-	for _, room := range s.hostedRooms() {
-		roomName := room.Name()
-		nodeID, routed := roomNodes[roomName]
-		if routed && (nodeID != s.nodeID || storedRooms[roomName]) {
-			continue
-		}
-		if err := s.restoreRoom(ctx, room); err != nil {
-			logger.Warnw("could not restore hosted room", err, "room", roomName)
-			continue
-		}
-		roomNodes[roomName] = s.nodeID
-		storedRooms[roomName] = true
-	}
+	s.restoreHostedRooms(ctx, roomNodes, storedRooms)
 
 	for roomName := range storedRooms {
 		if _, ok := roomNodes[roomName]; !ok {
@@ -241,7 +236,49 @@ func (s *OrphanedRoomSweeper) deleteIfOrphaned(ctx context.Context, roomName liv
 	return true, nil
 }
 
-// restoreRoom stores a room hosted by this node whose state was deleted while this node was unavailable
+// restoreHostedRooms restores rooms hosted by this node whose state is incomplete
+func (s *OrphanedRoomSweeper) restoreHostedRooms(ctx context.Context, roomNodes map[livekit.RoomName]livekit.NodeID, storedRooms map[livekit.RoomName]bool) {
+	hostedRooms := s.hostedRooms()
+	var counted []livekit.RoomName
+	for _, room := range hostedRooms {
+		if roomNodes[room.Name()] == s.nodeID && storedRooms[room.Name()] {
+			counted = append(counted, room.Name())
+		}
+	}
+	participantCounts, err := s.roomStore.CountParticipants(ctx, counted)
+	if err != nil {
+		logger.Warnw("could not count participants of hosted rooms", err)
+		return
+	}
+
+	unrestored := make(map[livekit.RoomName]bool)
+	for _, room := range hostedRooms {
+		roomName := room.Name()
+		if room.IsClosed() {
+			continue
+		}
+		nodeID, routed := roomNodes[roomName]
+		if routed && nodeID != s.nodeID {
+			// a join reassigned it to another node
+			continue
+		}
+		// a count above the connected participants is left alone, as records are stored as they join
+		if routed && storedRooms[roomName] && participantCounts[roomName] >= room.ParticipantCount() && !s.unrestored[roomName] {
+			continue
+		}
+		if err := s.restoreRoom(ctx, room); err != nil {
+			logger.Warnw("could not restore hosted room", err, "room", roomName)
+			unrestored[roomName] = true
+			continue
+		}
+		roomNodes[roomName] = s.nodeID
+		storedRooms[roomName] = true
+	}
+	s.unrestored = unrestored
+}
+
+// restoreRoom stores the state of a room hosted by this node, which may have been deleted while this node was
+// unavailable
 func (s *OrphanedRoomSweeper) restoreRoom(ctx context.Context, room HostedRoom) error {
 	roomName := room.Name()
 	token, err := s.roomStore.LockRoom(ctx, roomName, 5*time.Second)
@@ -261,14 +298,11 @@ func (s *OrphanedRoomSweeper) restoreRoom(ctx context.Context, room HostedRoom) 
 		return err
 	}
 
+	if err = room.StoreParticipants(ctx); err != nil {
+		return err
+	}
 	_, _, err = s.roomStore.LoadRoom(ctx, roomName, false)
 	if errors.Is(err, ErrRoomNotFound) {
-		// the room record goes last: a room is restored once it is stored, so a failure before is retried
-		for _, p := range room.ParticipantInfos() {
-			if err = s.roomStore.StoreParticipant(ctx, roomName, p); err != nil {
-				return err
-			}
-		}
 		if err = s.roomStore.StoreRoom(ctx, room.ToProto(), room.Internal()); err != nil {
 			return err
 		}

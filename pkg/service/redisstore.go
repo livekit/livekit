@@ -357,6 +357,23 @@ func (s *RedisStore) ListParticipants(_ context.Context, roomName livekit.RoomNa
 	return participants, nil
 }
 
+// CountParticipants returns the number of stored participants of each room
+func (s *RedisStore) CountParticipants(_ context.Context, roomNames []livekit.RoomName) (map[livekit.RoomName]int, error) {
+	pp := s.rc.Pipeline()
+	cmds := make([]*redis.IntCmd, len(roomNames))
+	for i, roomName := range roomNames {
+		cmds[i] = pp.HLen(s.ctx, RoomParticipantsPrefix+string(roomName))
+	}
+	if _, err := pp.Exec(s.ctx); err != nil {
+		return nil, err
+	}
+	counts := make(map[livekit.RoomName]int, len(roomNames))
+	for i, roomName := range roomNames {
+		counts[roomName] = int(cmds[i].Val())
+	}
+	return counts, nil
+}
+
 func (s *RedisStore) DeleteParticipant(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) error {
 	key := RoomParticipantsPrefix + string(roomName)
 

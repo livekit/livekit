@@ -198,6 +198,7 @@ func TestOrphanedRoomSweeper(t *testing.T) {
 		ot.hosted = []service.HostedRoom{&fakeHostedRoom{
 			room:         &livekit.Room{Sid: "RM_hosted", Name: "hosted", CreationTime: longAgo.Unix(), EmptyTimeout: 300},
 			participants: []*livekit.ParticipantInfo{{Sid: "PA_1", Identity: "p1"}},
+			store:        ot.store,
 		}}
 
 		ot.sweeper(0).Sweep(ot.ctx)
@@ -215,6 +216,7 @@ func TestOrphanedRoomSweeper(t *testing.T) {
 			participants: []*livekit.ParticipantInfo{{Sid: "PA_1", Identity: "p1"}},
 		}}
 		store := &failingStoreParticipantStore{RedisStore: ot.store, failures: 1}
+		ot.hosted[0].(*fakeHostedRoom).store = store
 		sweeper := service.NewOrphanedRoomSweeper(ot.router, store, sweepingNode, ot.hostedRooms, 0)
 
 		sweeper.Sweep(ot.ctx)
@@ -236,6 +238,7 @@ func TestOrphanedRoomSweeper(t *testing.T) {
 			},
 		}}
 		store := &failingStoreParticipantStore{RedisStore: ot.store, failAfter: 1, failures: 1}
+		ot.hosted[0].(*fakeHostedRoom).store = store
 		service.NewOrphanedRoomSweeper(ot.router, store, sweepingNode, ot.hostedRooms, 0).Sweep(ot.ctx)
 
 		// the room closes before the next sweep, deleting its state
@@ -247,6 +250,41 @@ func TestOrphanedRoomSweeper(t *testing.T) {
 		participants, err := ot.store.ListParticipants(ot.ctx, "demo")
 		require.NoError(t, err)
 		require.Empty(t, participants)
+	})
+
+	t.Run("restores participants of a room whose record was recreated", func(t *testing.T) {
+		ot := newOrphanedRoomTest(t)
+		// a room update stored the record again before the sweep, while routing is still gone
+		ot.createRoom("hosted", sweepingNode, longAgo, 300)
+		require.NoError(t, ot.router.ClearRoomState(ot.ctx, "hosted"))
+		ot.hosted = []service.HostedRoom{&fakeHostedRoom{
+			room:         &livekit.Room{Sid: "RM_hosted", Name: "hosted", CreationTime: longAgo.Unix(), EmptyTimeout: 300},
+			participants: []*livekit.ParticipantInfo{{Sid: "PA_1", Identity: "p1"}},
+			store:        ot.store,
+		}}
+
+		ot.sweeper(0).Sweep(ot.ctx)
+
+		ot.requireRoom("hosted", sweepingNode)
+		found, err := ot.store.HasParticipant(ot.ctx, "hosted", "p1")
+		require.NoError(t, err)
+		require.True(t, found)
+	})
+
+	t.Run("restores participants of a room whose routing and record were recreated", func(t *testing.T) {
+		ot := newOrphanedRoomTest(t)
+		ot.createRoom("hosted", sweepingNode, longAgo, 300)
+		ot.hosted = []service.HostedRoom{&fakeHostedRoom{
+			room:         &livekit.Room{Sid: "RM_hosted", Name: "hosted", CreationTime: longAgo.Unix(), EmptyTimeout: 300},
+			participants: []*livekit.ParticipantInfo{{Sid: "PA_1", Identity: "p1"}},
+			store:        ot.store,
+		}}
+
+		ot.sweeper(0).Sweep(ot.ctx)
+
+		found, err := ot.store.HasParticipant(ot.ctx, "hosted", "p1")
+		require.NoError(t, err)
+		require.True(t, found)
 	})
 
 	t.Run("does not restore a hosted room reassigned to another node", func(t *testing.T) {
@@ -365,14 +403,28 @@ func (r *recoveringRouter) ListRoomNodes(ctx context.Context) (map[livekit.RoomN
 type fakeHostedRoom struct {
 	room         *livekit.Room
 	participants []*livekit.ParticipantInfo
+	store        participantStore
 	closed       bool
 }
 
-func (r *fakeHostedRoom) Name() livekit.RoomName                       { return livekit.RoomName(r.room.Name) }
-func (r *fakeHostedRoom) IsClosed() bool                               { return r.closed }
-func (r *fakeHostedRoom) ToProto() *livekit.Room                       { return r.room }
-func (r *fakeHostedRoom) Internal() *livekit.RoomInternal              { return nil }
-func (r *fakeHostedRoom) ParticipantInfos() []*livekit.ParticipantInfo { return r.participants }
+type participantStore interface {
+	StoreParticipant(ctx context.Context, roomName livekit.RoomName, participant *livekit.ParticipantInfo) error
+}
+
+func (r *fakeHostedRoom) Name() livekit.RoomName          { return livekit.RoomName(r.room.Name) }
+func (r *fakeHostedRoom) IsClosed() bool                  { return r.closed }
+func (r *fakeHostedRoom) ToProto() *livekit.Room          { return r.room }
+func (r *fakeHostedRoom) Internal() *livekit.RoomInternal { return nil }
+func (r *fakeHostedRoom) ParticipantCount() int           { return len(r.participants) }
+
+func (r *fakeHostedRoom) StoreParticipants(ctx context.Context) error {
+	for _, p := range r.participants {
+		if err := r.store.StoreParticipant(ctx, r.Name(), p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 type failingStoreParticipantStore struct {
 	*service.RedisStore
