@@ -251,12 +251,9 @@ func (s *RedisStore) ListRoomNames(_ context.Context) ([]livekit.RoomName, error
 	return livekit.StringsAsIDs[livekit.RoomName](names), nil
 }
 
+// DeleteRoom deletes the room's state, also when its record is already gone, e.g. after a partial deletion
+// or restoration
 func (s *RedisStore) DeleteRoom(ctx context.Context, roomName livekit.RoomName) error {
-	_, _, err := s.LoadRoom(ctx, roomName, false)
-	if err == ErrRoomNotFound {
-		return nil
-	}
-
 	pp := s.rc.Pipeline()
 	pp.HDel(s.ctx, RoomsKey, string(roomName))
 	pp.HDel(s.ctx, RoomInternalKey, string(roomName))
@@ -264,7 +261,7 @@ func (s *RedisStore) DeleteRoom(ctx context.Context, roomName livekit.RoomName) 
 	pp.Del(s.ctx, AgentDispatchPrefix+string(roomName))
 	pp.Del(s.ctx, AgentJobPrefix+string(roomName))
 
-	_, err = pp.Exec(s.ctx)
+	_, err := pp.Exec(s.ctx)
 	return err
 }
 
