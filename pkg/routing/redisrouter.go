@@ -38,6 +38,12 @@ const (
 
 	// hash of room_name => node_id
 	NodeRoomKey = "room_node_map"
+
+	// deletes a room's node assignment only while it still points at the given node
+	clearRoomForNodeScript = `if redis.call("hget", KEYS[1], ARGV[1]) == ARGV[2] then
+		return redis.call("hdel", KEYS[1], ARGV[1])
+	else return 0
+	end`
 )
 
 var _ Router = (*RedisRouter)(nil)
@@ -53,6 +59,8 @@ type RedisRouter struct {
 	ctx       context.Context
 	isStarted atomic.Bool
 
+	clearRoomForNode *redis.Script
+
 	cancel func()
 }
 
@@ -61,6 +69,8 @@ func NewRedisRouter(lr *LocalRouter, rc redis.UniversalClient, kps rpc.Keepalive
 		LocalRouter: lr,
 		rc:          rc,
 		kps:         kps,
+
+		clearRoomForNode: redis.NewScript(clearRoomForNodeScript),
 	}
 	rr.ctx, rr.cancel = context.WithCancel(context.Background())
 	return rr
@@ -118,6 +128,29 @@ func (r *RedisRouter) ClearRoomState(_ context.Context, roomName livekit.RoomNam
 		return errors.Wrap(err, "could not clear room state")
 	}
 	return nil
+}
+
+// ListRoomNodes returns the node assignment of every routed room
+func (r *RedisRouter) ListRoomNodes(ctx context.Context) (map[livekit.RoomName]livekit.NodeID, error) {
+	items, err := r.rc.HGetAll(ctx, NodeRoomKey).Result()
+	if err != nil {
+		return nil, errors.Wrap(err, "could not list room nodes")
+	}
+	roomNodes := make(map[livekit.RoomName]livekit.NodeID, len(items))
+	for roomName, nodeID := range items {
+		roomNodes[livekit.RoomName(roomName)] = livekit.NodeID(nodeID)
+	}
+	return roomNodes, nil
+}
+
+// ClearRoomStateForNode clears the room's node assignment only if it is still assigned to nodeID,
+// so that a room reassigned in the meantime keeps its routing. Returns whether it was cleared.
+func (r *RedisRouter) ClearRoomStateForNode(ctx context.Context, roomName livekit.RoomName, nodeID livekit.NodeID) (bool, error) {
+	res, err := r.clearRoomForNode.Run(ctx, r.rc, []string{NodeRoomKey}, string(roomName), string(nodeID)).Int64()
+	if err != nil {
+		return false, errors.Wrap(err, "could not clear room state")
+	}
+	return res == 1, nil
 }
 
 func (r *RedisRouter) GetNode(nodeID livekit.NodeID) (*livekit.Node, error) {

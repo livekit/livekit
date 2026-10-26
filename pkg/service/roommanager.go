@@ -105,6 +105,8 @@ type RoomManager struct {
 
 	subscribePacer *rtc.SubscribePacer
 
+	orphanedRoomSweeper *OrphanedRoomSweeper
+
 	rpc.UnimplementedParticipantServer
 	rpc.UnimplementedRoomServer
 	rpc.UnimplementedRoomManagerServer
@@ -160,6 +162,10 @@ func NewLocalRoomManager(
 			Region:        conf.Region,
 			NodeId:        string(currentNode.NodeID()),
 		},
+	}
+
+	if or, ok := router.(OrphanedRoomRouter); ok {
+		r.orphanedRoomSweeper = NewOrphanedRoomSweeper(or, roomStore, currentNode.NodeID(), OrphanedRoomGracePeriod)
 	}
 
 	r.roomManagerServer, err = rpc.NewTypedRoomManagerServer(r, bus, rpc.WithServerLogger(logger.GetLogger()), middleware.WithServerMetrics(rpc.PSRPCMetricsObserver{}), psrpc.WithServerChannelSize(conf.PSRPC.BufferSize))
@@ -227,6 +233,13 @@ func (r *RoomManager) CloseIdleRooms() {
 
 	for _, room := range rooms {
 		room.CloseIfEmpty()
+	}
+}
+
+// DeleteOrphanedRooms deletes rooms left behind by nodes that are gone, when routing is shared across nodes
+func (r *RoomManager) DeleteOrphanedRooms(ctx context.Context) {
+	if r.orphanedRoomSweeper != nil {
+		r.orphanedRoomSweeper.Sweep(ctx)
 	}
 }
 

@@ -1,0 +1,209 @@
+// Copyright 2026 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package service_test
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
+
+	"github.com/livekit/protocol/livekit"
+
+	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/service"
+)
+
+const (
+	sweepingNode = livekit.NodeID("ND_sweeping")
+	liveNode     = livekit.NodeID("ND_live")
+	deadNode     = livekit.NodeID("ND_dead")
+)
+
+type orphanedRoomTest struct {
+	t      *testing.T
+	ctx    context.Context
+	rc     redis.UniversalClient
+	router *routing.RedisRouter
+	store  *service.RedisStore
+}
+
+func newOrphanedRoomTest(t *testing.T) *orphanedRoomTest {
+	rc := redisClientDocker(t)
+	ot := &orphanedRoomTest{
+		t:      t,
+		ctx:    context.Background(),
+		rc:     rc,
+		router: routing.NewRedisRouter(nil, rc, nil),
+		store:  service.NewRedisStore(rc),
+	}
+	ot.registerNode(sweepingNode, time.Now())
+	ot.registerNode(liveNode, time.Now())
+	return ot
+}
+
+func (ot *orphanedRoomTest) registerNode(nodeID livekit.NodeID, updatedAt time.Time) {
+	data, err := proto.Marshal(&livekit.Node{
+		Id:    string(nodeID),
+		State: livekit.NodeState_SERVING,
+		Stats: &livekit.NodeStats{UpdatedAt: updatedAt.Unix()},
+	})
+	require.NoError(ot.t, err)
+	require.NoError(ot.t, ot.rc.HSet(ot.ctx, routing.NodesKey, string(nodeID), data).Err())
+}
+
+func (ot *orphanedRoomTest) createRoom(name livekit.RoomName, nodeID livekit.NodeID, createdAt time.Time, emptyTimeout uint32) {
+	ot.createRoomWithDepartureTimeout(name, nodeID, createdAt, emptyTimeout, 0)
+}
+
+func (ot *orphanedRoomTest) createRoomWithDepartureTimeout(name livekit.RoomName, nodeID livekit.NodeID, createdAt time.Time, emptyTimeout, departureTimeout uint32) {
+	require.NoError(ot.t, ot.store.StoreRoom(ot.ctx, &livekit.Room{
+		Sid:              "RM_" + string(name),
+		Name:             string(name),
+		CreationTime:     createdAt.Unix(),
+		EmptyTimeout:     emptyTimeout,
+		DepartureTimeout: departureTimeout,
+	}, nil))
+	require.NoError(ot.t, ot.router.SetNodeForRoom(ot.ctx, name, nodeID))
+}
+
+func (ot *orphanedRoomTest) sweeper(gracePeriod time.Duration) *service.OrphanedRoomSweeper {
+	return service.NewOrphanedRoomSweeper(ot.router, ot.store, sweepingNode, gracePeriod)
+}
+
+func (ot *orphanedRoomTest) requireRoom(name livekit.RoomName, nodeID livekit.NodeID) {
+	ot.t.Helper()
+	exists, err := ot.store.RoomExists(ot.ctx, name)
+	require.NoError(ot.t, err)
+	require.True(ot.t, exists, "room %s should exist", name)
+	roomNodes, err := ot.router.ListRoomNodes(ot.ctx)
+	require.NoError(ot.t, err)
+	require.Equal(ot.t, nodeID, roomNodes[name])
+}
+
+func (ot *orphanedRoomTest) requireNoRoom(name livekit.RoomName) {
+	ot.t.Helper()
+	exists, err := ot.store.RoomExists(ot.ctx, name)
+	require.NoError(ot.t, err)
+	require.False(ot.t, exists, "room %s should be deleted", name)
+	roomNodes, err := ot.router.ListRoomNodes(ot.ctx)
+	require.NoError(ot.t, err)
+	require.NotContains(ot.t, roomNodes, name)
+}
+
+func TestOrphanedRoomSweeper(t *testing.T) {
+	longAgo := time.Now().Add(-time.Hour)
+
+	t.Run("deletes rooms of a node that left the cluster", func(t *testing.T) {
+		ot := newOrphanedRoomTest(t)
+		ot.createRoom("orphaned", deadNode, longAgo, 300)
+		ot.createRoom("hosted", liveNode, longAgo, 300)
+
+		ot.sweeper(0).Sweep(ot.ctx)
+
+		ot.requireNoRoom("orphaned")
+		ot.requireRoom("hosted", liveNode)
+	})
+
+	t.Run("deletes rooms of a node that stopped updating", func(t *testing.T) {
+		ot := newOrphanedRoomTest(t)
+		ot.registerNode(deadNode, longAgo)
+		ot.createRoom("orphaned", deadNode, longAgo, 300)
+
+		ot.sweeper(0).Sweep(ot.ctx)
+
+		ot.requireNoRoom("orphaned")
+	})
+
+	t.Run("keeps a room through the grace period", func(t *testing.T) {
+		ot := newOrphanedRoomTest(t)
+		ot.createRoom("orphaned", deadNode, longAgo, 300)
+		sweeper := ot.sweeper(time.Hour)
+
+		sweeper.Sweep(ot.ctx)
+		sweeper.Sweep(ot.ctx)
+
+		ot.requireRoom("orphaned", deadNode)
+	})
+
+	t.Run("keeps a room until its empty timeout", func(t *testing.T) {
+		ot := newOrphanedRoomTest(t)
+		ot.createRoom("awaiting-first-join", deadNode, time.Now(), 300)
+
+		ot.sweeper(0).Sweep(ot.ctx)
+
+		ot.requireRoom("awaiting-first-join", deadNode)
+	})
+
+	t.Run("keeps a room until its departure timeout", func(t *testing.T) {
+		ot := newOrphanedRoomTest(t)
+		ot.createRoomWithDepartureTimeout("awaiting-rejoin", deadNode, longAgo, 300, 300)
+
+		ot.sweeper(0).Sweep(ot.ctx)
+
+		ot.requireRoom("awaiting-rejoin", deadNode)
+	})
+
+	t.Run("keeps a room reassigned after it was observed", func(t *testing.T) {
+		ot := newOrphanedRoomTest(t)
+		ot.createRoom("rejoined", deadNode, longAgo, 300)
+		sweeper := service.NewOrphanedRoomSweeper(&reassigningRouter{
+			RedisRouter: ot.router,
+			roomName:    "rejoined",
+			nodeID:      liveNode,
+		}, ot.store, sweepingNode, 0)
+
+		sweeper.Sweep(ot.ctx)
+
+		ot.requireRoom("rejoined", liveNode)
+	})
+
+	t.Run("does nothing while its own node is stale", func(t *testing.T) {
+		ot := newOrphanedRoomTest(t)
+		ot.registerNode(sweepingNode, longAgo)
+		ot.createRoom("orphaned", deadNode, longAgo, 300)
+
+		ot.sweeper(0).Sweep(ot.ctx)
+
+		ot.requireRoom("orphaned", deadNode)
+	})
+
+	t.Run("clears routing left without a room", func(t *testing.T) {
+		ot := newOrphanedRoomTest(t)
+		require.NoError(t, ot.router.SetNodeForRoom(ot.ctx, "routing-only", deadNode))
+
+		ot.sweeper(0).Sweep(ot.ctx)
+
+		ot.requireNoRoom("routing-only")
+	})
+}
+
+// reassigningRouter simulates a join moving the room to a live node right after the sweeper observed it
+type reassigningRouter struct {
+	*routing.RedisRouter
+	roomName livekit.RoomName
+	nodeID   livekit.NodeID
+}
+
+func (r *reassigningRouter) ListRoomNodes(ctx context.Context) (map[livekit.RoomName]livekit.NodeID, error) {
+	roomNodes, err := r.RedisRouter.ListRoomNodes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return roomNodes, r.SetNodeForRoom(ctx, r.roomName, r.nodeID)
+}
