@@ -382,6 +382,14 @@ func (w *Worker) GetJobState(jobID livekit.JobID) (*livekit.JobState, error) {
 	return proto.CloneOf(j.State), nil
 }
 
+// AttachJob tracks a job the worker already runs as if it had been assigned
+// to it, so its status updates and termination are handled.
+func (w *Worker) AttachJob(job *livekit.Job) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.runningJobs[livekit.JobID(job.Id)] = proto.CloneOf(job)
+}
+
 func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook AssignmentHook) (*livekit.JobState, error) {
 	availCh := make(chan *livekit.AvailabilityResponse, 1)
 	job = proto.CloneOf(job)

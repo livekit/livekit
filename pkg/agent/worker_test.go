@@ -12,6 +12,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/agent/endpoint/wire"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 )
 
 type nopSignalConn struct{}
@@ -75,4 +76,22 @@ func TestHandleRegisterWithoutEndpointsIgnoresReservedNames(t *testing.T) {
 			AgentName: name,
 		}), name)
 	}
+}
+
+func TestAttachJob(t *testing.T) {
+	w := agent.NewWorker(agent.MakeWorkerRegistration(), "key", "secret", nopSignalConn{}, logger.GetLogger())
+	job := &livekit.Job{
+		Id:    "AJ_attached",
+		State: &livekit.JobState{Status: livekit.JobStatus_JS_RUNNING, StartedAt: 1},
+	}
+	w.AttachJob(job)
+
+	state, err := w.GetJobState("AJ_attached")
+	require.NoError(t, err)
+	require.Equal(t, int64(1), state.StartedAt)
+
+	state, err = w.UpdateJobStatus(&livekit.UpdateJobStatus{JobId: job.Id, Status: livekit.JobStatus_JS_SUCCESS})
+	require.NoError(t, err)
+	require.Equal(t, livekit.JobStatus_JS_SUCCESS, state.Status)
+	require.Zero(t, w.RunningJobCount())
 }
