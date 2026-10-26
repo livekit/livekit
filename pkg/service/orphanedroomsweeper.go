@@ -263,13 +263,14 @@ func (s *OrphanedRoomSweeper) restoreRoom(ctx context.Context, room HostedRoom) 
 
 	_, _, err = s.roomStore.LoadRoom(ctx, roomName, false)
 	if errors.Is(err, ErrRoomNotFound) {
-		if err = s.roomStore.StoreRoom(ctx, room.ToProto(), room.Internal()); err != nil {
-			return err
-		}
+		// the room record goes last: a room is restored once it is stored, so a failure before is retried
 		for _, p := range room.ParticipantInfos() {
 			if err = s.roomStore.StoreParticipant(ctx, roomName, p); err != nil {
 				return err
 			}
+		}
+		if err = s.roomStore.StoreRoom(ctx, room.ToProto(), room.Internal()); err != nil {
+			return err
 		}
 		logger.Infow("restored hosted room", "room", roomName)
 	} else if err != nil {

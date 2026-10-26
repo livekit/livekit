@@ -208,6 +208,24 @@ func TestOrphanedRoomSweeper(t *testing.T) {
 		require.True(t, found)
 	})
 
+	t.Run("retries restoring a room whose participants failed to store", func(t *testing.T) {
+		ot := newOrphanedRoomTest(t)
+		ot.hosted = []service.HostedRoom{&fakeHostedRoom{
+			room:         &livekit.Room{Sid: "RM_hosted", Name: "hosted", CreationTime: longAgo.Unix(), EmptyTimeout: 300},
+			participants: []*livekit.ParticipantInfo{{Sid: "PA_1", Identity: "p1"}},
+		}}
+		store := &failingStoreParticipantStore{RedisStore: ot.store, failures: 1}
+		sweeper := service.NewOrphanedRoomSweeper(ot.router, store, sweepingNode, ot.hostedRooms, 0)
+
+		sweeper.Sweep(ot.ctx)
+		sweeper.Sweep(ot.ctx)
+
+		ot.requireRoom("hosted", sweepingNode)
+		found, err := ot.store.HasParticipant(ot.ctx, "hosted", "p1")
+		require.NoError(t, err)
+		require.True(t, found)
+	})
+
 	t.Run("does not restore a hosted room reassigned to another node", func(t *testing.T) {
 		ot := newOrphanedRoomTest(t)
 		require.NoError(t, ot.router.SetNodeForRoom(ot.ctx, "hosted", liveNode))
@@ -332,3 +350,16 @@ func (r *fakeHostedRoom) IsClosed() bool                               { return 
 func (r *fakeHostedRoom) ToProto() *livekit.Room                       { return r.room }
 func (r *fakeHostedRoom) Internal() *livekit.RoomInternal              { return nil }
 func (r *fakeHostedRoom) ParticipantInfos() []*livekit.ParticipantInfo { return r.participants }
+
+type failingStoreParticipantStore struct {
+	*service.RedisStore
+	failures int
+}
+
+func (s *failingStoreParticipantStore) StoreParticipant(ctx context.Context, roomName livekit.RoomName, participant *livekit.ParticipantInfo) error {
+	if s.failures > 0 {
+		s.failures--
+		return errors.New("store failed")
+	}
+	return s.RedisStore.StoreParticipant(ctx, roomName, participant)
+}
