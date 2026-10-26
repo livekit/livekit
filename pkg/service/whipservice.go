@@ -131,15 +131,12 @@ func (s *WHIPService) validateCreate(w http.ResponseWriter, r *http.Request) (*c
 	if roomName == "" {
 		return nil, http.StatusUnauthorized, errors.New("room name cannot be empty")
 	}
-	if !s.config.Limit.CheckRoomNameLength(string(roomName)) {
-		return nil, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, s.config.Limit.MaxRoomNameLength)
-	}
-
 	if claims.Identity == "" {
 		return nil, http.StatusBadRequest, ErrIdentityEmpty
 	}
-	if !s.config.Limit.CheckParticipantIdentityLength(claims.Identity) {
-		return nil, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrParticipantIdentityExceedsLimits, s.config.Limit.MaxParticipantIdentityLength)
+
+	if err := checkConnectLimits(s.config.Limit, claims.Identity, roomName, claims); err != nil {
+		return nil, http.StatusBadRequest, err
 	}
 
 	if err := s.roomAllocator.ValidateCreateRoom(r.Context(), roomName); err != nil {

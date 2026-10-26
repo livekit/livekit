@@ -366,9 +366,6 @@ func ValidateConnectRequest(
 	if claims.Identity == "" {
 		return res, http.StatusBadRequest, ErrIdentityEmpty
 	}
-	if !limitConfig.CheckParticipantIdentityLength(claims.Identity) {
-		return res, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrParticipantIdentityExceedsLimits, limitConfig.MaxParticipantIdentityLength)
-	}
 
 	if claims.RoomConfig != nil {
 		if err := claims.RoomConfig.CheckCredentials(); err != nil {
@@ -384,8 +381,30 @@ func ValidateConnectRequest(
 	if res.roomName == "" {
 		return res, http.StatusBadRequest, ErrNoRoomName
 	}
-	if !limitConfig.CheckRoomNameLength(string(res.roomName)) {
-		return res, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, limitConfig.MaxRoomNameLength)
+
+	if len(params.metadata) != 0 {
+		// Make sure grant has GetCanUpdateOwnMetadata set
+		if !claims.Video.GetCanUpdateOwnMetadata() {
+			return res, http.StatusUnauthorized, rtc.ErrPermissionDenied
+		}
+		claims.Metadata = params.metadata
+	}
+
+	// Add extra attributes to the participant
+	if len(params.attributes) != 0 {
+		// Make sure grant has GetCanUpdateOwnMetadata set
+		if !claims.Video.GetCanUpdateOwnMetadata() {
+			return res, http.StatusUnauthorized, rtc.ErrPermissionDenied
+		}
+		if claims.Attributes == nil {
+			claims.Attributes = make(map[string]string, len(params.attributes))
+		}
+		for k, v := range params.attributes {
+			if v == "" {
+				continue // do not allow deleting existing attributes
+			}
+			claims.Attributes[k] = v
+		}
 	}
 
 	// this is new connection for existing participant -  with publish only permissions
@@ -397,6 +416,11 @@ func ValidateConnectRequest(
 		// Make sure by default subscribe is off
 		claims.Video.SetCanSubscribe(false)
 		claims.Identity += "#" + params.publish
+	}
+
+	// after the publish suffix, so the identity checked is the one StartSession sees
+	if err := checkConnectLimits(limitConfig, claims.Identity, res.roomName, claims); err != nil {
+		return res, http.StatusBadRequest, err
 	}
 
 	// room allocator validations
@@ -425,34 +449,31 @@ func ValidateConnectRequest(
 	SetRoomConfiguration(createRequest, claims.GetRoomConfiguration())
 	res.createRoomRequest = createRequest
 
-	if len(params.metadata) != 0 {
-		// Make sure grant has GetCanUpdateOwnMetadata set
-		if !claims.Video.GetCanUpdateOwnMetadata() {
-			return res, http.StatusUnauthorized, rtc.ErrPermissionDenied
-		}
-		claims.Metadata = params.metadata
-	}
-
-	// Add extra attributes to the participant
-	if len(params.attributes) != 0 {
-		// Make sure grant has GetCanUpdateOwnMetadata set
-		if !claims.Video.GetCanUpdateOwnMetadata() {
-			return res, http.StatusUnauthorized, rtc.ErrPermissionDenied
-		}
-		if claims.Attributes == nil {
-			claims.Attributes = make(map[string]string, len(params.attributes))
-		}
-		for k, v := range params.attributes {
-			if v == "" {
-				continue // do not allow deleting existing attributes
-			}
-			claims.Attributes[k] = v
-		}
-	}
-
 	res.grants = claims
 	res.tokenExpiresAt = GetTokenExpiresAt(r.Context())
 	return res, http.StatusOK, nil
+}
+
+// checkConnectLimits checks a join's identity, room name, participant name, metadata and
+// attributes against the configured limits. Every join path runs it: the signal connection,
+// WHIP, and StartSession on the RTC node, which does not trust the caller's validation.
+func checkConnectLimits(limitConfig config.LimitConfig, identity string, roomName livekit.RoomName, grants *auth.ClaimGrants) error {
+	if !limitConfig.CheckParticipantIdentityLength(identity) {
+		return fmt.Errorf("%w: max length %d", ErrParticipantIdentityExceedsLimits, limitConfig.MaxParticipantIdentityLength)
+	}
+	if !limitConfig.CheckRoomNameLength(string(roomName)) {
+		return fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, limitConfig.MaxRoomNameLength)
+	}
+	if !limitConfig.CheckParticipantNameLength(grants.Name) {
+		return fmt.Errorf("%w: max length %d", ErrNameExceedsLimits, limitConfig.MaxParticipantNameLength)
+	}
+	if !limitConfig.CheckMetadataSize(grants.Metadata) {
+		return fmt.Errorf("%w: max size %d", ErrMetadataExceedsLimits, limitConfig.MaxMetadataSize)
+	}
+	if !limitConfig.CheckAttributesSize(grants.Attributes) {
+		return fmt.Errorf("%w: max size %d", ErrAttributeExceedsLimits, limitConfig.MaxAttributesSize)
+	}
+	return nil
 }
 
 func IsRTCPath(path string) bool {
