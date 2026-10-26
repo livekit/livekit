@@ -366,9 +366,6 @@ func ValidateConnectRequest(
 	if claims.Identity == "" {
 		return res, http.StatusBadRequest, ErrIdentityEmpty
 	}
-	if !limitConfig.CheckParticipantIdentityLength(claims.Identity) {
-		return res, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrParticipantIdentityExceedsLimits, limitConfig.MaxParticipantIdentityLength)
-	}
 
 	if claims.RoomConfig != nil {
 		if err := claims.RoomConfig.CheckCredentials(); err != nil {
@@ -384,8 +381,35 @@ func ValidateConnectRequest(
 	if res.roomName == "" {
 		return res, http.StatusBadRequest, ErrNoRoomName
 	}
-	if !limitConfig.CheckRoomNameLength(string(res.roomName)) {
-		return res, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, limitConfig.MaxRoomNameLength)
+
+	if len(params.metadata) != 0 {
+		// Make sure grant has GetCanUpdateOwnMetadata set
+		if !claims.Video.GetCanUpdateOwnMetadata() {
+			return res, http.StatusUnauthorized, rtc.ErrPermissionDenied
+		}
+		claims.Metadata = params.metadata
+	}
+
+	// Add extra attributes to the participant
+	if len(params.attributes) != 0 {
+		// Make sure grant has GetCanUpdateOwnMetadata set
+		if !claims.Video.GetCanUpdateOwnMetadata() {
+			return res, http.StatusUnauthorized, rtc.ErrPermissionDenied
+		}
+		if claims.Attributes == nil {
+			claims.Attributes = make(map[string]string, len(params.attributes))
+		}
+		for k, v := range params.attributes {
+			if v == "" {
+				continue // do not allow deleting existing attributes
+			}
+			claims.Attributes[k] = v
+		}
+	}
+
+	// check all join limits in one place, on the final identity, room name and grants
+	if code, err := checkConnectLimits(limitConfig, claims.Identity, res.roomName, claims); err != nil {
+		return res, code, err
 	}
 
 	// this is new connection for existing participant -  with publish only permissions
@@ -425,44 +449,22 @@ func ValidateConnectRequest(
 	SetRoomConfiguration(createRequest, claims.GetRoomConfiguration())
 	res.createRoomRequest = createRequest
 
-	if len(params.metadata) != 0 {
-		// Make sure grant has GetCanUpdateOwnMetadata set
-		if !claims.Video.GetCanUpdateOwnMetadata() {
-			return res, http.StatusUnauthorized, rtc.ErrPermissionDenied
-		}
-		claims.Metadata = params.metadata
-	}
-
-	// Add extra attributes to the participant
-	if len(params.attributes) != 0 {
-		// Make sure grant has GetCanUpdateOwnMetadata set
-		if !claims.Video.GetCanUpdateOwnMetadata() {
-			return res, http.StatusUnauthorized, rtc.ErrPermissionDenied
-		}
-		if claims.Attributes == nil {
-			claims.Attributes = make(map[string]string, len(params.attributes))
-		}
-		for k, v := range params.attributes {
-			if v == "" {
-				continue // do not allow deleting existing attributes
-			}
-			claims.Attributes[k] = v
-		}
-	}
-
-	if code, err := checkGrantLimits(limitConfig, claims); err != nil {
-		return res, code, err
-	}
-
 	res.grants = claims
 	res.tokenExpiresAt = GetTokenExpiresAt(r.Context())
 	return res, http.StatusOK, nil
 }
 
-// checkGrantLimits validates the token's name, metadata and attributes against the configured
-// limits. It is the common guard for every join path; StartSession keeps its own copy as the
-// backstop for paths (WHIP) that do not reach here.
-func checkGrantLimits(limitConfig config.LimitConfig, grants *auth.ClaimGrants) (int, error) {
+// checkConnectLimits validates a join's identity, room name, participant name, metadata and
+// attributes against the configured limits. It is the single place that enforces every join
+// limit and the common guard for the HTTP join paths. StartSession keeps its own name, metadata
+// and attribute checks as the backstop for paths (WHIP) that do not reach here.
+func checkConnectLimits(limitConfig config.LimitConfig, identity string, roomName livekit.RoomName, grants *auth.ClaimGrants) (int, error) {
+	if !limitConfig.CheckParticipantIdentityLength(identity) {
+		return http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrParticipantIdentityExceedsLimits, limitConfig.MaxParticipantIdentityLength)
+	}
+	if !limitConfig.CheckRoomNameLength(string(roomName)) {
+		return http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, limitConfig.MaxRoomNameLength)
+	}
 	if !limitConfig.CheckParticipantNameLength(grants.Name) {
 		return http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrNameExceedsLimits, limitConfig.MaxParticipantNameLength)
 	}

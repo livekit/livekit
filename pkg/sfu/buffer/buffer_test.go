@@ -779,3 +779,54 @@ func TestGetPacketConcurrentWithWrite(t *testing.T) {
 		wg.Wait()
 	})
 }
+
+func TestReaderWasWaiting(t *testing.T) {
+	buff := NewBuffer(123, 1, 1)
+	buff.OnRtcpFeedback(func(_ []rtcp.Packet) {})
+	require.NoError(t, buff.Bind(webrtc.RTPParameters{Codecs: []webrtc.RTPCodecParameters{opusCodec}}, opusCodec.RTPCodecCapability, 0))
+	write := func(sn uint16) {
+		pkt := &rtp.Packet{
+			Header:  rtp.Header{Version: 2, PayloadType: 111, SequenceNumber: sn, Timestamp: uint32(sn) * 960, SSRC: 123},
+			Payload: make([]byte, 100),
+		}
+		b, err := pkt.Marshal()
+		require.NoError(t, err)
+		_, err = buff.Write(b)
+		require.NoError(t, err)
+	}
+	read := func() *ExtPacket {
+		extPkt, err := buff.ReadExtended(make([]byte, 1500))
+		require.NoError(t, err)
+		require.NotNil(t, extPkt)
+		return extPkt
+	}
+
+	// packets that arrive while nobody reads queue up, none found the reader waiting
+	write(1)
+	write(2)
+	require.False(t, read().ReaderWasWaiting)
+	require.False(t, read().ReaderWasWaiting)
+
+	// a reader parked on the empty buffer is found waiting by the next packet
+	got := make(chan bool, 1)
+	go func() {
+		extPkt, err := buff.ReadExtended(make([]byte, 1500))
+		got <- err == nil && extPkt != nil && extPkt.ReaderWasWaiting
+	}()
+	require.Eventually(t, func() bool {
+		buff.RLock()
+		defer buff.RUnlock()
+		return buff.readerWaiting
+	}, time.Second, time.Millisecond)
+	write(3)
+	require.True(t, <-got)
+
+	// two packets that arrive before the parked reader wakes: only the first found it waiting
+	buff.Lock()
+	buff.readerWaiting = true
+	buff.Unlock()
+	write(4)
+	write(5)
+	require.True(t, read().ReaderWasWaiting)
+	require.False(t, read().ReaderWasWaiting)
+}

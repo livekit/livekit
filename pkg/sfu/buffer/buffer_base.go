@@ -88,6 +88,8 @@ type ExtPacket struct {
 	AbsCaptureTimeExt    *act.AbsCaptureTime
 	IsOutOfOrder         bool
 	IsBuffered           bool
+	// the reader was waiting on an empty buffer when this packet arrived
+	ReaderWasWaiting bool
 
 	// backing storage for Packet when the buffer creates the ext packet,
 	// extension and CSRC slices point into the write input until ReadExtended re-points them into RawPacket
@@ -170,7 +172,8 @@ type BufferBase struct {
 
 	params BufferBaseParams
 
-	readCond *sync.Cond
+	readCond      *sync.Cond
+	readerWaiting bool
 
 	bucket               *bucket.Bucket[uint64, uint16]
 	lastBucketCapCheckAt int64
@@ -674,7 +677,9 @@ func (b *BufferBase) ReadExtended(buf []byte) (*ExtPacket, error) {
 			return patched, nil
 		}
 
+		b.readerWaiting = true
 		b.readCond.Wait()
+		b.readerWaiting = false
 	}
 }
 
@@ -947,6 +952,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 	if ep == nil {
 		return 0, errors.New("could not get ext packet")
 	}
+	ep.ReaderWasWaiting = b.readerWaiting && b.extPackets.Len() == 0
 	b.extPackets.PushBack(ep)
 	b.readCond.Broadcast()
 

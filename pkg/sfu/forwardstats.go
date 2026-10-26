@@ -1,6 +1,7 @@
 package sfu
 
 import (
+	"math"
 	"math/bits"
 	"sync"
 	"time"
@@ -31,7 +32,7 @@ const (
 	forwardSampleShardSel  = forwardSampleNumShards - 1
 )
 
-// forwardSampleShard is a ring of transit samples with multiple producers and a
+// forwardSampleShard is a ring of packed samples with multiple producers and a
 // single consumer. A producer reserves a slot, stores the value, then publishes
 // the slot's epoch (reserved index + 1). The consumer reads a slot only once its
 // epoch marks the value committed for that index.
@@ -42,7 +43,7 @@ type forwardSampleShard struct {
 	seq      [forwardSampleShardCap]atomic.Uint64 // per-slot publish epoch
 }
 
-// forwardSampleBuffer holds per-packet transit samples produced on the packet
+// forwardSampleBuffer holds per-packet samples produced on the packet
 // path and consumed by the background worker, which performs metric emission.
 type forwardSampleBuffer struct {
 	shards  [forwardSampleNumShards]forwardSampleShard
@@ -51,11 +52,11 @@ type forwardSampleBuffer struct {
 
 // push records a sample: reserve a slot, store the value, then publish the
 // slot's epoch. The shard is selected from arrival time bits.
-func (b *forwardSampleBuffer) push(arrival, transitNs int64) {
+func (b *forwardSampleBuffer) push(arrival, sample int64) {
 	sh := &b.shards[(uint64(arrival)>>6)&forwardSampleShardSel]
 	i := sh.writeIdx.Add(1) - 1
 	slot := i & forwardSampleShardMask
-	sh.ring[slot].Store(transitNs)
+	sh.ring[slot].Store(sample)
 	sh.seq[slot].Store(i + 1)
 }
 
@@ -67,7 +68,7 @@ func (b *forwardSampleBuffer) push(arrival, transitNs int64) {
 // draining stops and resumes from there on the next call, so no sample is read
 // stale or skipped. When producers get a shard's capacity ahead, or overwrite a
 // slot before it is read, the affected samples are counted as dropped.
-func (b *forwardSampleBuffer) drain(fn func(transitNs int64)) {
+func (b *forwardSampleBuffer) drain(fn func(sample int64)) {
 	for si := range b.shards {
 		sh := &b.shards[si]
 		w := sh.writeIdx.Load()
@@ -98,6 +99,34 @@ func (b *forwardSampleBuffer) drain(fn func(transitNs int64)) {
 
 func (b *forwardSampleBuffer) takeDropped() uint64 {
 	return b.dropped.Swap(0)
+}
+
+// A sample packs transit (high 40 bits, in ns, up to ~18 minutes) and scheduling delay
+// (low 24 bits, in 256 ns units, up to ~4.29s) into one slot, so the second value costs
+// no extra atomic.
+const (
+	forwardSchedulingDelayBits  = 24
+	forwardSchedulingDelayShift = 8 // 256 ns units
+	forwardNoSchedulingDelay    = 1<<forwardSchedulingDelayBits - 1
+	forwardMaxTransitNs         = 1<<(64-forwardSchedulingDelayBits) - 1
+)
+
+// packForwardSample packs a sample, a negative schedulingDelayNs meaning none.
+func packForwardSample(transitNs, schedulingDelayNs int64) int64 {
+	delay := uint64(forwardNoSchedulingDelay)
+	if schedulingDelayNs >= 0 {
+		delay = min(uint64(schedulingDelayNs)>>forwardSchedulingDelayShift, forwardNoSchedulingDelay-1)
+	}
+	return int64(uint64(min(max(transitNs, 0), forwardMaxTransitNs))<<forwardSchedulingDelayBits | delay)
+}
+
+// unpackForwardSample returns the transit and scheduling delay, -1 when there is none.
+func unpackForwardSample(sample int64) (transitNs, schedulingDelayNs int64) {
+	transitNs = int64(uint64(sample) >> forwardSchedulingDelayBits)
+	if delay := uint64(sample) & forwardNoSchedulingDelay; delay != forwardNoSchedulingDelay {
+		return transitNs, int64(delay << forwardSchedulingDelayShift)
+	}
+	return transitNs, -1
 }
 
 // forwardSummary is a mergeable histogram of forwarding transit over an
@@ -221,6 +250,19 @@ func (s forwardSummary) percentile(p float64) time.Duration {
 	return time.Duration(s.maxNs)
 }
 
+// forwardIntervalSummary holds one summary interval's transit and scheduling delay.
+type forwardIntervalSummary struct {
+	transit    forwardSummary
+	scheduling forwardSummary
+}
+
+func (s forwardIntervalSummary) merge(o forwardIntervalSummary) forwardIntervalSummary {
+	return forwardIntervalSummary{
+		transit:    s.transit.merge(o.transit),
+		scheduling: s.scheduling.merge(o.scheduling),
+	}
+}
+
 type ForwardStats struct {
 	samples forwardSampleBuffer
 
@@ -228,7 +270,7 @@ type ForwardStats struct {
 	// written by the background worker (flush) and read both by the worker
 	// (report) and by external callers (GetStats), so it is guarded by lock.
 	lock     sync.Mutex
-	ring     []forwardSummary
+	ring     []forwardIntervalSummary
 	ringHead int
 	ringLen  int
 
@@ -245,7 +287,7 @@ func NewForwardStats(summaryInterval, reportInterval, reportWindow time.Duration
 	}
 
 	s := &ForwardStats{
-		ring:            make([]forwardSummary, ringCap),
+		ring:            make([]forwardIntervalSummary, ringCap),
 		summaryInterval: summaryInterval,
 		reportInterval:  reportInterval,
 		closeCh:         make(chan struct{}),
@@ -259,8 +301,14 @@ func NewForwardStats(summaryInterval, reportInterval, reportWindow time.Duration
 // and returns the transit and whether it exceeds the high-latency threshold.
 // The sample is aggregated and emitted by the background worker.
 func (s *ForwardStats) Update(arrival, left int64) (int64, bool) {
+	return s.UpdateWithSchedulingDelay(arrival, left, -1)
+}
+
+// UpdateWithSchedulingDelay is Update that also records a scheduling delay when it is
+// not negative.
+func (s *ForwardStats) UpdateWithSchedulingDelay(arrival, left, schedulingDelay int64) (int64, bool) {
 	transit := left - arrival
-	s.samples.push(arrival, transit)
+	s.samples.push(arrival, packForwardSample(transit, schedulingDelay))
 	return transit, time.Duration(transit) > cHighForwardingLatency
 }
 
@@ -294,10 +342,14 @@ func (s *ForwardStats) run() {
 // histogram, and folds the interval summary into the window ring used for the
 // latency gauge.
 func (s *ForwardStats) flush() {
-	var summ forwardSummary
-	s.samples.drain(func(transitNs int64) {
+	var summ forwardIntervalSummary
+	s.samples.drain(func(sample int64) {
+		transitNs, schedulingDelayNs := unpackForwardSample(sample)
 		prometheus.RecordForwardLatencySample(transitNs)
-		summ.addSample(transitNs)
+		summ.transit.addSample(transitNs)
+		if schedulingDelayNs >= 0 {
+			summ.scheduling.addSample(schedulingDelayNs)
+		}
 	})
 
 	s.lock.Lock()
@@ -311,7 +363,7 @@ func (s *ForwardStats) flush() {
 
 // summarize merges the ring summaries covering the most recent window. A
 // window <= 0 (or >= the report window) covers the entire ring.
-func (s *ForwardStats) summarize(window time.Duration) forwardSummary {
+func (s *ForwardStats) summarize(window time.Duration) forwardIntervalSummary {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -327,7 +379,7 @@ func (s *ForwardStats) summarize(window time.Duration) forwardSummary {
 	}
 
 	// walk backwards from the most recent entry (ringHead-1) over n entries.
-	var w forwardSummary
+	var w forwardIntervalSummary
 	for i := 0; i < n; i++ {
 		idx := (s.ringHead - 1 - i + len(s.ring)) % len(s.ring)
 		w = w.merge(s.ring[idx])
@@ -341,11 +393,12 @@ func (s *ForwardStats) summarize(window time.Duration) forwardSummary {
 // that covers it). A duration <= 0, or one that meets/exceeds the report window,
 // covers the full window.
 func (s *ForwardStats) GetStats(duration time.Duration) time.Duration {
-	return s.summarize(duration).percentile(forwardLatencyPercentile)
+	return s.summarize(duration).transit.percentile(forwardLatencyPercentile)
 }
 
 func (s *ForwardStats) report() {
-	w := s.summarize(0)
+	ws := s.summarize(0)
+	w := ws.transit
 
 	p90 := w.percentile(forwardLatencyPercentile)
 	if dropped := s.samples.takeDropped(); dropped > 0 {
@@ -363,5 +416,11 @@ func (s *ForwardStats) report() {
 		)
 	}
 
-	prometheus.RecordForwardLatency(uint32(p90.Nanoseconds()))
+	prometheus.RecordForwardLatency(saturatingNs(p90))
+	prometheus.RecordForwardSchedulingDelay(saturatingNs(ws.scheduling.percentile(forwardLatencyPercentile)))
+}
+
+// saturatingNs converts to uint32 nanoseconds, saturating at ~4.29s instead of wrapping.
+func saturatingNs(d time.Duration) uint32 {
+	return uint32(min(max(d.Nanoseconds(), 0), math.MaxUint32))
 }

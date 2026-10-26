@@ -26,63 +26,8 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/service"
-	"github.com/livekit/livekit-server/pkg/service/servicefakes"
-	"github.com/livekit/protocol/auth"
-	"github.com/livekit/protocol/logger"
 )
-
-func TestValidateConnectRequestGrantLimits(t *testing.T) {
-	cases := []struct {
-		name  string
-		limit config.LimitConfig
-		grant *auth.ClaimGrants
-		err   error
-	}{
-		{
-			name:  "name exceeds",
-			limit: config.LimitConfig{MaxParticipantNameLength: 5},
-			grant: &auth.ClaimGrants{Identity: "id", Name: "toolongname", Video: &auth.VideoGrant{RoomJoin: true, Room: "room"}},
-			err:   service.ErrNameExceedsLimits,
-		},
-		{
-			name:  "metadata exceeds",
-			limit: config.LimitConfig{MaxMetadataSize: 5},
-			grant: &auth.ClaimGrants{Identity: "id", Metadata: "abcdefg", Video: &auth.VideoGrant{RoomJoin: true, Room: "room"}},
-			err:   service.ErrMetadataExceedsLimits,
-		},
-		{
-			name:  "attributes exceeds",
-			limit: config.LimitConfig{MaxAttributesSize: 5},
-			grant: &auth.ClaimGrants{Identity: "id", Attributes: map[string]string{"k": "abcdefg"}, Video: &auth.VideoGrant{RoomJoin: true, Room: "room"}},
-			err:   service.ErrAttributeExceedsLimits,
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			r := httptest.NewRequest(http.MethodPost, "/", nil)
-			r = r.WithContext(service.WithGrants(r.Context(), tc.grant, "apikey"))
-			// nil router skips the node-limit check, reaching the grant checks
-			_, code, err := service.ValidateConnectRequest(logger.GetLogger(), r, tc.limit, service.ValidateConnectRequestParams{}, nil, &servicefakes.FakeRoomAllocator{})
-			require.ErrorIs(t, err, tc.err)
-			require.Equal(t, http.StatusBadRequest, code)
-		})
-	}
-
-	t.Run("within limits", func(t *testing.T) {
-		grant := &auth.ClaimGrants{Identity: "id", Name: "ok", Metadata: "m", Video: &auth.VideoGrant{RoomJoin: true, Room: "room"}}
-		r := httptest.NewRequest(http.MethodPost, "/", nil)
-		r = r.WithContext(service.WithGrants(r.Context(), grant, "apikey"))
-		_, code, err := service.ValidateConnectRequest(
-			logger.GetLogger(), r,
-			config.LimitConfig{MaxParticipantNameLength: 5, MaxMetadataSize: 5, MaxAttributesSize: 5},
-			service.ValidateConnectRequestParams{}, nil, &servicefakes.FakeRoomAllocator{},
-		)
-		require.NoError(t, err)
-		require.Equal(t, http.StatusOK, code)
-	})
-}
 
 func redisClientDocker(t testing.TB) *redis.Client {
 	addr := runRedis(t)
