@@ -27,7 +27,7 @@ require (
 	github.com/magefile/mage v1.17.2
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/moby/moby/client v0.6.1
-	github.com/olekukonko/tablewriter v1.1.4
+	github.com/olekukonko/tablewriter v1.1.5
 	github.com/ory/dockertest/v4 v4.0.0
 	github.com/pion/datachannel v1.6.3
 	github.com/pion/dtls/v3 v3.1.9
