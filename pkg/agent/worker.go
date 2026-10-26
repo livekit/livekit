@@ -15,6 +15,7 @@
 package agent
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -380,6 +381,29 @@ func (w *Worker) GetJobState(jobID livekit.JobID) (*livekit.JobState, error) {
 		return nil, ErrJobNotFound
 	}
 	return proto.CloneOf(j.State), nil
+}
+
+// AttachJob tracks a job the worker already runs as if AssignJob had assigned
+// it here, so the worker handles its status updates and termination, and
+// returns its state. The job keeps the StartedAt it was assigned with, which
+// identifies the run. Like AssignJob, it does not route the job to the worker:
+// that is the caller's.
+func (w *Worker) AttachJob(job *livekit.Job) *livekit.JobState {
+	job = proto.CloneOf(job)
+	if job.State == nil {
+		job.State = &livekit.JobState{}
+	}
+	now := time.Now().UnixNano()
+	job.State.WorkerId = w.ID
+	job.State.AgentId = w.AgentID
+	job.State.UpdatedAt = now
+	job.State.StartedAt = cmp.Or(job.State.StartedAt, now)
+	job.State.Status = livekit.JobStatus_JS_RUNNING
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.runningJobs[livekit.JobID(job.Id)] = job
+	return proto.CloneOf(job.State)
 }
 
 func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook AssignmentHook) (*livekit.JobState, error) {
