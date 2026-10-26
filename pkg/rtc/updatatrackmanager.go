@@ -15,13 +15,14 @@
 package rtc
 
 import (
+	"maps"
+	"slices"
 	"sync"
 
-	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/protocol/datatrack"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"golang.org/x/exp/maps"
 )
 
 type UpDataTrackManagerParams struct {
@@ -34,15 +35,31 @@ type UpDataTrackManager struct {
 
 	lock       sync.RWMutex
 	dataTracks map[uint16]types.DataTrack
-
-	onDataTrackPublished   func(types.Participant, types.DataTrack)
-	onDataTrackUnpublished func(types.Participant, types.DataTrack)
+	closed     bool
 }
 
 func NewUpDataTrackManager(params UpDataTrackManagerParams) *UpDataTrackManager {
 	return &UpDataTrackManager{
 		params:     params,
 		dataTracks: make(map[uint16]types.DataTrack),
+	}
+}
+
+func (u *UpDataTrackManager) Close() {
+	u.lock.Lock()
+	if u.closed {
+		u.lock.Unlock()
+		return
+	}
+
+	u.closed = true
+
+	dataTracks := u.dataTracks
+	u.dataTracks = make(map[uint16]types.DataTrack)
+	u.lock.Unlock()
+
+	for _, t := range dataTracks {
+		t.Close()
 	}
 }
 
@@ -75,7 +92,7 @@ func (u *UpDataTrackManager) GetPublishedDataTracks() []types.DataTrack {
 	u.lock.RLock()
 	defer u.lock.RUnlock()
 
-	return maps.Values(u.dataTracks)
+	return slices.Collect(maps.Values(u.dataTracks))
 }
 
 func (u *UpDataTrackManager) GetPublishedDataTrack(handle uint16) types.DataTrack {

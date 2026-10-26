@@ -15,6 +15,8 @@
 package prometheus
 
 import (
+	"strconv"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
@@ -47,37 +49,34 @@ var (
 	participantRTCConnected    atomic.Uint64
 	participantRTCInit         atomic.Uint64
 	participantRTCCanceled     atomic.Uint64
+	participantRTCActive       atomic.Uint64
 	forwardLatency             atomic.Uint32
-	forwardJitter              atomic.Uint32
+	forwardSchedulingDelay     atomic.Uint32
 
-	promPacketLabels          = []string{"direction", "transmission", "country"}
-	promPacketTotal           *prometheus.CounterVec
-	promPacketBytes           *prometheus.CounterVec
-	promRTCPLabels            = []string{"direction", "country"}
-	promStreamLabels          = []string{"direction", "source", "type", "country"}
-	promNackTotal             *prometheus.CounterVec
-	promPliTotal              *prometheus.CounterVec
-	promFirTotal              *prometheus.CounterVec
-	promPacketLossTotal       *prometheus.CounterVec
-	promPacketLoss            *prometheus.HistogramVec
-	promPacketOutOfOrderTotal *prometheus.CounterVec
-	promPacketOutOfOrder      *prometheus.HistogramVec
-	promJitter                *prometheus.HistogramVec
-	promRTT                   *prometheus.HistogramVec
-	promParticipantJoin       *prometheus.CounterVec
-	promConnections           *prometheus.GaugeVec
-	promForwardLatency        prometheus.Gauge
-	promForwardJitter         prometheus.Gauge
-	promForwardLatencyHist    prometheus.Histogram
-
-	promPacketTotalIncomingInitial    prometheus.Counter
-	promPacketTotalIncomingRetransmit prometheus.Counter
-	promPacketTotalOutgoingInitial    prometheus.Counter
-	promPacketTotalOutgoingRetransmit prometheus.Counter
-	promPacketBytesIncomingInitial    prometheus.Counter
-	promPacketBytesIncomingRetransmit prometheus.Counter
-	promPacketBytesOutgoingInitial    prometheus.Counter
-	promPacketBytesOutgoingRetransmit prometheus.Counter
+	promPacketLabels           = []string{"direction", "transmission", "country"}
+	promPacketTotal            *prometheus.CounterVec
+	promPacketBytes            *prometheus.CounterVec
+	promFECLabels              = []string{"direction", "type"}
+	promFECPacketTotal         *prometheus.CounterVec
+	promFECPacketBytes         *prometheus.CounterVec
+	promRTCPLabels             = []string{"direction", "country"}
+	promStreamLabels           = []string{"direction", "source", "type", "country"}
+	promNackTotal              *prometheus.CounterVec
+	promRTXCappedTotal         *prometheus.CounterVec
+	promKeyFrameTotal          *prometheus.CounterVec
+	promPliTotal               *prometheus.CounterVec
+	promFirTotal               *prometheus.CounterVec
+	promPacketLossTotal        *prometheus.CounterVec
+	promPacketLoss             *prometheus.HistogramVec
+	promPacketOutOfOrderTotal  *prometheus.CounterVec
+	promPacketOutOfOrder       *prometheus.HistogramVec
+	promJitter                 *prometheus.HistogramVec
+	promRTT                    *prometheus.HistogramVec
+	promParticipantJoin        *prometheus.CounterVec
+	promConnections            *prometheus.GaugeVec
+	promForwardLatency         prometheus.Gauge
+	promForwardSchedulingDelay prometheus.Gauge
+	promForwardLatencyHist     prometheus.Histogram
 )
 
 func initPacketStats(nodeID string, nodeType livekit.NodeType) {
@@ -93,12 +92,38 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "bytes",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, promPacketLabels)
+	promFECPacketTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "fec",
+		Name:        "total",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+	}, promFECLabels)
+	promFECPacketBytes = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "fec",
+		Name:        "bytes",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+	}, promFECLabels)
 	promNackTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "nack",
 		Name:        "total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, promRTCPLabels)
+	promRTXCappedTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "rtx_capped",
+		Name:        "total",
+		Help:        "NACKed packets not retransmitted because the down track was over its retransmission budget.",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+	}, []string{"kind"})
+	promKeyFrameTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "keyframe",
+		Name:        "total",
+		Help:        "Key frames received from publishers (incoming) and forwarded to subscribers (outgoing, once per subscriber).",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+	}, []string{"direction"})
 	promPliTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "pli",
@@ -157,7 +182,7 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Subsystem:   "participant_join",
 		Name:        "total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
-	}, []string{"state"})
+	}, []string{"state", "warp", "sdk"})
 	promConnections = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "connection",
@@ -170,10 +195,11 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "latency",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	})
-	promForwardJitter = prometheus.NewGauge(prometheus.GaugeOpts{
+	promForwardSchedulingDelay = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "forward",
-		Name:        "jitter",
+		Name:        "scheduling_delay",
+		Help:        "p90 time from arrival to dequeue, in ns, for packets that found their forwarder idle.",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	})
 	promForwardLatencyHist = prometheus.NewHistogram(prometheus.HistogramOpts{
@@ -198,7 +224,11 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 
 	prometheus.MustRegister(promPacketTotal)
 	prometheus.MustRegister(promPacketBytes)
+	prometheus.MustRegister(promFECPacketTotal)
+	prometheus.MustRegister(promFECPacketBytes)
 	prometheus.MustRegister(promNackTotal)
+	prometheus.MustRegister(promRTXCappedTotal)
+	prometheus.MustRegister(promKeyFrameTotal)
 	prometheus.MustRegister(promPliTotal)
 	prometheus.MustRegister(promFirTotal)
 	prometheus.MustRegister(promPacketLossTotal)
@@ -210,8 +240,26 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promParticipantJoin)
 	prometheus.MustRegister(promConnections)
 	prometheus.MustRegister(promForwardLatency)
-	prometheus.MustRegister(promForwardJitter)
+	prometheus.MustRegister(promForwardSchedulingDelay)
 	prometheus.MustRegister(promForwardLatencyHist)
+}
+
+// RecordFECUpstream tracks FlexFEC activity on the publisher leg: FEC
+// packets received from publishers, media packets recovered with them and
+// FEC packets that could not be used.
+func RecordFECUpstream(received int, recovered int, discarded int, bytesReceived uint64) {
+	if received > 0 {
+		promFECPacketTotal.WithLabelValues(string(Incoming), "received").Add(float64(received))
+	}
+	if recovered > 0 {
+		promFECPacketTotal.WithLabelValues(string(Incoming), "recovered").Add(float64(recovered))
+	}
+	if discarded > 0 {
+		promFECPacketTotal.WithLabelValues(string(Incoming), "discarded").Add(float64(discarded))
+	}
+	if bytesReceived > 0 {
+		promFECPacketBytes.WithLabelValues(string(Incoming), "received").Add(float64(bytesReceived))
+	}
 }
 
 func IncrementPackets(country string, direction Direction, count uint64, retransmit bool) {
@@ -250,6 +298,20 @@ func IncrementBytes(country string, direction Direction, count uint64, retransmi
 			retransmitBytes.Add(count)
 		}
 	}
+}
+
+func RecordRTXCapped(kind string, packets uint32) {
+	if promRTXCappedTotal == nil {
+		return
+	}
+	promRTXCappedTotal.WithLabelValues(kind).Add(float64(packets))
+}
+
+func IncrementKeyFrames(direction Direction) {
+	if promKeyFrameTotal == nil {
+		return
+	}
+	promKeyFrameTotal.WithLabelValues(string(direction)).Inc()
 }
 
 func IncrementRTCP(country string, direction Direction, nack, pli, fir uint32) {
@@ -305,34 +367,72 @@ func RecordRTT(country string, direction Direction, trackSource livekit.TrackSou
 func IncrementParticipantJoin(join uint32) {
 	if join > 0 {
 		participantSignalConnected.Add(uint64(join))
-		promParticipantJoin.WithLabelValues("signal_connected").Add(float64(join))
+		promParticipantJoin.WithLabelValues("signal_connected", "", "").Add(float64(join))
 	}
 }
 
-func IncrementParticipantJoinFail(join uint32) {
-	if join > 0 {
-		promParticipantJoin.WithLabelValues("signal_failed").Add(float64(join))
+func IncrementParticipantJoinFail(fail uint32) {
+	if fail > 0 {
+		promParticipantJoin.WithLabelValues("signal_failed", "", "").Add(float64(fail))
 	}
 }
 
-func IncrementParticipantRtcInit(join uint32) {
-	if join > 0 {
-		participantRTCInit.Add(uint64(join))
-		promParticipantJoin.WithLabelValues("rtc_init").Add(float64(join))
+func IncrementParticipantJoinValidationFail(validationFail uint32) {
+	if validationFail > 0 {
+		promParticipantJoin.WithLabelValues("signal_validation_failed", "", "").Add(float64(validationFail))
 	}
 }
 
-func IncrementParticipantRtcConnected(join uint32) {
-	if join > 0 {
-		participantRTCConnected.Add(uint64(join))
-		promParticipantJoin.WithLabelValues("rtc_connected").Add(float64(join))
+func IncrementParticipantJoinUpgradeFail(upgradeFail uint32) {
+	if upgradeFail > 0 {
+		promParticipantJoin.WithLabelValues("signal_upgrade_failed", "", "").Add(float64(upgradeFail))
 	}
 }
 
-func IncrementParticipantRtcCanceled(numCancels uint64) {
-	if numCancels > 0 {
-		participantRTCConnected.Add(numCancels)
-		promParticipantJoin.WithLabelValues("rtc_canceled").Add(float64(numCancels))
+func IncrementParticipantJoinWriteInitialResponseFail(writeInitialResponseFail uint32) {
+	if writeInitialResponseFail > 0 {
+		promParticipantJoin.WithLabelValues("signal_write_initial_response_failed", "", "").Add(float64(writeInitialResponseFail))
+	}
+}
+
+func IncrementParticipantRtcInit(init uint32) {
+	if init > 0 {
+		participantRTCInit.Add(uint64(init))
+		promParticipantJoin.WithLabelValues("rtc_init", "", "").Add(float64(init))
+	}
+}
+
+func IncrementParticipantRtcConnected(connected uint32, sdk livekit.ClientInfo_SDK) {
+	if connected > 0 {
+		participantRTCConnected.Add(uint64(connected))
+		promParticipantJoin.WithLabelValues("rtc_connected", "", sdk.String()).Add(float64(connected))
+	}
+}
+
+func IncrementParticipantRtcActive(active uint32, warp bool) {
+	if active > 0 {
+		participantRTCActive.Add(uint64(active))
+		promParticipantJoin.WithLabelValues("rtc_active", strconv.FormatBool(warp), "").Add(float64(active))
+	}
+}
+
+func IncrementParticipantRtcCanceled(canceled uint64, warp bool, sdk livekit.ClientInfo_SDK) {
+	if canceled > 0 {
+		participantRTCCanceled.Add(canceled)
+		promParticipantJoin.WithLabelValues("rtc_canceled", strconv.FormatBool(warp), sdk.String()).Add(float64(canceled))
+	}
+}
+
+// todo: check if need to record warp to rtcSucc/Failure
+func IncrementParticipantRtcSuccess(success uint64, warp bool, sdk livekit.ClientInfo_SDK) {
+	if success > 0 {
+		promParticipantJoin.WithLabelValues("rtc_success", strconv.FormatBool(warp), sdk.String()).Add(float64(success))
+	}
+}
+
+func IncrementParticipantRtcFailure(failure uint64, warp bool, sdk livekit.ClientInfo_SDK) {
+	if failure > 0 {
+		promParticipantJoin.WithLabelValues("rtc_failure", strconv.FormatBool(warp), sdk.String()).Add(float64(failure))
 	}
 }
 
@@ -348,12 +448,12 @@ func RecordForwardLatencySample(forwardLatency int64) {
 	promForwardLatencyHist.Observe(float64(forwardLatency))
 }
 
-func RecordForwardLatency(longTermLatencyAvg uint32) {
-	forwardLatency.Store(longTermLatencyAvg)
-	promForwardLatency.Set(float64(longTermLatencyAvg))
+func RecordForwardLatency(p90 uint32) {
+	forwardLatency.Store(p90)
+	promForwardLatency.Set(float64(p90))
 }
 
-func RecordForwardJitter(longTermJitterAvg uint32) {
-	forwardJitter.Store(longTermJitterAvg)
-	promForwardJitter.Set(float64(longTermJitterAvg))
+func RecordForwardSchedulingDelay(p90 uint32) {
+	forwardSchedulingDelay.Store(p90)
+	promForwardSchedulingDelay.Set(float64(p90))
 }

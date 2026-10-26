@@ -16,13 +16,14 @@ package rtc
 
 import (
 	"errors"
+	"maps"
+	"slices"
 	"sync"
 
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/maps"
-	"golang.org/x/exp/slices"
 
+	"github.com/livekit/mediatransportutil/pkg/codec"
 	protoCodecs "github.com/livekit/protocol/codecs"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
@@ -183,7 +184,7 @@ func (r *WrappedReceiver) AddOnReady(f func()) {
 
 type DummyReceiver struct {
 	receiver         atomic.Value
-	trackID          livekit.TrackID
+	trackInfo        *livekit.TrackInfo
 	streamId         string
 	codec            webrtc.RTPCodecParameters
 	headerExtensions []webrtc.RTPHeaderExtensionParameter
@@ -196,15 +197,18 @@ type DummyReceiver struct {
 	settingsLock          sync.Mutex
 	maxExpectedLayerValid bool
 	maxExpectedLayer      int32
-	pausedValid           bool
-	paused                bool
 
 	redReceiver, primaryReceiver *DummyRedReceiver
 }
 
-func NewDummyReceiver(trackID livekit.TrackID, streamId string, codec webrtc.RTPCodecParameters, headerExtensions []webrtc.RTPHeaderExtensionParameter) *DummyReceiver {
+func NewDummyReceiver(
+	trackInfo *livekit.TrackInfo,
+	streamId string,
+	codec webrtc.RTPCodecParameters,
+	headerExtensions []webrtc.RTPHeaderExtensionParameter,
+) *DummyReceiver {
 	return &DummyReceiver{
-		trackID:          trackID,
+		trackInfo:        trackInfo,
 		streamId:         streamId,
 		codec:            codec,
 		headerExtensions: headerExtensions,
@@ -246,17 +250,10 @@ func (d *DummyReceiver) Upgrade(receiver sfu.TrackReceiver) {
 	d.settingsLock.Lock()
 	maxExpectedLayerValid := d.maxExpectedLayerValid
 	d.maxExpectedLayerValid = false
-
-	pausedValid := d.pausedValid
-	d.pausedValid = false
 	d.settingsLock.Unlock()
 
 	if maxExpectedLayerValid {
 		receiver.SetMaxExpectedSpatialLayer(d.maxExpectedLayer)
-	}
-
-	if pausedValid {
-		receiver.SetUpTrackPaused(d.paused)
 	}
 
 	d.settingsLock.Lock()
@@ -270,7 +267,7 @@ func (d *DummyReceiver) Upgrade(receiver sfu.TrackReceiver) {
 }
 
 func (d *DummyReceiver) TrackID() livekit.TrackID {
-	return d.trackID
+	return livekit.TrackID(d.trackInfo.Sid)
 }
 
 func (d *DummyReceiver) StreamID() string {
@@ -332,22 +329,6 @@ func (d *DummyReceiver) SendPLI(layer int32, force bool) {
 	}
 }
 
-func (d *DummyReceiver) SetUpTrackPaused(paused bool) {
-	d.settingsLock.Lock()
-	receiver := d.getReceiver()
-	if receiver != nil {
-		d.pausedValid = false
-	} else {
-		d.pausedValid = true
-		d.paused = paused
-	}
-	d.settingsLock.Unlock()
-
-	if receiver != nil {
-		receiver.SetUpTrackPaused(paused)
-	}
-}
-
 func (d *DummyReceiver) SetMaxExpectedSpatialLayer(layer int32) {
 	d.settingsLock.Lock()
 	receiver := d.getReceiver()
@@ -394,7 +375,7 @@ func (d *DummyReceiver) GetDownTracks() []sfu.TrackSender {
 	if receiver := d.getReceiver(); receiver != nil {
 		return receiver.GetDownTracks()
 	}
-	return maps.Values(d.downTracks)
+	return slices.Collect(maps.Values(d.downTracks))
 }
 
 func (d *DummyReceiver) DebugInfo() map[string]any {
@@ -415,7 +396,7 @@ func (d *DummyReceiver) TrackInfo() *livekit.TrackInfo {
 	if receiver := d.getReceiver(); receiver != nil {
 		return receiver.TrackInfo()
 	}
-	return nil
+	return d.trackInfo
 }
 
 func (d *DummyReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
@@ -494,7 +475,7 @@ func (d *DummyReceiver) CodecState() sfu.ReceiverCodecState {
 	return sfu.ReceiverCodecStateNormal
 }
 
-func (d *DummyReceiver) VideoSizes() []buffer.VideoSize {
+func (d *DummyReceiver) VideoSizes() []codec.VideoSize {
 	if receiver := d.getReceiver(); receiver != nil {
 		return receiver.VideoSizes()
 	}
@@ -567,7 +548,7 @@ func (d *DummyRedReceiver) GetDownTracks() []sfu.TrackSender {
 	if r, ok := d.redReceiver.Load().(sfu.TrackReceiver); ok {
 		return r.GetDownTracks()
 	}
-	return maps.Values(d.downTracks)
+	return slices.Collect(maps.Values(d.downTracks))
 }
 
 func (d *DummyRedReceiver) ReadRTP(buf []byte, layer uint8, esn uint64) (int, error) {

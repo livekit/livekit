@@ -53,7 +53,10 @@ changelog:
       - '^docs:'
       - '^test:'
 gomod:
-  proxy: true
+  # proxy must be disabled: it re-fetches modules from the Go proxy in a clean
+  # directory, which does not honor the replace directive in go.mod
+  # (replace github.com/pion/dtls/v3 => ... pinning v3.1.2 for gst whipsink compat)
+  proxy: false
   mod: mod
 checksum:
   name_template: 'checksums.txt'

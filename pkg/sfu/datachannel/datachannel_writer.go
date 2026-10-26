@@ -41,7 +41,7 @@ type DataChannelWriter[T BufferedAmountGetter] struct {
 func NewDataChannelWriterReliable[T BufferedAmountGetter](bufferGetter T, rawDC datachannel.ReadWriteCloserDeadliner, slowThreshold int) *DataChannelWriter[T] {
 	var rate *BitrateCalculator
 	if slowThreshold > 0 {
-		rate = NewBitrateCalculator(BitrateDuration, BitrateWindow)
+		rate = NewBitrateCalculator(BitrateDuration, BitrateWindow, BitrateModeBusyOnly)
 	}
 	return &DataChannelWriter[T]{
 		bufferGetter:  bufferGetter,
@@ -59,7 +59,7 @@ func NewDataChannelWriterReliable[T BufferedAmountGetter](bufferGetter T, rawDC 
 func NewDataChannelWriterUnreliable[T BufferedAmountGetter](bufferGetter T, rawDC datachannel.ReadWriteCloserDeadliner, targetLatency time.Duration, minBufferedAmount uint64) *DataChannelWriter[T] {
 	var rate *BitrateCalculator
 	if targetLatency > 0 {
-		rate = NewBitrateCalculator(BitrateDuration, BitrateWindow)
+		rate = NewBitrateCalculator(BitrateDuration, BitrateWindow, BitrateModeBusyOnly)
 	}
 	return &DataChannelWriter[T]{
 		bufferGetter:      bufferGetter,
@@ -119,9 +119,18 @@ func (w *DataChannelWriter[T]) writeUnreliable(p []byte) (n int, err error) {
 	}
 
 	if bitrate, ok := w.rate.Bitrate(time.Now()); ok {
-		// control buffer latency to ~100ms
-		if w.bufferGetter.BufferedAmount() > uint64(time.Duration(bitrate)*w.targetLatency/8/time.Second) && w.bufferGetter.BufferedAmount() > w.minBufferedAmount {
-			return 0, ErrDataDroppedByHighBufferedAmount
+		// control buffer latency to target
+		bufferedAmount := w.bufferGetter.BufferedAmount()
+		targetLatencyLimit := uint64(time.Duration(bitrate) * w.targetLatency / 8 / time.Second)
+		if bufferedAmount > targetLatencyLimit && bufferedAmount > w.minBufferedAmount {
+			return 0, fmt.Errorf(
+				"%w: bitrate %d, buffered amount %d, target latency limit %d, min buffered amount %d",
+				ErrDataDroppedByHighBufferedAmount,
+				bitrate,
+				bufferedAmount,
+				targetLatencyLimit,
+				w.minBufferedAmount,
+			)
 		}
 	}
 
@@ -130,9 +139,10 @@ func (w *DataChannelWriter[T]) writeUnreliable(p []byte) (n int, err error) {
 		return 0, err
 	}
 	n, err = w.rawDC.Write(p)
-	if err != nil {
-		w.rate.AddBytes(n, int(w.bufferGetter.BufferedAmount()), mono.Now())
-	}
+	// Track drained bytes on every write (not just failures) so the bitrate
+	// calculator has samples; otherwise Bitrate() has no data and the
+	// latency-based drop threshold above collapses to the static minBufferedAmount.
+	w.rate.AddBytes(n, int(w.bufferGetter.BufferedAmount()), mono.Now())
 
 	return
 }

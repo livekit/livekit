@@ -32,6 +32,13 @@ type ParticipantSignaller interface {
 	GetResponseSink() routing.MessageSink
 	CloseSignalConnection(reason types.SignallingCloseReason)
 
+	// HandshakePending reports whether a resumed connection is still waiting for the
+	// ReconnectResponse it has to open with
+	HandshakePending() bool
+	// OpenHandshake lets messages flow on a resumed connection that does not open with
+	// a ReconnectResponse
+	OpenHandshake()
+
 	WriteMessage(msg proto.Message) error
 }
 
@@ -62,4 +69,6 @@ type ParticipantSignalling interface {
 	SignalPublishDataTrackResponse(publishDataTrackResponse *livekit.PublishDataTrackResponse) proto.Message
 	SignalUnpublishDataTrackResponse(unpublishDataTrackResponse *livekit.UnpublishDataTrackResponse) proto.Message
 	SignalDataTrackSubscriberHandles(dataTrackSubscriberHandles *livekit.DataTrackSubscriberHandles) proto.Message
+	SignalStoreDataBlobResponse(storeDataBlobResponse *livekit.StoreDataBlobResponse) proto.Message
+	SignalGetDataBlobResponse(getDataBlobResponse *livekit.GetDataBlobResponse) proto.Message
 }

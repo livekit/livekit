@@ -18,9 +18,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/pion/webrtc/v4"
@@ -119,7 +118,7 @@ type createRequest struct {
 	FromIngress                     bool
 }
 
-func (s *WHIPService) validateCreate(r *http.Request) (*createRequest, int, error) {
+func (s *WHIPService) validateCreate(w http.ResponseWriter, r *http.Request) (*createRequest, int, error) {
 	claims := GetGrants(r.Context())
 	if claims == nil || claims.Video == nil {
 		return nil, http.StatusUnauthorized, rtc.ErrPermissionDenied
@@ -132,15 +131,19 @@ func (s *WHIPService) validateCreate(r *http.Request) (*createRequest, int, erro
 	if roomName == "" {
 		return nil, http.StatusUnauthorized, errors.New("room name cannot be empty")
 	}
-	if !s.config.Limit.CheckRoomNameLength(string(roomName)) {
-		return nil, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, s.config.Limit.MaxRoomNameLength)
-	}
-
 	if claims.Identity == "" {
 		return nil, http.StatusBadRequest, ErrIdentityEmpty
 	}
-	if !s.config.Limit.CheckParticipantIdentityLength(claims.Identity) {
-		return nil, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrParticipantIdentityExceedsLimits, s.config.Limit.MaxParticipantIdentityLength)
+
+	if err := CheckConnectLimits(s.config.Limit, claims.Identity, roomName, claims); err != nil {
+		return nil, http.StatusBadRequest, err
+	}
+
+	if err := s.roomAllocator.ValidateCreateRoom(r.Context(), roomName); err != nil {
+		if errors.Is(err, ErrRoomNotFound) {
+			return nil, http.StatusNotFound, err
+		}
+		return nil, http.StatusInternalServerError, err
 	}
 
 	var clientInfo struct {
@@ -156,8 +159,12 @@ func (s *WHIPService) validateCreate(r *http.Request) (*createRequest, int, erro
 
 	fromIngress := r.Header.Get("X-Livekit-Ingress")
 
-	offerSDPBytes, err := ioutil.ReadAll(r.Body)
+	offerSDPBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, http.DefaultMaxHeaderBytes))
 	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			return nil, http.StatusRequestEntityTooLarge, fmt.Errorf("request body exceeds %d bytes", maxErr.Limit)
+		}
 		return nil, http.StatusBadRequest, fmt.Errorf("body does not have SDP offer: %s", err)
 	}
 	if len(offerSDPBytes) == 0 {
@@ -185,6 +192,7 @@ func (s *WHIPService) validateCreate(r *http.Request) (*createRequest, int, erro
 		AutoSubscribe: true,
 		Client:        ci,
 		Grants:        claims,
+		APIKey:        GetAPIKey(r.Context()),
 		CreateRoom: &livekit.CreateRoomRequest{
 			Name:       string(roomName),
 			RoomPreset: claims.RoomPreset,
@@ -212,7 +220,7 @@ func (s *WHIPService) handleCreate(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Add("Content-type", "application/sdp")
 
-	req, status, err := s.validateCreate(r)
+	req, status, err := s.validateCreate(w, r)
 	if err != nil {
 		s.handleError("Create", w, r, status, err)
 		return
@@ -265,7 +273,7 @@ func (s *WHIPService) handleCreate(w http.ResponseWriter, r *http.Request) {
 	for _, iceServer := range res.IceServers {
 		for _, iceURL := range iceServer.Urls {
 			iceServerLink := &linkheader.Link{
-				URL:    url.PathEscape(iceURL),
+				URL:    iceURL,
 				Rel:    "ice-server",
 				Params: map[string]string{},
 			}
@@ -358,7 +366,7 @@ func (s *WHIPService) iceTrickle(
 		"method", "ice-trickle",
 		"room", roomName,
 		"participant", participantIdentity,
-		"pID", pID,
+		"participantID", pID,
 		"sdpFragment", sdpFragment,
 		"status", http.StatusNoContent,
 	)
@@ -410,7 +418,7 @@ func (s *WHIPService) iceRestart(
 		"method", "ice-restart",
 		"room", roomName,
 		"participant", participantIdentity,
-		"pID", pID,
+		"participantID", pID,
 		"sdpFragment", sdpFragment,
 		"status", http.StatusNoContent,
 		"res", logger.Proto(res),
@@ -462,8 +470,13 @@ func (s *WHIPService) handleParticipantPatch(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	sdpFragmentBytes, err := ioutil.ReadAll(r.Body)
+	sdpFragmentBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, http.DefaultMaxHeaderBytes))
 	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			s.handleError("Patch", w, r, http.StatusRequestEntityTooLarge, fmt.Errorf("request body exceeds %d bytes", maxErr.Limit))
+			return
+		}
 		s.handleError("Patch", w, r, http.StatusBadRequest, fmt.Errorf("body does not have SDP fragment: %s", err))
 		return
 	}
@@ -514,7 +527,7 @@ func (s *WHIPService) handleParticipantDelete(w http.ResponseWriter, r *http.Req
 	sutils.GetLogger(r.Context()).Infow(
 		"API WHIP.Delete",
 		"participant", claims.Identity,
-		"pID", r.PathValue("participant_id"),
+		"participantID", r.PathValue("participant_id"),
 		"room", roomName,
 		"status", http.StatusOK,
 	)

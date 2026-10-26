@@ -35,6 +35,10 @@ type Base struct {
 
 	currentLayer  buffer.VideoLayer
 	previousLayer buffer.VideoLayer
+
+	// when set, on initial acquisition latch directly onto the target (requested) layer instead of
+	// opportunistically latching onto the first lower-layer key frame that arrives (see Simulcast.Select)
+	enableStartAtDesiredQuality bool
 }
 
 func NewBase(logger logger.Logger) *Base {
@@ -64,6 +68,10 @@ func (b *Base) IsOvershootOkay() bool {
 
 func (b *Base) SetTemporalLayerSelector(tls temporallayerselector.TemporalLayerSelector) {
 	b.tls = tls
+}
+
+func (b *Base) SetEnableStartAtDesiredQuality(enable bool) {
+	b.enableStartAtDesiredQuality = enable
 }
 
 func (b *Base) SetMax(maxLayer buffer.VideoLayer) {

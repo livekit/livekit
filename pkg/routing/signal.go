@@ -94,7 +94,7 @@ func (r *signalClient) StartParticipantSignal(
 		"reqNodeID", nodeID,
 		"participant", pi.Identity,
 		"connID", connectionID,
-		"participantInit", pi,
+		"participantInit", &pi,
 		"startSession", logger.Proto(ss),
 	)
 

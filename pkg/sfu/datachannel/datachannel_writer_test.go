@@ -2,9 +2,10 @@ package datachannel
 
 import (
 	"context"
-	"sync/atomic"
 	"testing"
 	"time"
+
+	"go.uber.org/atomic"
 
 	"github.com/pion/datachannel"
 	"github.com/pion/transport/v4/deadline"
@@ -78,6 +79,7 @@ type mockDataChannelWriter struct {
 	datachannel.ReadWriteCloserDeadliner
 	nextWriteCompleteAt time.Time
 	deadline            *deadline.Deadline
+	buffered            atomic.Int64
 }
 
 func newMockDataChannelWriter() *mockDataChannelWriter {
@@ -87,18 +89,22 @@ func newMockDataChannelWriter() *mockDataChannelWriter {
 }
 
 func (m *mockDataChannelWriter) BufferedAmount() uint64 {
-	return 0
+	return uint64(m.buffered.Load())
 }
 
 func (m *mockDataChannelWriter) Write(b []byte) (int, error) {
+	// buffered while the write is in flight, cleared once it completes
+	m.buffered.Store(int64(len(b)))
 	wait := time.Until(m.nextWriteCompleteAt)
 	if wait <= 0 {
+		m.buffered.Store(0)
 		return len(b), nil
 	}
 	select {
 	case <-m.deadline.Done():
 		return 0, m.deadline.Err()
 	case <-time.After(wait):
+		m.buffered.Store(0)
 		return len(b), nil
 	}
 }

@@ -49,13 +49,13 @@ type ServiceStore interface {
 	// ListRooms returns currently active rooms. if names is not nil, it'll filter and return
 	// only rooms that match
 	ListRooms(ctx context.Context, roomNames []livekit.RoomName) ([]*livekit.Room, error)
-	LoadParticipant(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) (*livekit.ParticipantInfo, error)
-	ListParticipants(ctx context.Context, roomName livekit.RoomName) ([]*livekit.ParticipantInfo, error)
 }
 
 type OSSServiceStore interface {
 	DeleteRoom(ctx context.Context, roomName livekit.RoomName) error
 	HasParticipant(context.Context, livekit.RoomName, livekit.ParticipantIdentity) (bool, error)
+	LoadParticipant(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) (*livekit.ParticipantInfo, error)
+	ListParticipants(ctx context.Context, roomName livekit.RoomName) ([]*livekit.ParticipantInfo, error)
 }
 
 //counterfeiter:generate . EgressStore
@@ -81,7 +81,9 @@ type IngressStore interface {
 type RoomAllocator interface {
 	AutoCreateEnabled(ctx context.Context) bool
 	SelectRoomNode(ctx context.Context, roomName livekit.RoomName, nodeID livekit.NodeID) error
-	CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest, isExplicit bool) (*livekit.Room, *livekit.RoomInternal, bool, error)
+	// CreateRoom also returns the request with its room preset applied,
+	// or req unchanged when the implementation does not resolve presets
+	CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest, isExplicit bool) (*livekit.Room, *livekit.RoomInternal, *livekit.CreateRoomRequest, bool, error)
 	ValidateCreateRoom(ctx context.Context, roomName livekit.RoomName) error
 }
 

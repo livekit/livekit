@@ -19,9 +19,64 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils/must"
 )
+
+func TestStaticConfigurationH264(t *testing.T) {
+	cm := NewStaticClientConfigurationManager(StaticConfigurations)
+
+	h264Disabled := func(info *livekit.ClientInfo) bool {
+		conf := cm.GetConfiguration(info)
+		if conf == nil || conf.DisabledCodecs == nil {
+			return false
+		}
+		for _, c := range conf.DisabledCodecs.Publish {
+			if mime.IsMimeTypeStringH264(c.Mime) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// desktop Linux Firefox publishes H.264 through OpenH264, so it must not be disabled
+	require.False(t, h264Disabled(&livekit.ClientInfo{Browser: "firefox", Os: "linux"}))
+	// Firefox for Android is still worked around
+	require.True(t, h264Disabled(&livekit.ClientInfo{Browser: "firefox mobile", Os: "android"}))
+}
+
+func TestStaticConfigurationAV1(t *testing.T) {
+	cm := NewStaticClientConfigurationManager(StaticConfigurations)
+
+	av1Disabled := func(info *livekit.ClientInfo) bool {
+		conf := cm.GetConfiguration(info)
+		if conf == nil || conf.DisabledCodecs == nil {
+			return false
+		}
+		for _, c := range conf.DisabledCodecs.Codecs {
+			if mime.IsMimeTypeStringEqual(c.Mime, mime.MimeTypeAV1.String()) {
+				return true
+			}
+		}
+		return false
+	}
+
+	require.True(t, av1Disabled(&livekit.ClientInfo{Browser: "Firefox", BrowserVersion: "155.0", Os: "macOS"}))
+	require.True(t, av1Disabled(&livekit.ClientInfo{Browser: "firefox", BrowserVersion: "156.0.1", Os: "windows"}))
+	require.True(t, av1Disabled(&livekit.ClientInfo{Browser: "firefox", BrowserVersion: "158.0.2", Os: "windows"}))
+	// an unknown version is treated as affected
+	require.True(t, av1Disabled(&livekit.ClientInfo{Browser: "firefox", Os: "linux"}))
+	// should not be disabled for Chrome
+	require.False(t, av1Disabled(&livekit.ClientInfo{Browser: "chrome", Os: "linux"}))
+
+	// Firefox for Android keeps the AV1 rule alongside its H.264 publish rule
+	android := &livekit.ClientInfo{Browser: "firefox mobile", BrowserVersion: "156.0", Os: "android"}
+	require.True(t, av1Disabled(android))
+	conf := cm.GetConfiguration(android)
+	require.Len(t, conf.DisabledCodecs.Publish, 1)
+	require.True(t, mime.IsMimeTypeStringH264(conf.DisabledCodecs.Publish[0].Mime))
+}
 
 func TestScriptMatchConfiguration(t *testing.T) {
 	t.Run("no merge", func(t *testing.T) {
@@ -82,10 +137,12 @@ func TestScriptMatchConfiguration(t *testing.T) {
 
 func TestScriptMatch(t *testing.T) {
 	client := &livekit.ClientInfo{
-		Protocol:    6,
-		Browser:     "chrome",
-		Sdk:         3, // android
-		DeviceModel: "12345",
+		Protocol:       6,
+		Browser:        "chrome",
+		Sdk:            3, // android
+		DeviceModel:    "12345",
+		BrowserVersion: "13.2",
+		Version:        "2.17.1",
 	}
 
 	type testcase struct {
@@ -101,6 +158,14 @@ func TestScriptMatch(t *testing.T) {
 		{name: "unexist field", expr: `c.protocols > 5`, err: true},
 		{name: "combined condition", expr: `c.protocol > 5 && (c.sdk=="android" || c.sdk=="ios")`, result: true},
 		{name: "combined condition2", expr: `(c.device_model == "xiaomi 2201117ti" && c.os == "android") || ((c.browser == "firefox" || c.browser == "firefox mobile") && (c.os == "linux" || c.os == "android"))`, result: false},
+		{name: "string lesser", expr: `c.browser_version < "11.3"`, result: false},
+		{name: "string lesser eq", expr: `c.browser_version <= "13.2"`, result: true},
+		{name: "string greater", expr: `c.browser_version > "11.3"`, result: true},
+		{name: "string greater eq", expr: `c.browser_version >= "13.2"`, result: true},
+		{name: "semantic lesser", expr: `c.version < "2.16.10"`, result: false},
+		{name: "semantic lesser eq", expr: `c.version <= "2.17.1"`, result: true},
+		{name: "semantic greater", expr: `c.version > "2.16.10"`, result: true},
+		{name: "semantic greater eq", expr: `c.version >= "2.17.1"`, result: true},
 	}
 
 	for _, c := range cases {

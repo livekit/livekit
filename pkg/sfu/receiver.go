@@ -145,6 +145,8 @@ func NewWebRTCReceiver(
 		mime.IsMimeTypeStringRED(codec.MimeType) || strings.Contains(strings.ToLower(codec.SDPFmtpLine), "useinbandfec=1"),
 	)
 
+	w.UpdateTrackInfo(trackInfo)
+
 	return w
 }
 
@@ -157,6 +159,9 @@ func (w *WebRTCReceiver) GetConnectionScoreAndQuality() (float32, livekit.Connec
 }
 
 func (w *WebRTCReceiver) ssrc(layer int) uint32 {
+	w.upTracksMu.Lock()
+	defer w.upTracksMu.Unlock()
+
 	if track := w.upTracks[layer]; track != nil {
 		return uint32(track.SSRC())
 	}
@@ -195,10 +200,23 @@ func (w *WebRTCReceiver) AddUpTrack(track TrackRemote, buff *buffer.Buffer) erro
 	return nil
 }
 
-func (w *WebRTCReceiver) SetUpTrackPaused(paused bool) {
-	w.ReceiverBase.SetUpTrackPaused(paused)
+func (w *WebRTCReceiver) NumUpTracks() int {
+	numUpTracks := 0
 
-	w.connectionStats.UpdateMute(paused)
+	w.upTracksMu.Lock()
+	for _, track := range w.upTracks {
+		if track != nil {
+			numUpTracks++
+		}
+	}
+	w.upTracksMu.Unlock()
+
+	return numUpTracks
+}
+
+func (w *WebRTCReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
+	w.ReceiverBase.UpdateTrackInfo(ti)
+	w.connectionStats.UpdateMute(ti.GetMuted())
 }
 
 func (w *WebRTCReceiver) notifyMaxExpectedLayer(layer int32) {

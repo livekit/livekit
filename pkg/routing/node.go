@@ -19,6 +19,8 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
@@ -48,7 +50,7 @@ type LocalNodeImpl struct {
 
 func NewLocalNode(conf *config.Config) (*LocalNodeImpl, error) {
 	nodeID := guid.New(utils.NodePrefix)
-	if conf != nil && conf.RTC.NodeIP == "" {
+	if conf != nil && conf.RTC.NodeIP.IsEmpty() {
 		return nil, ErrIPNotSet
 	}
 	nowUnix := time.Now().Unix()
@@ -65,7 +67,7 @@ func NewLocalNode(conf *config.Config) (*LocalNodeImpl, error) {
 	}
 	var nsc *config.NodeStatsConfig
 	if conf != nil {
-		l.node.Ip = conf.RTC.NodeIP
+		l.node.Ip = conf.RTC.NodeIP.PrimaryIP()
 		l.node.Region = conf.Region
 
 		nsc = &conf.NodeStats
@@ -76,14 +78,14 @@ func NewLocalNode(conf *config.Config) (*LocalNodeImpl, error) {
 }
 
 func NewLocalNodeFromNodeProto(node *livekit.Node) (*LocalNodeImpl, error) {
-	return &LocalNodeImpl{node: utils.CloneProto(node)}, nil
+	return &LocalNodeImpl{node: proto.CloneOf(node)}, nil
 }
 
 func (l *LocalNodeImpl) Clone() *livekit.Node {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 
-	return utils.CloneProto(l.node)
+	return proto.CloneOf(l.node)
 }
 
 // for testing only
@@ -134,7 +136,7 @@ func (l *LocalNodeImpl) SetStats(stats *livekit.NodeStats) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
-	l.node.Stats = utils.CloneProto(stats)
+	l.node.Stats = proto.CloneOf(stats)
 }
 
 func (l *LocalNodeImpl) UpdateNodeStats() bool {

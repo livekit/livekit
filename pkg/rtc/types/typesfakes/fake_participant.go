@@ -5,14 +5,19 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/protocol/datatrack"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 )
 
 type FakeParticipant struct {
+	AddDataBlobStub        func(*livekit.DataBlob)
+	addDataBlobMutex       sync.RWMutex
+	addDataBlobArgsForCall []struct {
+		arg1 *livekit.DataBlob
+	}
 	CanSkipBroadcastStub        func() bool
 	canSkipBroadcastMutex       sync.RWMutex
 	canSkipBroadcastArgsForCall []struct {
@@ -77,6 +82,17 @@ type FakeParticipant struct {
 	getAudioLevelReturnsOnCall map[int]struct {
 		result1 float64
 		result2 bool
+	}
+	GetDataBlobStub        func(*livekit.DataBlobKey) *livekit.DataBlob
+	getDataBlobMutex       sync.RWMutex
+	getDataBlobArgsForCall []struct {
+		arg1 *livekit.DataBlobKey
+	}
+	getDataBlobReturns struct {
+		result1 *livekit.DataBlob
+	}
+	getDataBlobReturnsOnCall map[int]struct {
+		result1 *livekit.DataBlob
 	}
 	GetLoggerStub        func() logger.Logger
 	getLoggerMutex       sync.RWMutex
@@ -259,6 +275,16 @@ type FakeParticipant struct {
 	kindReturnsOnCall map[int]struct {
 		result1 livekit.ParticipantInfo_Kind
 	}
+	KindDetailsStub        func() []livekit.ParticipantInfo_KindDetail
+	kindDetailsMutex       sync.RWMutex
+	kindDetailsArgsForCall []struct {
+	}
+	kindDetailsReturns struct {
+		result1 []livekit.ParticipantInfo_KindDetail
+	}
+	kindDetailsReturnsOnCall map[int]struct {
+		result1 []livekit.ParticipantInfo_KindDetail
+	}
 	MigrateStateStub        func() types.MigrateState
 	migrateStateMutex       sync.RWMutex
 	migrateStateArgsForCall []struct {
@@ -349,6 +375,38 @@ type FakeParticipant struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeParticipant) AddDataBlob(arg1 *livekit.DataBlob) {
+	fake.addDataBlobMutex.Lock()
+	fake.addDataBlobArgsForCall = append(fake.addDataBlobArgsForCall, struct {
+		arg1 *livekit.DataBlob
+	}{arg1})
+	stub := fake.AddDataBlobStub
+	fake.recordInvocation("AddDataBlob", []interface{}{arg1})
+	fake.addDataBlobMutex.Unlock()
+	if stub != nil {
+		fake.AddDataBlobStub(arg1)
+	}
+}
+
+func (fake *FakeParticipant) AddDataBlobCallCount() int {
+	fake.addDataBlobMutex.RLock()
+	defer fake.addDataBlobMutex.RUnlock()
+	return len(fake.addDataBlobArgsForCall)
+}
+
+func (fake *FakeParticipant) AddDataBlobCalls(stub func(*livekit.DataBlob)) {
+	fake.addDataBlobMutex.Lock()
+	defer fake.addDataBlobMutex.Unlock()
+	fake.AddDataBlobStub = stub
+}
+
+func (fake *FakeParticipant) AddDataBlobArgsForCall(i int) *livekit.DataBlob {
+	fake.addDataBlobMutex.RLock()
+	defer fake.addDataBlobMutex.RUnlock()
+	argsForCall := fake.addDataBlobArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeParticipant) CanSkipBroadcast() bool {
@@ -680,6 +738,67 @@ func (fake *FakeParticipant) GetAudioLevelReturnsOnCall(i int, result1 float64, 
 		result1 float64
 		result2 bool
 	}{result1, result2}
+}
+
+func (fake *FakeParticipant) GetDataBlob(arg1 *livekit.DataBlobKey) *livekit.DataBlob {
+	fake.getDataBlobMutex.Lock()
+	ret, specificReturn := fake.getDataBlobReturnsOnCall[len(fake.getDataBlobArgsForCall)]
+	fake.getDataBlobArgsForCall = append(fake.getDataBlobArgsForCall, struct {
+		arg1 *livekit.DataBlobKey
+	}{arg1})
+	stub := fake.GetDataBlobStub
+	fakeReturns := fake.getDataBlobReturns
+	fake.recordInvocation("GetDataBlob", []interface{}{arg1})
+	fake.getDataBlobMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) GetDataBlobCallCount() int {
+	fake.getDataBlobMutex.RLock()
+	defer fake.getDataBlobMutex.RUnlock()
+	return len(fake.getDataBlobArgsForCall)
+}
+
+func (fake *FakeParticipant) GetDataBlobCalls(stub func(*livekit.DataBlobKey) *livekit.DataBlob) {
+	fake.getDataBlobMutex.Lock()
+	defer fake.getDataBlobMutex.Unlock()
+	fake.GetDataBlobStub = stub
+}
+
+func (fake *FakeParticipant) GetDataBlobArgsForCall(i int) *livekit.DataBlobKey {
+	fake.getDataBlobMutex.RLock()
+	defer fake.getDataBlobMutex.RUnlock()
+	argsForCall := fake.getDataBlobArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeParticipant) GetDataBlobReturns(result1 *livekit.DataBlob) {
+	fake.getDataBlobMutex.Lock()
+	defer fake.getDataBlobMutex.Unlock()
+	fake.GetDataBlobStub = nil
+	fake.getDataBlobReturns = struct {
+		result1 *livekit.DataBlob
+	}{result1}
+}
+
+func (fake *FakeParticipant) GetDataBlobReturnsOnCall(i int, result1 *livekit.DataBlob) {
+	fake.getDataBlobMutex.Lock()
+	defer fake.getDataBlobMutex.Unlock()
+	fake.GetDataBlobStub = nil
+	if fake.getDataBlobReturnsOnCall == nil {
+		fake.getDataBlobReturnsOnCall = make(map[int]struct {
+			result1 *livekit.DataBlob
+		})
+	}
+	fake.getDataBlobReturnsOnCall[i] = struct {
+		result1 *livekit.DataBlob
+	}{result1}
 }
 
 func (fake *FakeParticipant) GetLogger() logger.Logger {
@@ -1644,6 +1763,59 @@ func (fake *FakeParticipant) KindReturnsOnCall(i int, result1 livekit.Participan
 	}
 	fake.kindReturnsOnCall[i] = struct {
 		result1 livekit.ParticipantInfo_Kind
+	}{result1}
+}
+
+func (fake *FakeParticipant) KindDetails() []livekit.ParticipantInfo_KindDetail {
+	fake.kindDetailsMutex.Lock()
+	ret, specificReturn := fake.kindDetailsReturnsOnCall[len(fake.kindDetailsArgsForCall)]
+	fake.kindDetailsArgsForCall = append(fake.kindDetailsArgsForCall, struct {
+	}{})
+	stub := fake.KindDetailsStub
+	fakeReturns := fake.kindDetailsReturns
+	fake.recordInvocation("KindDetails", []interface{}{})
+	fake.kindDetailsMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) KindDetailsCallCount() int {
+	fake.kindDetailsMutex.RLock()
+	defer fake.kindDetailsMutex.RUnlock()
+	return len(fake.kindDetailsArgsForCall)
+}
+
+func (fake *FakeParticipant) KindDetailsCalls(stub func() []livekit.ParticipantInfo_KindDetail) {
+	fake.kindDetailsMutex.Lock()
+	defer fake.kindDetailsMutex.Unlock()
+	fake.KindDetailsStub = stub
+}
+
+func (fake *FakeParticipant) KindDetailsReturns(result1 []livekit.ParticipantInfo_KindDetail) {
+	fake.kindDetailsMutex.Lock()
+	defer fake.kindDetailsMutex.Unlock()
+	fake.KindDetailsStub = nil
+	fake.kindDetailsReturns = struct {
+		result1 []livekit.ParticipantInfo_KindDetail
+	}{result1}
+}
+
+func (fake *FakeParticipant) KindDetailsReturnsOnCall(i int, result1 []livekit.ParticipantInfo_KindDetail) {
+	fake.kindDetailsMutex.Lock()
+	defer fake.kindDetailsMutex.Unlock()
+	fake.KindDetailsStub = nil
+	if fake.kindDetailsReturnsOnCall == nil {
+		fake.kindDetailsReturnsOnCall = make(map[int]struct {
+			result1 []livekit.ParticipantInfo_KindDetail
+		})
+	}
+	fake.kindDetailsReturnsOnCall[i] = struct {
+		result1 []livekit.ParticipantInfo_KindDetail
 	}{result1}
 }
 

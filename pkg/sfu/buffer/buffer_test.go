@@ -15,6 +15,7 @@
 package buffer
 
 import (
+	"encoding/binary"
 	"fmt"
 	"math"
 	"sync"
@@ -23,10 +24,15 @@ import (
 
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
+	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/mediatransportutil/pkg/nack"
+
+	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 )
 
 var h265Codec = webrtc.RTPCodecParameters{
@@ -175,6 +181,59 @@ func TestNack(t *testing.T) {
 		wg.Wait()
 
 	})
+}
+
+func TestNackOnRTX(t *testing.T) {
+	buff := NewBuffer(123, 1, 1)
+	buff.codecType = webrtc.RTPCodecTypeVideo
+	var mu sync.Mutex
+	var nacked []uint16
+	buff.OnRtcpFeedback(func(fb []rtcp.Packet) {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, pkt := range fb {
+			if p, ok := pkt.(*rtcp.TransportLayerNack); ok && p.MediaSSRC == 123 {
+				for _, pair := range p.Nacks {
+					nacked = append(nacked, pair.PacketList()...)
+				}
+			}
+		}
+	})
+	require.NoError(t, buff.Bind(webrtc.RTPParameters{
+		Codecs: []webrtc.RTPCodecParameters{vp8Codec},
+	}, vp8Codec.RTPCodecCapability, 0))
+	buff.rtxPayloadType = 97
+	rtt := uint32(20)
+	buff.nacker.SetRTT(rtt)
+
+	payload := []byte{0xff, 0xff, 0xff, 0xfd, 0xb4, 0x9f, 0x94, 0x1}
+	// sequence numbers 1 and 2 are lost
+	for _, sn := range []uint16{0, 3} {
+		pkt := rtp.Packet{
+			Header:  rtp.Header{Version: 2, PayloadType: 96, SequenceNumber: sn, Timestamp: uint32(sn), SSRC: 123},
+			Payload: payload,
+		}
+		b, err := pkt.Marshal()
+		require.NoError(t, err)
+		_, err = buff.Write(b)
+		require.NoError(t, err)
+	}
+
+	time.Sleep(time.Duration(2*rtt) * time.Millisecond)
+	mu.Lock()
+	nacked = nil
+	mu.Unlock()
+
+	// RTX repairs sequence number 2, the NACK for 1 is due and must be sent
+	rtxPkt := rtp.Packet{
+		Header:  rtp.Header{Version: 2, PayloadType: 97, SequenceNumber: 500, Timestamp: 2, SSRC: 456},
+		Payload: append([]byte{0x00, 0x02}, payload...),
+	}
+	buff.writeRTX(&rtxPkt, time.Now().UnixNano())
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, []uint16{1}, nacked)
 }
 
 func TestNewBuffer(t *testing.T) {
@@ -460,6 +519,138 @@ func TestCodecChange(t *testing.T) {
 	}
 }
 
+// Write unmarshals into reused scratch and callers reuse the input buffer, so each ExtPacket
+// must keep its own header and extensions, and Write plus ReadExtended must not allocate per packet
+func TestIngestNoAlloc(t *testing.T) {
+	testCases := []struct {
+		name      string
+		codec     webrtc.RTPCodecParameters
+		payload   []byte
+		maxAllocs float64
+	}{
+		{"opus", opusCodec, make([]byte, 100), 0},
+		// VP8 boxes the parsed descriptor into ExtPacket.Payload
+		{"vp8", vp8Codec, []byte{0x90, 0xe0, 0x80, 0x01, 0x05, 0x00, 0x01}, 1},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			buff := NewBuffer(123, 100, 100)
+			require.NoError(t, buff.Bind(webrtc.RTPParameters{
+				HeaderExtensions: []webrtc.RTPHeaderExtensionParameter{
+					{URI: sdp.AudioLevelURI, ID: 1},
+					{URI: act.AbsCaptureTimeURI, ID: 2},
+				},
+				Codecs: []webrtc.RTPCodecParameters{tc.codec},
+			}, tc.codec.RTPCodecCapability, 0))
+			defer buff.Close()
+
+			marshal := func(sn uint16, level byte) []byte {
+				p := rtp.Packet{
+					Header: rtp.Header{
+						Version:        2,
+						PayloadType:    uint8(tc.codec.PayloadType),
+						SequenceNumber: sn,
+						Timestamp:      uint32(sn) * 960,
+						SSRC:           123,
+					},
+					Payload: tc.payload,
+				}
+				require.NoError(t, p.SetExtension(1, []byte{level}))
+				require.NoError(t, p.SetExtension(3, []byte{0, 0}))
+				raw, err := p.Marshal()
+				require.NoError(t, err)
+				return raw
+			}
+
+			// one input buffer for all writes, like the transport read loop
+			input := make([]byte, 1500)
+			write := func(sn uint16, level byte) {
+				n := copy(input, marshal(sn, level))
+				_, err := buff.Write(input[:n])
+				require.NoError(t, err)
+			}
+
+			readBuf := make([]byte, 1500)
+			write(1, 10)
+			write(2, 20)
+			for _, want := range []struct {
+				sn    uint16
+				level byte
+			}{{1, 10}, {2, 20}} {
+				ep, err := buff.ReadExtended(readBuf)
+				require.NoError(t, err)
+				require.Equal(t, want.sn, ep.Packet.SequenceNumber)
+				require.Equal(t, []byte{want.level}, ep.Packet.GetExtension(1))
+				require.Equal(t, tc.payload, ep.Packet.Payload)
+				require.Nil(t, ep.AbsCaptureTimeExt)
+				ReleaseExtPacket(ep)
+			}
+
+			raw := marshal(3, 30)
+			sn := uint16(3)
+			ingest := func() {
+				binary.BigEndian.PutUint16(raw[2:], sn)
+				binary.BigEndian.PutUint32(raw[4:], uint32(sn)*960)
+				sn++
+				_, err := buff.Write(raw)
+				require.NoError(t, err)
+				ep, err := buff.ReadExtended(readBuf)
+				require.NoError(t, err)
+				ReleaseExtPacket(ep)
+			}
+			allocs := testing.AllocsPerRun(1000, ingest)
+			if !utils.RaceEnabled {
+				require.LessOrEqual(t, allocs, tc.maxAllocs, "allocations per Write plus ReadExtended")
+			}
+		})
+	}
+}
+
+// a dropped padding only packet shifts later sequence numbers, ReadExtended must keep the shifted number
+// in the header and in RawPacket
+func TestIngestDroppedPaddingKeepsAdjustedSequenceNumber(t *testing.T) {
+	buff := NewBuffer(123, 100, 100)
+	require.NoError(t, buff.Bind(webrtc.RTPParameters{
+		Codecs: []webrtc.RTPCodecParameters{opusCodec},
+	}, opusCodec.RTPCodecCapability, 0))
+	defer buff.Close()
+
+	write := func(sn uint16, paddingOnly bool) {
+		p := rtp.Packet{
+			Header: rtp.Header{
+				Version:        2,
+				PayloadType:    uint8(opusCodec.PayloadType),
+				SequenceNumber: sn,
+				Timestamp:      uint32(sn) * 960,
+				SSRC:           123,
+			},
+		}
+		if paddingOnly {
+			p.Header.Padding = true
+			p.Header.PaddingSize = 20
+		} else {
+			p.Payload = make([]byte, 100)
+		}
+		raw, err := p.Marshal()
+		require.NoError(t, err)
+		_, err = buff.Write(raw)
+		require.NoError(t, err)
+	}
+
+	write(40, false)
+	write(41, true)
+	write(42, false)
+
+	readBuf := make([]byte, 1500)
+	for _, wantSN := range []uint16{40, 41} {
+		ep, err := buff.ReadExtended(readBuf)
+		require.NoError(t, err)
+		require.Equal(t, wantSN, ep.Packet.SequenceNumber)
+		require.Equal(t, wantSN, binary.BigEndian.Uint16(ep.RawPacket[2:]))
+		ReleaseExtPacket(ep)
+	}
+}
+
 func BenchmarkMemcpu(b *testing.B) {
 	buf := make([]byte, 1500*1500*10)
 	buf2 := make([]byte, 1500*1500*20)
@@ -476,4 +667,166 @@ func BenchmarkExtPacketFactory(b *testing.B) {
 		*extPkt = ExtPacket{}
 		ExtPacketFactory.Put(extPkt)
 	}
+}
+
+func TestGetPacketConcurrentWithWrite(t *testing.T) {
+	newBound := func(t *testing.T) *Buffer {
+		buff := NewBuffer(123, 1, 1)
+		buff.OnRtcpFeedback(func(_ []rtcp.Packet) {})
+		require.NoError(t, buff.Bind(webrtc.RTPParameters{Codecs: []webrtc.RTPCodecParameters{opusCodec}}, opusCodec.RTPCodecCapability, 0))
+		return buff
+	}
+	// the payload carries the sequence number, so a read can check it got the packet it asked for;
+	// assert, not require, as this also runs off the test goroutine
+	write := func(t *testing.T, buff *Buffer, sn uint16) {
+		payload := make([]byte, 100)
+		binary.BigEndian.PutUint16(payload, sn)
+		pkt := &rtp.Packet{
+			Header:  rtp.Header{Version: 2, PayloadType: 111, SequenceNumber: sn, Timestamp: uint32(sn) * 960, SSRC: 123},
+			Payload: payload,
+		}
+		b, err := pkt.Marshal()
+		if assert.NoError(t, err) {
+			_, err = buff.Write(b)
+			assert.NoError(t, err)
+		}
+	}
+
+	t.Run("a read runs while another read holds the lock, a write waits", func(t *testing.T) {
+		buff := newBound(t)
+		for sn := uint16(1000); sn < 1010; sn++ {
+			write(t, buff, sn)
+		}
+		esn := buff.rtpStats.ExtendedHighestSequenceNumber()
+
+		buff.RLock() // a read in progress
+		var unlockOnce sync.Once
+		unlock := func() { unlockOnce.Do(buff.RUnlock) }
+		t.Cleanup(unlock) // so a failure below does not leave the lock held
+
+		readDone := make(chan struct{})
+		go func() {
+			defer close(readDone)
+			n, err := buff.GetPacket(make([]byte, 1500), esn)
+			assert.NoError(t, err)
+			assert.Positive(t, n)
+		}()
+		require.Eventually(t, func() bool {
+			select {
+			case <-readDone:
+				return true
+			default:
+				return false
+			}
+		}, time.Second, 5*time.Millisecond, "a read must not wait for another read")
+
+		writeDone := make(chan struct{})
+		go func() {
+			defer close(writeDone)
+			write(t, buff, 1010)
+		}()
+		select {
+		case <-writeDone:
+			t.Fatal("a write must wait for the read to finish")
+		case <-time.After(50 * time.Millisecond):
+		}
+
+		unlock()
+		select {
+		case <-writeDone:
+		case <-time.After(time.Second):
+			t.Fatal("the write must go through once the read is done")
+		}
+	})
+
+	t.Run("concurrent reads get the packet they ask for while writes continue", func(t *testing.T) {
+		buff := newBound(t)
+		const first, numPackets = uint16(2000), 2000
+		write(t, buff, first)
+		base := buff.rtpStats.ExtendedHighestSequenceNumber() - uint64(first)
+
+		var wg sync.WaitGroup
+		stop := make(chan struct{})
+		for r := 0; r < 4; r++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				buf := make([]byte, 1500)
+				var pkt rtp.Packet
+				for {
+					select {
+					case <-stop:
+						return
+					default:
+					}
+					esn := buff.rtpStats.ExtendedHighestSequenceNumber()
+					n, err := buff.GetPacket(buf, esn)
+					if err != nil {
+						continue // the ring may have moved on
+					}
+					if assert.NoError(t, pkt.Unmarshal(buf[:n])) {
+						assert.Equal(t, uint16(esn-base), pkt.SequenceNumber)
+						assert.Equal(t, pkt.SequenceNumber, binary.BigEndian.Uint16(pkt.Payload))
+					}
+				}
+			}()
+		}
+
+		for sn := first + 1; sn < first+numPackets; sn++ {
+			write(t, buff, sn)
+		}
+		close(stop)
+		wg.Wait()
+	})
+}
+
+func TestReaderWasWaiting(t *testing.T) {
+	buff := NewBuffer(123, 1, 1)
+	buff.OnRtcpFeedback(func(_ []rtcp.Packet) {})
+	require.NoError(t, buff.Bind(webrtc.RTPParameters{Codecs: []webrtc.RTPCodecParameters{opusCodec}}, opusCodec.RTPCodecCapability, 0))
+	write := func(sn uint16) {
+		pkt := &rtp.Packet{
+			Header:  rtp.Header{Version: 2, PayloadType: 111, SequenceNumber: sn, Timestamp: uint32(sn) * 960, SSRC: 123},
+			Payload: make([]byte, 100),
+		}
+		b, err := pkt.Marshal()
+		require.NoError(t, err)
+		_, err = buff.Write(b)
+		require.NoError(t, err)
+	}
+	read := func() *ExtPacket {
+		extPkt, err := buff.ReadExtended(make([]byte, 1500))
+		require.NoError(t, err)
+		require.NotNil(t, extPkt)
+		return extPkt
+	}
+
+	// packets that arrive while nobody reads queue up, none found the reader waiting
+	write(1)
+	write(2)
+	require.False(t, read().ReaderWasWaiting)
+	require.False(t, read().ReaderWasWaiting)
+
+	// a reader parked on the empty buffer is found waiting by the next packet
+	got := make(chan bool, 1)
+	go func() {
+		extPkt, err := buff.ReadExtended(make([]byte, 1500))
+		got <- err == nil && extPkt != nil && extPkt.ReaderWasWaiting
+	}()
+	require.Eventually(t, func() bool {
+		buff.RLock()
+		defer buff.RUnlock()
+		return buff.readerWaiting
+	}, time.Second, time.Millisecond)
+	write(3)
+	require.True(t, <-got)
+
+	// two packets that arrive before the parked reader wakes: only the first found it waiting
+	buff.Lock()
+	buff.readerWaiting = true
+	buff.Unlock()
+	write(4)
+	write(5)
+	require.True(t, read().ReaderWasWaiting)
+	require.False(t, read().ReaderWasWaiting)
 }

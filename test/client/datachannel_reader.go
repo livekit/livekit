@@ -14,7 +14,7 @@ type DataChannelReader struct {
 func NewDataChannelReader(bitrate int) *DataChannelReader {
 	return &DataChannelReader{
 		target:  bitrate,
-		bitrate: datachannel.NewBitrateCalculator(datachannel.BitrateDuration*5, datachannel.BitrateWindow),
+		bitrate: datachannel.NewBitrateCalculator(datachannel.BitrateDuration*5, datachannel.BitrateWindow, datachannel.BitrateModeWallClock),
 	}
 }
 

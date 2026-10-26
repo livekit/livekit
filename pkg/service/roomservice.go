@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/twitchtv/twirp"
 
@@ -27,6 +28,8 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/protocol/utils"
+	"github.com/livekit/psrpc"
 )
 
 type RoomService struct {
@@ -81,6 +84,19 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 
 	if !s.limitConf.CheckRoomNameLength(req.Name) {
 		return nil, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, s.limitConf.MaxRoomNameLength)
+	}
+
+	if !s.limitConf.CheckMetadataSize(req.Metadata) {
+		return nil, twirp.InvalidArgumentError(ErrMetadataExceedsLimits.Error(), strconv.Itoa(int(s.limitConf.MaxMetadataSize)))
+	}
+
+	for _, ad := range req.Agents {
+		if !s.limitConf.CheckMetadataSize(ad.Metadata) {
+			return nil, twirp.InvalidArgumentError(ErrMetadataExceedsLimits.Error(), strconv.Itoa(int(s.limitConf.MaxMetadataSize)))
+		}
+		if !s.limitConf.CheckAttributesSize(ad.Attributes) {
+			return nil, twirp.InvalidArgumentError(ErrAttributeExceedsLimits.Error(), strconv.Itoa(int(s.limitConf.MaxAttributesSize)))
+		}
 	}
 
 	err := s.roomAllocator.SelectRoomNode(ctx, livekit.RoomName(req.Name), livekit.NodeID(req.NodeId))
@@ -153,7 +169,7 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	return res, err
 }
 
-func (s *RoomService) ListParticipants(ctx context.Context, req *livekit.ListParticipantsRequest) (*livekit.ListParticipantsResponse, error) {
+func (s *RoomService) ListParticipants(ctx context.Context, req *livekit.ListParticipantsRequest) (res *livekit.ListParticipantsResponse, err error) {
 	RecordRequest(ctx, req)
 
 	AppendLogFields(ctx, "room", req.Room)
@@ -161,19 +177,29 @@ func (s *RoomService) ListParticipants(ctx context.Context, req *livekit.ListPar
 		return nil, twirpAuthError(err)
 	}
 
-	participants, err := s.roomStore.ListParticipants(ctx, livekit.RoomName(req.Room))
+	if s.apiConf.EnablePsrpcForGetListParticpants {
+		res, err = s.roomClient.ListParticipants(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
+	} else if store, ok := s.roomStore.(OSSServiceStore); ok {
+		var participants []*livekit.ParticipantInfo
+		participants, err = store.ListParticipants(ctx, livekit.RoomName(req.Room))
+		if err == nil {
+			res = &livekit.ListParticipantsResponse{
+				Participants: participants,
+			}
+		}
+	} else {
+		err = psrpc.ErrUnimplemented
+	}
+
 	if err != nil {
 		return nil, err
 	}
 
-	res := &livekit.ListParticipantsResponse{
-		Participants: participants,
-	}
 	RecordResponse(ctx, res)
 	return res, nil
 }
 
-func (s *RoomService) GetParticipant(ctx context.Context, req *livekit.RoomParticipantIdentity) (*livekit.ParticipantInfo, error) {
+func (s *RoomService) GetParticipant(ctx context.Context, req *livekit.RoomParticipantIdentity) (participant *livekit.ParticipantInfo, err error) {
 	RecordRequest(ctx, req)
 
 	AppendLogFields(ctx, "room", req.Room, "participant", req.Identity)
@@ -181,7 +207,14 @@ func (s *RoomService) GetParticipant(ctx context.Context, req *livekit.RoomParti
 		return nil, twirpAuthError(err)
 	}
 
-	participant, err := s.roomStore.LoadParticipant(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity))
+	if s.apiConf.EnablePsrpcForGetListParticpants {
+		participant, err = s.roomClient.GetParticipant(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
+	} else if store, ok := s.roomStore.(OSSServiceStore); ok {
+		participant, err = store.LoadParticipant(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity))
+	} else {
+		err = psrpc.ErrUnimplemented
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -199,8 +232,13 @@ func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomPa
 		return nil, twirpAuthError(err)
 	}
 
-	if _, err := s.roomStore.LoadParticipant(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)); err == ErrParticipantNotFound {
-		return nil, twirp.NotFoundError("participant not found")
+	if os, ok := s.roomStore.(OSSServiceStore); ok {
+		found, err := os.HasParticipant(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity))
+		if err != nil {
+			return nil, err
+		} else if !found {
+			return nil, ErrParticipantNotFound
+		}
 	}
 
 	res, err := s.participantClient.RemoveParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
@@ -297,9 +335,8 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 	RecordRequest(ctx, req)
 
 	AppendLogFields(ctx, "room", req.Room, "size", len(req.Metadata))
-	maxMetadataSize := int(s.limitConf.MaxMetadataSize)
-	if maxMetadataSize > 0 && len(req.Metadata) > maxMetadataSize {
-		return nil, twirp.InvalidArgumentError(ErrMetadataExceedsLimits.Error(), strconv.Itoa(maxMetadataSize))
+	if !s.limitConf.CheckMetadataSize(req.Metadata) {
+		return nil, twirp.InvalidArgumentError(ErrMetadataExceedsLimits.Error(), strconv.Itoa(int(s.limitConf.MaxMetadataSize)))
 	}
 
 	if err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room)); err != nil {
@@ -371,7 +408,22 @@ func (s *RoomService) PerformRpc(ctx context.Context, req *livekit.PerformRpcReq
 		return nil, ErrDestinationIdentityRequired
 	}
 
-	res, err := s.participantClient.PerformRpc(ctx, s.topicFormatter.ParticipantTopic(ctx, roomName, livekit.ParticipantIdentity(req.DestinationIdentity)), req)
+	res, err := s.participantClient.PerformRpc(
+		ctx,
+		s.topicFormatter.ParticipantTopic(ctx, roomName, livekit.ParticipantIdentity(req.DestinationIdentity)),
+		req,
+		psrpc.WithRequestTimeout(performRpcRequestTimeout(req)),
+	)
 	RecordResponse(ctx, res)
 	return res, err
+}
+
+// performRpcRequestTimeout covers the participant's response window plus the ack round trip,
+// since the psrpc default request timeout is shorter than the default RPC response timeout
+func performRpcRequestTimeout(req *livekit.PerformRpcRequest) time.Duration {
+	responseTimeout := time.Duration(req.GetResponseTimeoutMs()) * time.Millisecond
+	if responseTimeout <= 0 {
+		responseTimeout = utils.DataChannelRpcDefaultResponseTimeout
+	}
+	return responseTimeout + utils.DataChannelRpcMaxRoundTripLatency
 }

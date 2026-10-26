@@ -49,9 +49,22 @@ var StaticConfigurations = []ConfigurationItem{
 		},
 		Merge: true,
 	},
+	// Firefox enabled AV1 for WebRTC by default since 155, but we got reports of issues with AV1 decoding.
+	// It does not publish AV1 either (no SVC encoding), so disable it in both directions.
+	{
+		Match: must.Get(NewScriptMatch(`c.browser == "firefox" || c.browser == "firefox mobile"`)),
+		Configuration: &livekit.ClientConfiguration{
+			DisabledCodecs: &livekit.DisabledCodecs{
+				Codecs: []*livekit.Codec{
+					{Mime: mime.MimeTypeAV1.String()},
+				},
+			},
+		},
+		Merge: true,
+	},
 	{
 		Match: must.Get(NewScriptMatch(`(c.device_model == "xiaomi 2201117ti" && c.os == "android") ||
-		  ((c.browser == "firefox" || c.browser == "firefox mobile") && (c.os == "linux" || c.os == "android"))`)),
+		  ((c.browser == "firefox" || c.browser == "firefox mobile") && c.os == "android")`)),
 		Configuration: &livekit.ClientConfiguration{
 			DisabledCodecs: &livekit.DisabledCodecs{
 				Publish: []*livekit.Codec{
@@ -59,6 +72,7 @@ var StaticConfigurations = []ConfigurationItem{
 				},
 			},
 		},
-		Merge: false,
+		// merged so Firefox for Android keeps the AV1 rule above
+		Merge: true,
 	},
 }

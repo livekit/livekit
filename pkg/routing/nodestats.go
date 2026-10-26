@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -29,7 +31,7 @@ type NodeStats struct {
 	config    config.NodeStatsConfig
 	startedAt int64
 
-	lock                 sync.Mutex
+	lock                 sync.RWMutex
 	statsHistory         []*livekit.NodeStats
 	statsHistoryWritePtr int
 }
@@ -79,4 +81,12 @@ func (n *NodeStats) UpdateAndGetNodeStats() (*livekit.NodeStats, error) {
 	n.statsHistory[n.statsHistoryWritePtr] = stats
 	n.statsHistoryWritePtr = (n.statsHistoryWritePtr + 1) % len(n.statsHistory)
 	return stats, nil
+}
+
+func (n *NodeStats) GetLatestNodeStats() *livekit.NodeStats {
+	n.lock.RLock()
+	defer n.lock.RUnlock()
+
+	latestPtr := (n.statsHistoryWritePtr - 1 + len(n.statsHistory)) % len(n.statsHistory)
+	return proto.CloneOf(n.statsHistory[latestPtr])
 }

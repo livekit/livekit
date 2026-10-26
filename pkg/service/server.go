@@ -16,18 +16,19 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
-	_ "net/http/pprof"
+	httppprof "net/http/pprof"
 	"runtime"
 	"runtime/pprof"
 	"strconv"
 	"time"
 
-	"github.com/pion/turn/v4"
+	"github.com/pion/turn/v5"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
 	"github.com/twitchtv/twirp"
@@ -40,27 +41,30 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/xtwirp"
 
+	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/version"
 )
 
 type LivekitServer struct {
-	config       *config.Config
-	ioService    *IOInfoService
-	rtcService   *RTCService
-	whipService  *WHIPService
-	agentService *AgentService
-	httpServer   *http.Server
-	promServer   *http.Server
-	router       routing.Router
-	roomManager  *RoomManager
-	signalServer *SignalServer
-	turnServer   *turn.Server
-	currentNode  routing.LocalNode
-	running      atomic.Bool
-	doneChan     chan struct{}
-	closedChan   chan struct{}
+	config             *config.Config
+	ioService          *IOInfoService
+	rtcService         *RTCService
+	whipService        *WHIPService
+	httpServer         *http.Server
+	promServer         *http.Server
+	debugServer        *http.Server
+	webtransportServer *WebTransportServer
+	agentEndpoint      *AgentEndpointService
+	router             routing.Router
+	roomManager        *RoomManager
+	signalServer       *SignalServer
+	turnServer         *turn.Server
+	currentNode        routing.LocalNode
+	running            atomic.Bool
+	doneChan           chan struct{}
+	closedChan         chan struct{}
 }
 
 func NewLivekitServer(conf *config.Config,
@@ -72,7 +76,9 @@ func NewLivekitServer(conf *config.Config,
 	ioService *IOInfoService,
 	rtcService *RTCService,
 	whipService *WHIPService,
-	agentService *AgentService,
+	agentWSService *AgentWSService,
+	agentWTService *AgentWTService,
+	agentEndpointService *AgentEndpointService,
 	keyProvider auth.KeyProvider,
 	router routing.Router,
 	roomManager *RoomManager,
@@ -85,7 +91,6 @@ func NewLivekitServer(conf *config.Config,
 		ioService:    ioService,
 		rtcService:   rtcService,
 		whipService:  whipService,
-		agentService: agentService,
 		router:       router,
 		roomManager:  roomManager,
 		signalServer: signalServer,
@@ -93,26 +98,6 @@ func NewLivekitServer(conf *config.Config,
 		turnServer:  turnServer,
 		currentNode: currentNode,
 		closedChan:  make(chan struct{}),
-	}
-
-	middlewares := []negroni.Handler{
-		// always first
-		negroni.NewRecovery(),
-		// CORS is allowed, we rely on token authentication to prevent improper use
-		cors.New(cors.Options{
-			AllowOriginFunc: func(origin string) bool {
-				return true
-			},
-			AllowedMethods: []string{"OPTIONS", "HEAD", "GET", "POST", "PATCH", "DELETE"},
-			AllowedHeaders: []string{"*"},
-			ExposedHeaders: []string{"*"},
-			// allow preflight to be cached for a day
-			MaxAge: 86400,
-		}),
-		negroni.HandlerFunc(RemoveDoubleSlashes),
-	}
-	if keyProvider != nil {
-		middlewares = append(middlewares, NewAPIKeyAuthMiddleware(keyProvider))
 	}
 
 	serverOptions := []any{
@@ -146,15 +131,22 @@ func NewLivekitServer(conf *config.Config,
 	xtwirp.RegisterServer(mux, sipServer)
 	rtcService.SetupRoutes(mux)
 	whipService.SetupRoutes(mux)
-	mux.Handle("/agent", agentService)
+	mux.Handle("/agent", agentWSService)
 	mux.HandleFunc("/", s.defaultHandler)
 
+	// NewHTTPHandler branches on a nil handler, which a typed-nil would defeat
+	var agentFront http.Handler
+	if !conf.Agents.Endpoints.Disabled {
+		agentFront = agentEndpointService
+		s.agentEndpoint = agentEndpointService
+	}
+
 	s.httpServer = &http.Server{
-		Handler: configureMiddlewares(mux, middlewares...),
+		Handler: NewHTTPHandler(conf, keyProvider, mux, agentFront),
 	}
 
 	if conf.PrometheusPort > 0 {
-		logger.Warnw("prometheus_port is deprecated, please switch prometheus.port instead", nil)
+		logger.Warnw("prometheus_port is deprecated, please switch to prometheus.port instead", nil)
 		conf.Prometheus.Port = conf.PrometheusPort
 	}
 
@@ -165,10 +157,41 @@ func NewLivekitServer(conf *config.Config,
 			protectedHandler.Use(negroni.HandlerFunc(GenBasicAuthMiddleware(conf.Prometheus.Username, conf.Prometheus.Password)))
 			protectedHandler.UseHandler(promHandler)
 			promHandler = protectedHandler
+		} else if conf.Prometheus.Username != "" || conf.Prometheus.Password != "" {
+			logger.Warnw("prometheus username or password is set but not both, set both or nothing for unauthenticated access", nil)
+			err = errors.New("prometheus username or password is set but not both, set both or nothing for unauthenticated access")
+			return
 		}
 		s.promServer = &http.Server{
 			Handler: promHandler,
 		}
+	}
+
+	if conf.DebugHandler.Port > 0 {
+		debugMux := http.NewServeMux()
+		debugMux.HandleFunc("/debug/pprof/", httppprof.Index)
+		debugMux.HandleFunc("/debug/pprof/cmdline", httppprof.Cmdline)
+		debugMux.HandleFunc("/debug/pprof/profile", httppprof.Profile)
+		debugMux.HandleFunc("/debug/pprof/symbol", httppprof.Symbol)
+		debugMux.HandleFunc("/debug/pprof/trace", httppprof.Trace)
+		debugMux.HandleFunc("/debug/goroutine", s.debugGoroutines)
+		debugMux.HandleFunc("/debug/rooms", s.debugInfo)
+		s.debugServer = &http.Server{
+			Handler: http.Handler(debugMux),
+		}
+	}
+
+	if conf.WebTransport.Port > 0 {
+		var tlsConf *tls.Config
+		tlsConf, err = WebTransportTLS(conf.WebTransport.TLSCertFile, conf.WebTransport.TLSKeyFile, conf.Development)
+		if err != nil {
+			return
+		}
+		wtMux := http.NewServeMux()
+		wtMux.Handle("/agent", agentWTService)
+
+		s.webtransportServer = NewWebTransportServer(tlsConf)
+		s.webtransportServer.H3.Handler = NewWebTransportHandler(keyProvider, s.webtransportServer, wtMux)
 	}
 
 	if err = router.RemoveDeadNodes(); err != nil {
@@ -221,6 +244,7 @@ func (s *LivekitServer) Start() error {
 	// ensure we could listen
 	listeners := make([]net.Listener, 0)
 	promListeners := make([]net.Listener, 0)
+	debugListeners := make([]net.Listener, 0)
 	for _, addr := range addresses {
 		ln, err := net.Listen("tcp", net.JoinHostPort(addr, strconv.Itoa(int(s.config.Port))))
 		if err != nil {
@@ -234,6 +258,20 @@ func (s *LivekitServer) Start() error {
 				return err
 			}
 			promListeners = append(promListeners, ln)
+		}
+
+		if s.debugServer != nil {
+			ln, err = net.Listen("tcp", net.JoinHostPort(addr, strconv.Itoa(int(s.config.DebugHandler.Port))))
+			if err != nil {
+				return err
+			}
+			debugListeners = append(debugListeners, ln)
+		}
+	}
+
+	if s.webtransportServer != nil {
+		if _, err := s.webtransportServer.Listen(s.config.BindAddresses, s.config.WebTransport.Port); err != nil {
+			return err
 		}
 	}
 
@@ -259,6 +297,12 @@ func (s *LivekitServer) Start() error {
 	if s.config.Prometheus.Port != 0 {
 		values = append(values, "portPrometheus", s.config.Prometheus.Port)
 	}
+	if s.config.DebugHandler.Port != 0 {
+		values = append(values, "portDebugHandler", s.config.DebugHandler.Port)
+	}
+	if s.config.WebTransport.Port != 0 {
+		values = append(values, "portWebTransport", s.config.WebTransport.Port)
+	}
 	if s.config.Region != "" {
 		values = append(values, "region", s.config.Region)
 	}
@@ -269,6 +313,10 @@ func (s *LivekitServer) Start() error {
 
 	for _, promLn := range promListeners {
 		go s.promServer.Serve(promLn)
+	}
+
+	for _, debugLn := range debugListeners {
+		go s.debugServer.Serve(debugLn)
 	}
 
 	if err := s.signalServer.Start(); err != nil {
@@ -298,10 +346,19 @@ func (s *LivekitServer) Start() error {
 
 	<-s.doneChan
 
+	// hijacked tunnels need their own drain before Shutdown
+	s.drainAgentTunnels(false)
+
 	// wait for shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	_ = s.httpServer.Shutdown(ctx)
+	if s.debugServer != nil {
+		_ = s.debugServer.Shutdown(ctx)
+	}
+	if s.webtransportServer != nil {
+		_ = s.webtransportServer.Shutdown(ctx)
+	}
 
 	if s.turnServer != nil {
 		_ = s.turnServer.Close()
@@ -316,6 +373,9 @@ func (s *LivekitServer) Start() error {
 }
 
 func (s *LivekitServer) Stop(force bool) {
+	// the tunnels' grace runs alongside the participant wait
+	go s.drainAgentTunnels(force)
+
 	// wait for all participants to exit
 	s.router.Drain()
 	partTicker := time.NewTicker(5 * time.Second)
@@ -336,6 +396,23 @@ func (s *LivekitServer) Stop(force bool) {
 
 	// wait for fully closed
 	<-s.closedChan
+}
+
+// drainAgentTunnels returns once no agent endpoint WebSocket tunnel remains.
+func (s *LivekitServer) drainAgentTunnels(force bool) {
+	if s.agentEndpoint == nil {
+		return
+	}
+	grace := s.config.Agents.Endpoints.TunnelDrainTimeout
+	if grace <= 0 {
+		grace = endpoint.DefaultTunnelDrainTimeout
+	}
+	if force {
+		grace = 0
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), grace)
+	defer cancel()
+	s.agentEndpoint.Drain(ctx)
 }
 
 func (s *LivekitServer) RoomManager() *RoomManager {
@@ -378,7 +455,7 @@ func (s *LivekitServer) healthCheck(w http.ResponseWriter, _ *http.Request) {
 	}
 	if time.Since(updatedAt) > 4*time.Second {
 		w.WriteHeader(http.StatusNotAcceptable)
-		_, _ = w.Write([]byte(fmt.Sprintf("Not Ready\nNode Updated At %s", updatedAt)))
+		_, _ = fmt.Fprintf(w, "Not Ready\nNode Updated At %s", updatedAt)
 		return
 	}
 
@@ -397,6 +474,64 @@ func (s *LivekitServer) backgroundWorker() {
 		case <-roomTicker.C:
 			s.roomManager.CloseIdleRooms()
 		}
+	}
+}
+
+// NewHTTPHandler builds the node's public HTTP handler: the agent endpoint prefix
+// on its own middleware chain, everything else on the API chain. A nil agentFront
+// leaves the prefix unserved, and those paths fall through to apiHandler.
+func NewHTTPHandler(conf *config.Config, keyProvider auth.KeyProvider, apiHandler, agentFront http.Handler) http.Handler {
+	apiMiddlewares := []negroni.Handler{
+		// always first
+		negroni.NewRecovery(),
+		// CORS is allowed, we rely on token authentication to prevent improper use
+		cors.New(corsOptions([]string{"OPTIONS", "HEAD", "GET", "POST", "PATCH", "DELETE"})),
+		// limit request body size so large messages cannot exhaust memory
+		NewRequestBodyLimiter(conf.Limit.MaxAPIRequestBodySize),
+	}
+	// this chain must not swallow http.ErrAbortHandler or bound the request body
+	agentMiddlewares := []negroni.Handler{
+		negroni.HandlerFunc(AgentRecovery),
+		NewAgentEndpointCORS(),
+	}
+	if keyProvider != nil {
+		authMiddleware := NewAPIKeyAuthMiddleware(keyProvider)
+		apiMiddlewares = append(apiMiddlewares, authMiddleware)
+		agentMiddlewares = append(agentMiddlewares, authMiddleware)
+	}
+
+	api := configureMiddlewares(apiHandler, apiMiddlewares...)
+	var dispatch http.Handler = api
+	if agentFront != nil {
+		agents := configureMiddlewares(agentFront, agentMiddlewares...)
+		dispatch = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if IsAgentEndpointPath(r.URL.EscapedPath()) {
+				agents.ServeHTTP(w, r)
+				return
+			}
+			api.ServeHTTP(w, r)
+		})
+	}
+	return WithPathNormalization(dispatch)
+}
+
+// NewAgentEndpointCORS is the agent endpoint chain's CORS middleware and answers
+// every preflight. Worker headers override it per endpoint.MergeWorkerHeaders.
+func NewAgentEndpointCORS() *cors.Cors {
+	// the methods a manifest may declare, less TRACE, which browsers forbid in CORS
+	return cors.New(corsOptions([]string{"OPTIONS", "HEAD", "GET", "POST", "PUT", "PATCH", "DELETE"}))
+}
+
+func corsOptions(methods []string) cors.Options {
+	return cors.Options{
+		AllowOriginFunc: func(origin string) bool {
+			return true
+		},
+		AllowedMethods: methods,
+		AllowedHeaders: []string{"*"},
+		ExposedHeaders: []string{"*"},
+		// allow preflight to be cached for a day
+		MaxAge: 86400,
 	}
 }
 

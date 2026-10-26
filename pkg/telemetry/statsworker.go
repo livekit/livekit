@@ -18,19 +18,31 @@ import (
 	"context"
 	"sync"
 	"time"
+	"unsafe"
 
 	"go.uber.org/zap/zapcore"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	protoutils "github.com/livekit/protocol/utils"
 )
 
 type ReferenceGuard struct {
 	activated, released bool
 }
+
+func (r *ReferenceGuard) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if r != nil {
+		e.AddUintptr("self", uintptr(unsafe.Pointer(r)))
+		e.AddBool("activated", r.activated)
+		e.AddBool("released", r.released)
+	}
+	return nil
+}
+
+// ----------------------------------------
 
 type ReferenceCount struct {
 	count int
@@ -116,6 +128,10 @@ func (s *StatsWorker) ParticipantID() livekit.ParticipantID {
 }
 
 func (s *StatsWorker) SetConnected() {
+	if s == nil {
+		return
+	}
+
 	s.lock.Lock()
 	s.isConnected = true
 	s.lock.Unlock()
@@ -201,13 +217,17 @@ func (s *StatsWorker) collectStats(
 }
 
 func (s *StatsWorker) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if s == nil {
+		return nil
+	}
+
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
 	e.AddString("room", string(s.roomName))
 	e.AddString("roomID", string(s.roomID))
 	e.AddString("participant", string(s.participantIdentity))
-	e.AddString("pID", string(s.participantID))
+	e.AddString("participantID", string(s.participantID))
 	e.AddBool("isConnected", s.isConnected)
 	e.AddTime("closedAt", s.closedAt)
 	e.AddObject("refCount", s.refCount)
@@ -284,7 +304,7 @@ func coalesce(stats []*livekit.AnalyticsStat) *livekit.AnalyticsStat {
 			for _, videoLayer := range analyticsStream.VideoLayers {
 				coalescedVideoLayer := coalescedVideoLayers[videoLayer.Layer]
 				if coalescedVideoLayer == nil {
-					coalescedVideoLayer = protoutils.CloneProto(videoLayer)
+					coalescedVideoLayer = proto.CloneOf(videoLayer)
 					coalescedVideoLayers[videoLayer.Layer] = coalescedVideoLayer
 				} else {
 					coalescedVideoLayer.Packets += videoLayer.Packets
@@ -310,7 +330,7 @@ func coalesce(stats []*livekit.AnalyticsStat) *livekit.AnalyticsStat {
 
 	stat := &livekit.AnalyticsStat{
 		MinScore:    minScore,
-		MedianScore: utils.MedianFloat32(scores),
+		MedianScore: utils.Median(scores),
 		Streams:     []*livekit.AnalyticsStream{coalescedStream},
 		Mime:        stats[len(stats)-1].Mime, // use the latest Mime
 	}
@@ -348,7 +368,9 @@ func CondenseStat(stat *livekit.AnalyticsStat) (ps CondensedStat, ok bool) {
 		ps.Bytes += stream.PrimaryBytes
 		ps.Packets += stream.PrimaryPackets
 		ps.PacketsLost += stream.PacketsLost
-		ps.Frames += stream.Frames
+		if stream.Frames > ps.Frames {
+			ps.Frames = stream.Frames
+		}
 	}
 
 	return

@@ -16,10 +16,11 @@ package rtc
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/protocol/datatrack"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -33,11 +34,17 @@ type DataDownTrackParams struct {
 	PublishDataTrack types.DataTrack
 	Handle           uint16
 	Transport        types.DataTrackTransport
+	BytesTrackStats  *BytesTrackStats
 }
 
 type DataDownTrack struct {
 	params    DataDownTrackParams
+	logger    logger.Logger
 	createdAt int64
+
+	lock    sync.Mutex
+	closed  bool
+	onClose func()
 }
 
 func NewDataDownTrack(params DataDownTrackParams) (*DataDownTrack, error) {
@@ -45,19 +52,46 @@ func NewDataDownTrack(params DataDownTrackParams) (*DataDownTrack, error) {
 		params:    params,
 		createdAt: time.Now().UnixNano(),
 	}
+	d.logger = params.Logger.WithValues("name", d.Name(), "handle", d.Handle())
 
 	if err := d.params.PublishDataTrack.AddDataDownTrack(d); err != nil {
-		d.params.Logger.Warnw("could not add data down track", err)
+		d.logger.Warnw("could not add data down track", err)
 		return nil, err
 	}
 
-	d.params.Logger.Infow("created data down track", "name", d.Name())
+	d.logger.Infow("created data down track")
 	return d, nil
 }
 
 func (d *DataDownTrack) Close() {
-	d.params.Logger.Infow("closing data down track", "name", d.Name())
+	d.lock.Lock()
+	onClose := d.onClose
+	if d.closed {
+		d.lock.Unlock()
+		return
+	}
+	d.closed = true
+	d.lock.Unlock()
+
+	d.logger.Infow("closing data down track")
+	if d.params.BytesTrackStats != nil {
+		d.params.BytesTrackStats.Stop()
+	}
 	d.params.PublishDataTrack.DeleteDataDownTrack(d.SubscriberID())
+
+	if onClose != nil {
+		onClose()
+	}
+}
+
+func (d *DataDownTrack) OnClose(fn func()) {
+	d.lock.Lock()
+	d.onClose = fn
+	closed := d.closed
+	d.lock.Unlock()
+	if closed && fn != nil {
+		fn()
+	}
 }
 
 func (d *DataDownTrack) Handle() uint16 {
@@ -86,11 +120,15 @@ func (d *DataDownTrack) WritePacket(data []byte, packet *datatrack.Packet, _arri
 	forwardedPacket.Handle = d.params.Handle
 	buf, err := forwardedPacket.Marshal()
 	if err != nil {
-		d.params.Logger.Warnw("could not marshal data track message", err)
+		d.logger.Warnw("could not marshal data track message", err)
 		return
 	}
 	if err := d.params.Transport.SendDataTrackMessage(buf); err != nil {
-		d.params.Logger.Warnw("could not send data track message", err, "handle", d.params.Handle)
+		d.logger.Warnw("could not send data track message", err)
+		return
+	}
+	if d.params.BytesTrackStats != nil {
+		d.params.BytesTrackStats.AddBytes(uint64(len(buf)), true)
 	}
 }
 

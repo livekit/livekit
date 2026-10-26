@@ -189,6 +189,7 @@ func main() {
 
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
 		fmt.Println(err)
+		os.Exit(1)
 	}
 }
 
@@ -198,10 +199,7 @@ func getConfig(c *cli.Command) (*config.Config, error) {
 		return nil, err
 	}
 
-	strictMode := true
-	if c.Bool("disable-strict-config") {
-		strictMode = false
-	}
+	strictMode := !c.Bool("disable-strict-config")
 
 	conf, err := config.NewConfig(confString, strictMode, c, baseFlags)
 	if err != nil {
@@ -259,6 +257,10 @@ func startServer(ctx context.Context, c *cli.Command) error {
 	// validate API key length
 	err = conf.ValidateKeys()
 	if err != nil {
+		return err
+	}
+
+	if err = conf.LoadTURNSecrets(); err != nil {
 		return err
 	}
 

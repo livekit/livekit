@@ -29,6 +29,7 @@ import (
 
 type EgressLauncher interface {
 	StartEgress(context.Context, *rpc.StartEgressRequest) (*livekit.EgressInfo, error)
+	StopEgress(context.Context, *livekit.StopEgressRequest) (*livekit.EgressInfo, error)
 }
 
 func StartParticipantEgress(

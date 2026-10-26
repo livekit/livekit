@@ -28,53 +28,69 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: shogo82148/actions-setup-redis@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shogo82148/actions-setup-redis@ffaf3c39499b2917543d84f6acc818277580b531 # v1.58.1
         with:
           redis-version: "6.x"
           auto-start: true
       - run: redis-cli ping
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: "^1.24"
+      # Test with the same Go toolchain the published image is built with
+      - name: Resolve Go version
+        id: go-version
+        run: |
+          # Assign first so a failed lookup trips `set -e`; inside echo its exit
+          # status would be discarded and an empty version written.
+          version=$(.github/scripts/go-version.sh Dockerfile)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Set up gotestfmt
-        run: go install github.com/gotesttools/gotestfmt/v2/cmd/gotestfmt@v2.4.1
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: ${{ steps.go-version.outputs.version }}
 
       - name: Replace mutexes
         run: |
           go get github.com/sasha-s/go-deadlock
           grep -rl sync.Mutex ./pkg | xargs sed -i 's/sync\.Mutex/deadlock\.Mutex/g'
           grep -rl sync.RWMutex ./pkg | xargs sed -i 's/sync\.RWMutex/deadlock\.RWMutex/g'
-          go install golang.org/x/tools/cmd/goimports@latest
-          grep -rl deadlock.Mutex ./pkg | xargs goimports -w
-          grep -rl deadlock.RWMutex ./pkg | xargs goimports -w
+          grep -rl deadlock.Mutex ./pkg | xargs go tool goimports -w
+          grep -rl deadlock.RWMutex ./pkg | xargs go tool goimports -w
           go mod tidy
 
+      # Run mage at the version go.mod pins, rather than the mage-action's
+      # `version: latest`, so the binary matches the mage/mg library the magefile is
+      # compiled against and Renovate owns the version like any other module.
       - name: Mage Build
-        uses: magefile/mage-action@v3
-        with:
-          version: latest
-          args: build
+        run: go run github.com/magefile/mage build
 
-      - name: Static Check
-        uses: dominikh/staticcheck-action@v1
+      - name: Lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          checks: '["all", "-ST1000", "-ST1003", "-ST1020", "-ST1021", "-ST1022", "-SA1019"]'
-          install-go: false
+          version: v2.14.0
 
       - name: Test
         run: |
           set -euo pipefail
-          MallocNanoZone=0 go test -race -json -v ./... 2>&1 | tee /tmp/gotest.log | gotestfmt
+          MallocNanoZone=0 go test -race -json -v ./... 2>&1 | tee /tmp/gotest.log | go tool gotestfmt
+
+      # gotestfmt folds every test into a collapsed group, which hides a failure in a long log.
+      # List the failed tests in the log and on the run summary page.
+      - name: Failed tests
+        if: failure()
+        run: |
+          [ -f /tmp/gotest.log ] || exit 0
+          {
+            echo "### Failed tests"
+            jq -rR 'fromjson? | select(.Action == "fail") | if .Test then "- `\(.Package)` \(.Test)" else "- `\(.Package)` (package)" end' /tmp/gotest.log | sort -u
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       # Upload the original go test log as an artifact for later review.
       - name: Upload test log
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: test-log
           path: /tmp/gotest.log
-          if-no-files-found: error
+          # no log when an earlier step such as Lint fails; that failure is already reported
+          if-no-files-found: warn

@@ -104,15 +104,16 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	t.subscribedTracksMu.Unlock()
 
 	subTrack, err := NewSubscribedTrack(SubscribedTrackParams{
-		ReceiverConfig:     t.params.ReceiverConfig,
-		SubscriberConfig:   t.params.SubscriberConfig,
-		Subscriber:         sub,
-		MediaTrack:         t.params.MediaTrack,
-		AdaptiveStream:     sub.GetAdaptiveStream(),
-		TelemetryListener:  sub.GetTelemetryListener(),
-		WrappedReceiver:    wr,
-		IsRelayed:          t.params.IsRelayed,
-		OnDownTrackCreated: t.onDownTrackCreated,
+		ReceiverConfig:              t.params.ReceiverConfig,
+		SubscriberConfig:            t.params.SubscriberConfig,
+		Subscriber:                  sub,
+		MediaTrack:                  t.params.MediaTrack,
+		AdaptiveStream:              sub.GetAdaptiveStream(),
+		EnableStartAtDesiredQuality: sub.GetEnableStartAtDesiredQuality(),
+		TelemetryListener:           sub.GetTelemetryListener(),
+		WrappedReceiver:             wr,
+		IsRelayed:                   t.params.IsRelayed,
+		OnDownTrackCreated:          t.onDownTrackCreated,
 		OnDownTrackClosed: func(subscriberID livekit.ParticipantID) {
 			t.subscribedTracksMu.Lock()
 			delete(t.subscribedTracks, subscriberID)
@@ -212,7 +213,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		}
 
 		sub.VerifySubscribeParticipantInfo(subTrack.PublisherID(), subTrack.PublisherVersion())
-		if sub.SupportsTransceiverReuse() {
+		if sub.SupportsTransceiverReuse(t.params.MediaTrack) {
 			//
 			// AddTrack will create a new transceiver or re-use an unused one
 			// if the attributes match. This prevents SDP from bloating
@@ -247,6 +248,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	// But, the subscription could be removed early if the published track is closed
 	// while adding subscription. In those cases, subscription manager would not have set
 	// the `OnClose` callback. So, set it here to handle cases of early close.
+	// Subscription manager will reset this if this subscription proceeds till that point.
 	subTrack.OnClose(func(isExpectedToResume bool) {
 		if !isExpectedToResume {
 			if err := sub.RemoveTrackLocal(sender); err != nil {

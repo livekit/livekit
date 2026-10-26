@@ -121,7 +121,7 @@ func (u *unhandleSimulcastRTPReader) Read(b []byte, a interceptor.Attributes) (i
 		return n, a, nil
 	} else {
 		// ignore padding only packet for probe count
-		if !(header.Padding && n-header.MarshalSize()-int(b[n-1]) == 0) {
+		if !header.Padding || n-header.MarshalSize()-int(b[n-1]) != 0 {
 			u.tryTimes--
 		}
 	}

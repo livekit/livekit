@@ -17,17 +17,17 @@ package rtc
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"go.uber.org/atomic"
-	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/proto"
 
+	protoagent "github.com/livekit/protocol/agent"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -40,7 +40,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -48,6 +47,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
+	"github.com/livekit/protocol/datatrack"
 )
 
 const (
@@ -59,7 +59,7 @@ const (
 
 	simulateDisconnectSignalTimeout = 5 * time.Second
 
-	dataMessageCacheTTL  = 2 * time.Second
+	dataMessageCacheTTL  = 10 * time.Second
 	dataMessageCacheSize = 100_000
 )
 
@@ -125,6 +125,7 @@ type Room struct {
 	participantOpts           map[livekit.ParticipantIdentity]*ParticipantOptions
 	participantRequestSources map[livekit.ParticipantIdentity]routing.MessageSource
 	hasPublished              map[livekit.ParticipantIdentity]bool
+	launchedTrackEgresses     map[livekit.ParticipantIdentity][]livekit.TrackID
 	agentParticpants          map[livekit.ParticipantIdentity]*agentJob
 	bufferFactory             *buffer.FactoryOfBufferFactory
 
@@ -138,7 +139,7 @@ type Room struct {
 
 	onParticipantChanged func(p types.Participant)
 	onRoomUpdated        func()
-	onClose              func()
+	onClose              func(types.RoomCloseReason)
 
 	simulationLock                                 sync.Mutex
 	disconnectSignalOnResumeParticipants           map[livekit.ParticipantIdentity]time.Time
@@ -196,7 +197,7 @@ func (ad *agentDispatch) jobsLaunching() (jobsLaunched func()) {
 
 func (ad *agentDispatch) waitForPendingJobs() {
 	ad.lock.Lock()
-	cs := maps.Keys(ad.pending)
+	cs := slices.Collect(maps.Keys(ad.pending))
 	ad.lock.Unlock()
 
 	for _, c := range cs {
@@ -253,7 +254,7 @@ func NewRoom(
 	egressLauncher EgressLauncher,
 ) *Room {
 	r := &Room{
-		protoRoom: utils.CloneProto(room),
+		protoRoom: proto.CloneOf(room),
 		internal:  internal,
 		logger: LoggerWithRoom(
 			logger.GetLogger().WithComponent(sutils.ComponentRoom),
@@ -273,6 +274,7 @@ func NewRoom(
 		participantOpts:                      make(map[livekit.ParticipantIdentity]*ParticipantOptions),
 		participantRequestSources:            make(map[livekit.ParticipantIdentity]routing.MessageSource),
 		hasPublished:                         make(map[livekit.ParticipantIdentity]bool),
+		launchedTrackEgresses:                make(map[livekit.ParticipantIdentity][]livekit.TrackID),
 		agentParticpants:                     make(map[livekit.ParticipantIdentity]*agentJob),
 		bufferFactory:                        buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSizeVideo, config.Receiver.PacketBufferSizeAudio),
 		batchedUpdates:                       make(map[livekit.ParticipantIdentity]*ParticipantUpdate),
@@ -305,7 +307,7 @@ func NewRoom(
 
 	r.createAgentDispatchesFromRoomAgent()
 
-	r.launchRoomAgents(maps.Values(r.agentDispatches))
+	r.launchRoomAgents(slices.Collect(maps.Values(r.agentDispatches)))
 
 	go r.audioUpdateWorker()
 	go r.connectionQualityWorker()
@@ -364,7 +366,7 @@ func (r *Room) GetParticipants() []types.LocalParticipant {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	return maps.Values(r.participants)
+	return slices.Collect(maps.Values(r.participants))
 }
 
 func (r *Room) GetLocalParticipants() []types.LocalParticipant {
@@ -393,8 +395,8 @@ func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
 		})
 	}
 
-	sort.Slice(speakers, func(i, j int) bool {
-		return speakers[i].Level > speakers[j].Level
+	slices.SortFunc(speakers, func(a, b *livekit.SpeakerInfo) int {
+		return sutils.Signum(b.Level - a.Level)
 	})
 
 	// quantize to smooth out small changes
@@ -469,11 +471,11 @@ func (r *Room) Join(
 		r.joinedAt.Store(time.Now().Unix())
 	}
 
-	r.launchTargetAgents(maps.Values(r.agentDispatches), participant, livekit.JobType_JT_PARTICIPANT)
+	r.launchTargetAgents(slices.Collect(maps.Values(r.agentDispatches)), participant, livekit.JobType_JT_PARTICIPANT)
 
 	r.logger.Debugw(
 		"new participant joined",
-		"pID", participant.ID(),
+		"participantID", participant.ID(),
 		"participant", participant.Identity(),
 		"clientInfo", logger.Proto(participant.GetClientInfo()),
 		"options", opts,
@@ -584,7 +586,7 @@ func (r *Room) ResumeParticipant(
 		ClientConfiguration: p.GetClientConfiguration(),
 		ServerInfo:          r.serverInfo,
 		LastMessageSeq:      p.GetLastReliableSequence(false),
-	}); err != nil {
+	}, nil); err != nil {
 		return err
 	}
 
@@ -686,14 +688,14 @@ func (r *Room) onSyncState(participant types.LocalParticipant, state *livekit.Sy
 	// synthesize a track setting for each disabled track,
 	// can be set before adding subscriptions,
 	// in fact it is done before so that setting can be updated immediately upon subscription.
-	for _, trackSid := range state.TrackSidsDisabled {
+	for _, trackSid := range state.GetTrackSidsDisabled() {
 		participant.UpdateSubscribedTrackSettings(livekit.TrackID(trackSid), &livekit.UpdateTrackSettings{Disabled: true})
 	}
 
 	participant.HandleUpdateSubscriptions(
-		livekit.StringsAsIDs[livekit.TrackID](state.Subscription.TrackSids),
-		state.Subscription.ParticipantTracks,
-		state.Subscription.Subscribe,
+		livekit.StringsAsIDs[livekit.TrackID](state.GetSubscription().GetTrackSids()),
+		state.GetSubscription().GetParticipantTracks(),
+		state.GetSubscription().GetSubscribe(),
 	)
 	return nil
 }
@@ -703,6 +705,9 @@ func (r *Room) onUpdateSubscriptionPermission(participant types.LocalParticipant
 		return err
 	}
 	for _, track := range participant.GetPublishedTracks() {
+		r.trackManager.NotifyTrackChanged(track.ID())
+	}
+	for _, track := range participant.GetPublishedDataTracks() {
 		r.trackManager.NotifyTrackChanged(track.ID())
 	}
 	return nil
@@ -746,6 +751,13 @@ func (r *Room) ResolveDataTrackForSubscriber(sub types.LocalParticipant, trackID
 	res.TrackRemovedNotifier = r.trackManager.GetOrCreateTrackRemoveNotifier(trackID)
 	res.PublisherIdentity = info.PublisherIdentity
 	res.PublisherID = info.PublisherID
+
+	pub := r.GetParticipantByID(info.PublisherID)
+	// when publisher is not found, we will assume it doesn't have permission to access
+	if pub != nil {
+		res.HasPermission = IsParticipantExemptFromTrackPermissionsRestrictions(sub) || pub.HasPermission(trackID, sub.Identity())
+	}
+
 	return res
 }
 
@@ -790,12 +802,12 @@ func (r *Room) CloseIfEmpty() {
 	r.lock.Unlock()
 
 	if elapsed >= int64(timeout) {
-		r.Close(types.ParticipantCloseReasonRoomClosed)
+		r.Close(types.RoomCloseReasonIdleTimeout)
 		r.logger.Infow("closing idle room", "reason", reason)
 	}
 }
 
-func (r *Room) Close(reason types.ParticipantCloseReason) {
+func (r *Room) Close(reason types.RoomCloseReason) {
 	r.lock.Lock()
 	select {
 	case <-r.closed:
@@ -807,19 +819,20 @@ func (r *Room) Close(reason types.ParticipantCloseReason) {
 	close(r.closed)
 	r.lock.Unlock()
 
-	r.logger.Infow("closing room")
+	r.logger.Infow("closing room", "reason", reason)
+	participantCloseReason := reason.ToParticipantCloseReason()
 	for _, p := range r.GetParticipants() {
-		_ = p.Close(true, reason, false)
+		_ = p.Close(true, participantCloseReason, false)
 	}
 
 	r.protoProxy.Stop()
 
 	if r.onClose != nil {
-		r.onClose()
+		r.onClose(reason)
 	}
 }
 
-func (r *Room) OnClose(f func()) {
+func (r *Room) OnClose(f func(types.RoomCloseReason)) {
 	r.onClose = f
 }
 
@@ -861,7 +874,7 @@ func (r *Room) GetAgentDispatches(dispatchID string) ([]*livekit.AgentDispatch, 
 
 	for _, ad := range r.agentDispatches {
 		if dispatchID == "" || ad.Id == dispatchID {
-			ret = append(ret, utils.CloneProto(ad.AgentDispatch))
+			ret = append(ret, proto.CloneOf(ad.AgentDispatch))
 		}
 	}
 
@@ -1040,7 +1053,7 @@ func (r *Room) createJoinResponseLocked(
 		OtherParticipants: GetOtherParticipantInfo(
 			participant,
 			false, // isMigratingIn
-			toParticipants(maps.Values(r.participants)),
+			toParticipants(slices.Collect(maps.Values(r.participants))),
 			false, // skipSubscriberBroadcast
 		),
 		IceServers: iceServers,
@@ -1104,7 +1117,7 @@ func (r *Room) onTrackPublished(participant types.Participant, track types.Media
 
 	if !hasPublished {
 		r.lock.RLock()
-		r.launchTargetAgents(maps.Values(r.agentDispatches), participant, livekit.JobType_JT_PUBLISHER)
+		r.launchTargetAgents(slices.Collect(maps.Values(r.agentDispatches)), participant, livekit.JobType_JT_PUBLISHER)
 		r.lock.RUnlock()
 		if r.internal != nil && r.internal.ParticipantEgress != nil {
 			go func() {
@@ -1123,19 +1136,27 @@ func (r *Room) onTrackPublished(participant types.Participant, track types.Media
 		}
 	}
 	if participant.Kind() != livekit.ParticipantInfo_EGRESS && r.internal != nil && r.internal.TrackEgress != nil {
-		go func() {
-			if err := StartTrackEgress(
-				context.Background(),
-				r.egressLauncher,
-				r.telemetry,
-				r.internal.TrackEgress,
-				track,
-				r.Name(),
-				r.ID(),
-			); err != nil {
-				r.logger.Errorw("failed to launch track egress", err)
-			}
-		}()
+		r.lock.Lock()
+		launchedTrackEgress := slices.Contains(r.launchedTrackEgresses[participant.Identity()], track.ID())
+		if !launchedTrackEgress {
+			r.launchedTrackEgresses[participant.Identity()] = append(r.launchedTrackEgresses[participant.Identity()], track.ID())
+		}
+		r.lock.Unlock()
+		if !launchedTrackEgress {
+			go func() {
+				if err := StartTrackEgress(
+					context.Background(),
+					r.egressLauncher,
+					r.telemetry,
+					r.internal.TrackEgress,
+					track,
+					r.Name(),
+					r.ID(),
+				); err != nil {
+					r.logger.Errorw("failed to launch track egress", err)
+				}
+			}()
+		}
 	}
 }
 
@@ -1245,6 +1266,7 @@ func (r *Room) onStateChange(p types.LocalParticipant) {
 			p.ToProto(),
 			meta,
 			false,
+			p.IsWarpEnabled(),
 			p.TelemetryGuard(),
 		)
 
@@ -1374,6 +1396,11 @@ func (r *Room) onUpdateDataSubscriptions(participant types.LocalParticipant, req
 	}
 }
 
+func (r *Room) onGetDataBlob(participant types.LocalParticipant, req *livekit.GetDataBlobRequest) {
+	publisher := r.GetParticipant(livekit.ParticipantIdentity(req.ParticipantIdentity))
+	participant.ProcessGetDataBlobRequest(req, publisher)
+}
+
 func (r *Room) onLeave(p types.LocalParticipant, reason types.ParticipantCloseReason) {
 	r.RemoveParticipant(p.Identity(), p.ID(), reason)
 }
@@ -1402,7 +1429,11 @@ func (r *Room) RemoveParticipant(
 	delete(r.participantOpts, identity)
 	delete(r.participantRequestSources, identity)
 	delete(r.hasPublished, identity)
+	delete(r.launchedTrackEgresses, identity)
 	delete(r.agentParticpants, identity)
+	// recorded while the participant is being removed, not after it is closed:
+	// the room is already empty to CloseIfEmpty, which runs every second
+	r.leftAt.Store(time.Now().Unix())
 	if !p.Hidden() {
 		r.protoRoom.NumParticipants--
 	}
@@ -1462,8 +1493,6 @@ func (r *Room) RemoveParticipant(
 
 	// close participant as well
 	_ = p.Close(true, reason, false)
-
-	r.leftAt.Store(time.Now().Unix())
 
 	if sendUpdates {
 		if r.onParticipantChanged != nil {
@@ -1559,7 +1588,7 @@ func (r *Room) sendSpeakerChanges(speakers []*livekit.SpeakerInfo) {
 
 func (r *Room) updateProto() *livekit.Room {
 	r.lock.RLock()
-	room := utils.CloneProto(r.protoRoom)
+	room := proto.CloneOf(r.protoRoom)
 	r.lock.RUnlock()
 
 	room.NumPublishers = 0
@@ -1601,7 +1630,7 @@ func (r *Room) changeUpdateWorker() {
 			r.batchedUpdates = make(map[livekit.ParticipantIdentity]*ParticipantUpdate)
 			r.batchedUpdatesMu.Unlock()
 
-			SendParticipantUpdates(maps.Values(updatesMap), r.GetParticipants(), r.roomConfig.UpdateBatchTargetSize)
+			SendParticipantUpdates(slices.Collect(maps.Values(updatesMap)), r.GetParticipants(), r.roomConfig.UpdateBatchTargetSize)
 
 		case <-cleanDataMessageTicker.C:
 			r.dataMessageCache.Prune()
@@ -1630,7 +1659,7 @@ func (r *Room) audioUpdateWorker() {
 		// changedSpeakers need to include previous speakers that are no longer speaking
 		for sid, speaker := range lastActiveMap {
 			if nextActiveMap[sid] == nil {
-				inactiveSpeaker := utils.CloneProto(speaker)
+				inactiveSpeaker := proto.CloneOf(speaker)
 				inactiveSpeaker.Level = 0
 				inactiveSpeaker.Active = false
 				changedSpeakers = append(changedSpeakers, inactiveSpeaker)
@@ -1768,6 +1797,8 @@ func (r *Room) launchRoomAgents(ads []*agentDispatch) {
 				Metadata:   ad.Metadata,
 				AgentName:  ad.AgentName,
 				DispatchId: ad.Id,
+				Deployment: ad.Deployment,
+				Attributes: ad.Attributes,
 			})
 			r.handleNewJobs(ad.AgentDispatch, inc)
 			done()
@@ -1791,6 +1822,8 @@ func (r *Room) launchTargetAgents(ads []*agentDispatch, p types.Participant, job
 				Metadata:    ad.Metadata,
 				AgentName:   ad.AgentName,
 				DispatchId:  ad.Id,
+				Deployment:  ad.Deployment,
+				Attributes:  ad.Attributes,
 			})
 			r.handleNewJobs(ad.AgentDispatch, inc)
 			done()
@@ -1846,12 +1879,18 @@ func (r *Room) createAgentDispatch(dispatch *livekit.AgentDispatch) (*agentDispa
 	return ad, nil
 }
 
-func (r *Room) createAgentDispatchFromParams(agentName string, metadata string) (*agentDispatch, error) {
+func (r *Room) createAgentDispatchFromRoomDispatch(rad *livekit.RoomAgentDispatch) (*agentDispatch, error) {
+	if err := protoagent.ValidateDeployment(rad.GetDeployment()); err != nil {
+		return nil, err
+	}
 	return r.createAgentDispatch(&livekit.AgentDispatch{
-		Id:        guid.New(guid.AgentDispatchPrefix),
-		AgentName: agentName,
-		Metadata:  metadata,
-		Room:      r.protoRoom.Name,
+		Id:            guid.New(guid.AgentDispatchPrefix),
+		AgentName:     rad.GetAgentName(),
+		Metadata:      rad.GetMetadata(),
+		Room:          r.protoRoom.Name,
+		RestartPolicy: rad.GetRestartPolicy(),
+		Deployment:    rad.GetDeployment(),
+		Attributes:    rad.GetAttributes(),
 	})
 }
 
@@ -1867,7 +1906,7 @@ func (r *Room) createAgentDispatchesFromRoomAgent() {
 	}
 
 	for _, ag := range roomDisp {
-		_, err := r.createAgentDispatchFromParams(ag.AgentName, ag.Metadata)
+		_, err := r.createAgentDispatchFromRoomDispatch(ag)
 		if err != nil {
 			r.logger.Warnw("failed storing room dispatch", err)
 		}
@@ -1976,6 +2015,13 @@ func (l *localParticipantListener) OnUpdateDataSubscriptions(p types.LocalPartic
 	l.room.onUpdateDataSubscriptions(p, req)
 }
 
+func (l *localParticipantListener) OnStoreDataBlob(_p types.LocalParticipant, _dataBlob *livekit.DataBlob) {
+}
+
+func (l *localParticipantListener) OnGetDataBlob(p types.LocalParticipant, req *livekit.GetDataBlobRequest) {
+	l.room.onGetDataBlob(p, req)
+}
+
 func (l *localParticipantListener) OnSyncState(p types.LocalParticipant, state *livekit.SyncState) error {
 	return l.room.onSyncState(p, state)
 }
@@ -1996,56 +2042,70 @@ type participantTelemetryListener struct {
 	room *Room
 }
 
-func (l participantTelemetryListener) OnTrackPublishRequested(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo) {
-	l.room.telemetry.TrackPublishRequested(context.Background(), l.room.ID(), l.room.Name(), pID, identity, ti)
+func (l participantTelemetryListener) eventRoom() *livekit.Room {
+	if l.room.roomConfig.EnableFullRoomInWebhooks {
+		return l.room.ToProto()
+	}
+
+	return &livekit.Room{
+		Sid:  string(l.room.ID()),
+		Name: string(l.room.Name()),
+	}
+}
+
+func (l participantTelemetryListener) OnTrackPublishRequested(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool) {
+	l.room.telemetry.TrackPublishRequested(context.Background(), l.eventRoom(), pID, identity, ti, shouldSendEvent)
 }
 
 func (l participantTelemetryListener) OnTrackPublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool) {
-	l.room.telemetry.TrackPublished(context.Background(), l.room.ID(), l.room.Name(), pID, identity, ti, shouldSendEvent)
+	l.room.telemetry.TrackPublished(context.Background(), l.eventRoom(), pID, identity, ti, shouldSendEvent)
 }
 
-func (l participantTelemetryListener) OnTrackUnpublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool) {
-	l.room.telemetry.TrackUnpublished(context.Background(), l.room.ID(), l.room.Name(), pID, identity, ti, shouldSendEvent)
+func (l participantTelemetryListener) OnTrackUnpublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, wasPublishedLocally bool, shouldSendEvent bool) {
+	l.room.telemetry.TrackUnpublished(context.Background(), l.eventRoom(), pID, identity, ti, wasPublishedLocally, shouldSendEvent)
 }
 
 func (l participantTelemetryListener) OnTrackSubscribeRequested(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
-	l.room.telemetry.TrackSubscribeRequested(context.Background(), l.room.ID(), l.room.Name(), pID, ti)
+	l.room.telemetry.TrackSubscribeRequested(context.Background(), l.eventRoom(), pID, ti)
 }
 
 func (l participantTelemetryListener) OnTrackSubscribed(pID livekit.ParticipantID, ti *livekit.TrackInfo, publisherInfo *livekit.ParticipantInfo, shouldSendEvent bool) {
-	l.room.telemetry.TrackSubscribed(context.Background(), l.room.ID(), l.room.Name(), pID, ti, publisherInfo, shouldSendEvent)
+	l.room.telemetry.TrackSubscribed(context.Background(), l.eventRoom(), pID, ti, publisherInfo, shouldSendEvent)
 }
 
 func (l participantTelemetryListener) OnTrackUnsubscribed(pID livekit.ParticipantID, ti *livekit.TrackInfo, shouldSendEvent bool) {
-	l.room.telemetry.TrackUnsubscribed(context.Background(), l.room.ID(), l.room.Name(), pID, ti, shouldSendEvent)
+	l.room.telemetry.TrackUnsubscribed(context.Background(), l.eventRoom(), pID, ti, shouldSendEvent)
 }
 
-func (l participantTelemetryListener) OnTrackSubscribeFailed(pID livekit.ParticipantID, ti livekit.TrackID, err error, isUserError bool) {
-	l.room.telemetry.TrackSubscribeFailed(context.Background(), l.room.ID(), l.room.Name(), pID, ti, err, isUserError)
+func (l participantTelemetryListener) OnTrackSubscribeFailed(pID livekit.ParticipantID, trackID livekit.TrackID, err error, isUserError bool) {
+	l.room.telemetry.TrackSubscribeFailed(context.Background(), l.eventRoom(), pID, trackID, err, isUserError)
+}
+
+func (l participantTelemetryListener) OnTrackSubscribeStreamStarted(pID livekit.ParticipantID, ti *livekit.TrackInfo, elapsed time.Duration) {
 }
 
 func (l participantTelemetryListener) OnTrackMuted(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
-	l.room.telemetry.TrackMuted(context.Background(), l.room.ID(), l.room.Name(), pID, ti)
+	l.room.telemetry.TrackMuted(context.Background(), l.eventRoom(), pID, ti)
 }
 
 func (l participantTelemetryListener) OnTrackUnmuted(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
-	l.room.telemetry.TrackUnmuted(context.Background(), l.room.ID(), l.room.Name(), pID, ti)
+	l.room.telemetry.TrackUnmuted(context.Background(), l.eventRoom(), pID, ti)
 }
 
 func (l participantTelemetryListener) OnTrackPublishedUpdate(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
-	l.room.telemetry.TrackPublishedUpdate(context.Background(), l.room.ID(), l.room.Name(), pID, ti)
+	l.room.telemetry.TrackPublishedUpdate(context.Background(), l.eventRoom(), pID, ti)
 }
 
 func (l participantTelemetryListener) OnTrackMaxSubscribedVideoQuality(pID livekit.ParticipantID, ti *livekit.TrackInfo, mime mime.MimeType, maxQuality livekit.VideoQuality) {
-	l.room.telemetry.TrackMaxSubscribedVideoQuality(context.Background(), l.room.ID(), l.room.Name(), pID, ti, mime, maxQuality)
+	l.room.telemetry.TrackMaxSubscribedVideoQuality(context.Background(), l.eventRoom(), pID, ti, mime, maxQuality)
 }
 
 func (l participantTelemetryListener) OnTrackPublishRTPStats(pID livekit.ParticipantID, trackID livekit.TrackID, mimeType mime.MimeType, layer int, stats *livekit.RTPStats) {
-	l.room.telemetry.TrackPublishRTPStats(context.Background(), l.room.ID(), l.room.Name(), pID, trackID, mimeType, layer, stats)
+	l.room.telemetry.TrackPublishRTPStats(context.Background(), l.eventRoom(), pID, trackID, mimeType, layer, stats)
 }
 
 func (l participantTelemetryListener) OnTrackSubscribeRTPStats(pID livekit.ParticipantID, trackID livekit.TrackID, mimeType mime.MimeType, stats *livekit.RTPStats) {
-	l.room.telemetry.TrackSubscribeRTPStats(context.Background(), l.room.ID(), l.room.Name(), pID, trackID, mimeType, stats)
+	l.room.telemetry.TrackSubscribeRTPStats(context.Background(), l.eventRoom(), pID, trackID, mimeType, stats)
 }
 
 func (l participantTelemetryListener) OnTrackStats(key telemetry.StatsKey, stat *livekit.AnalyticsStat) {
@@ -2301,7 +2361,7 @@ func GetOtherParticipantInfo(
 
 	pInfos := make([]*livekit.ParticipantInfo, 0, len(allParticipants))
 	for _, op := range allParticipants {
-		if !(skipSubscriberBroadcast && op.CanSkipBroadcast()) &&
+		if (!skipSubscriberBroadcast || !op.CanSkipBroadcast()) &&
 			!op.Hidden() &&
 			op.Identity() != lpIdentity &&
 			!isMigratingIn {
@@ -2327,7 +2387,7 @@ func connectionDetailsFields(infos []*types.ICEConnectionInfo) []any {
 			if c.Trickle {
 				cStr += "[trickle]"
 			}
-			cStr += " " + c.Local.String()
+			cStr += " " + c.Candidate.String()
 			candidates = append(candidates, cStr)
 		}
 		for _, c := range info.Remote {
@@ -2340,11 +2400,11 @@ func connectionDetailsFields(infos []*types.ICEConnectionInfo) []any {
 			if c.Trickle {
 				cStr += "[trickle]"
 			}
-			cStr += " " + fmt.Sprintf("%s %s %s:%d", c.Remote.NetworkType(), c.Remote.Type(), MaybeTruncateIP(c.Remote.Address()), c.Remote.Port())
-			if relatedAddress := c.Remote.RelatedAddress(); relatedAddress != nil {
-				relatedAddr := MaybeTruncateIP(relatedAddress.Address)
+			cStr += " " + fmt.Sprintf("%s %s %s:%d", c.Candidate.Protocol.String(), c.Candidate.Typ.String(), MaybeTruncateIP(c.Candidate.Address), c.Candidate.Port)
+			if relatedAddress := c.Candidate.RelatedAddress; relatedAddress != "" {
+				relatedAddr := MaybeTruncateIP(relatedAddress)
 				if relatedAddr != "" {
-					cStr += " " + fmt.Sprintf(" related %s:%d", relatedAddr, relatedAddress.Port)
+					cStr += " " + fmt.Sprintf(" related %s:%d", relatedAddr, c.Candidate.RelatedPort)
 				}
 			}
 			candidates = append(candidates, cStr)

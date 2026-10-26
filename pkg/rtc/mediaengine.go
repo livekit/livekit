@@ -25,6 +25,11 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
+type codecToRegister struct {
+	webrtc.RTPCodecParameters
+	strictFmtp bool
+}
+
 func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedback RTCPFeedbackConfig, filterOutH264HighProfile bool) error {
 	// audio codecs
 	if IsCodecEnabled(codecs, protoCodecs.OpusCodecParameters.RTPCodecCapability) {
@@ -55,20 +60,44 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedbac
 
 	// video codecs
 	rtxEnabled := IsCodecEnabled(codecs, protoCodecs.VideoRTXCodecParameters.RTPCodecCapability)
+
+	var codecsToRegister []codecToRegister
 	for _, codec := range protoCodecs.VideoCodecsParameters {
+		codecsToRegister = append(codecsToRegister, codecToRegister{RTPCodecParameters: codec, strictFmtp: false})
+	}
+	codecsToRegister = append(codecsToRegister,
+		codecToRegister{
+			RTPCodecParameters: protoCodecs.H264ProfileLevelId42001fPacketizationMode0CodecParameters,
+			strictFmtp:         true,
+		},
+		codecToRegister{
+			RTPCodecParameters: protoCodecs.H264ProfileLevelId42001fPacketizationMode1CodecParameters,
+			strictFmtp:         true,
+		},
+		codecToRegister{
+			RTPCodecParameters: protoCodecs.H264ProfileLevelId4d001fPacketizationMode0CodecParameters,
+			strictFmtp:         true,
+		},
+		codecToRegister{
+			RTPCodecParameters: protoCodecs.H264ProfileLevelId4d001fPacketizationMode1CodecParameters,
+			strictFmtp:         true,
+		},
+	)
+
+	for _, codec := range codecsToRegister {
 		if filterOutH264HighProfile && codec.RTPCodecCapability.SDPFmtpLine == protoCodecs.H264HighProfileFmtp {
 			continue
 		}
 		if mime.IsMimeTypeStringRTX(codec.MimeType) {
 			continue
 		}
-		if !IsCodecEnabled(codecs, codec.RTPCodecCapability) {
+		if !isCodecEnabledWithFmtp(codecs, codec.RTPCodecCapability, codec.strictFmtp) {
 			continue
 		}
 
 		cp := codec
 		cp.RTPCodecCapability.RTCPFeedback = rtcpFeedback.Video
-		if err := me.RegisterCodec(cp, webrtc.RTPCodecTypeVideo); err != nil {
+		if err := me.RegisterCodec(cp.RTPCodecParameters, webrtc.RTPCodecTypeVideo); err != nil {
 			return err
 		}
 
@@ -76,10 +105,10 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedbac
 			continue
 		}
 
-		cp = protoCodecs.VideoRTXCodecParameters
-		cp.RTPCodecCapability.SDPFmtpLine = fmt.Sprintf("apt=%d", codec.PayloadType)
-		cp.PayloadType = codec.PayloadType + 1
-		if err := me.RegisterCodec(cp, webrtc.RTPCodecTypeVideo); err != nil {
+		cpRtx := protoCodecs.VideoRTXCodecParameters
+		cpRtx.RTPCodecCapability.SDPFmtpLine = fmt.Sprintf("apt=%d", codec.PayloadType)
+		cpRtx.PayloadType = codec.PayloadType + 1
+		if err := me.RegisterCodec(cpRtx, webrtc.RTPCodecTypeVideo); err != nil {
 			return err
 		}
 	}
@@ -108,6 +137,15 @@ func createMediaEngine(codecs []*livekit.Codec, config DirectionConfig, filterOu
 		return nil, err
 	}
 
+	if config.FlexFEC.Enabled {
+		// registering a flexfec codec makes pion allocate FEC SSRCs for video
+		// senders and emit a=ssrc-group:FEC-FR in offers, and lets answers
+		// accept flexfec offered by publishers
+		if err := me.RegisterCodec(protoCodecs.FlexFEC03CodecParameters, webrtc.RTPCodecTypeVideo); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := registerHeaderExtensions(me, config.RTPHeaderExtension); err != nil {
 		return nil, err
 	}
@@ -116,11 +154,15 @@ func createMediaEngine(codecs []*livekit.Codec, config DirectionConfig, filterOu
 }
 
 func IsCodecEnabled(codecs []*livekit.Codec, cap webrtc.RTPCodecCapability) bool {
+	return isCodecEnabledWithFmtp(codecs, cap, false)
+}
+
+func isCodecEnabledWithFmtp(codecs []*livekit.Codec, cap webrtc.RTPCodecCapability, strictFmtp bool) bool {
 	for _, codec := range codecs {
 		if !mime.IsMimeTypeStringEqual(codec.Mime, cap.MimeType) {
 			continue
 		}
-		if codec.FmtpLine == "" || strings.EqualFold(codec.FmtpLine, cap.SDPFmtpLine) {
+		if (!strictFmtp && codec.FmtpLine == "") || strings.EqualFold(codec.FmtpLine, cap.SDPFmtpLine) {
 			return true
 		}
 	}
@@ -129,6 +171,10 @@ func IsCodecEnabled(codecs []*livekit.Codec, cap webrtc.RTPCodecCapability) bool
 
 func selectAlternativeVideoCodec(enabledCodecs []*livekit.Codec) string {
 	for _, c := range enabledCodecs {
+		// RTX and FEC are not real codecs, skip them
+		if mime.IsMimeTypeStringRTX(c.Mime) || mime.IsMimeTypeStringFlexFEC03(c.Mime) {
+			continue
+		}
 		if mime.IsMimeTypeStringVideo(c.Mime) {
 			return c.Mime
 		}
@@ -147,15 +193,44 @@ func selectAlternativeAudioCodec(enabledCodecs []*livekit.Codec) string {
 	return mime.MimeTypeOpus.String()
 }
 
+// mergeCodecsByMime returns a union b, deduplicated by mime type.
+func mergeCodecsByMime(a, b []*livekit.Codec) []*livekit.Codec {
+	merged := make([]*livekit.Codec, 0, len(a)+len(b))
+	merged = append(merged, a...)
+	for _, c := range b {
+		seen := false
+		for _, existing := range a {
+			if mime.IsMimeTypeStringEqual(c.Mime, existing.Mime) {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			merged = append(merged, c)
+		}
+	}
+	return merged
+}
+
 func filterCodecs(
 	codecs []webrtc.RTPCodecParameters,
 	enabledCodecs []*livekit.Codec,
 	rtcpFeedbackConfig RTCPFeedbackConfig,
 	filterOutH264HighProfile bool,
+	enableFlexFEC bool,
 ) []webrtc.RTPCodecParameters {
 	filteredCodecs := make([]webrtc.RTPCodecParameters, 0, len(codecs))
 	for _, c := range codecs {
 		if filterOutH264HighProfile && isH264HighProfile(c.RTPCodecCapability.SDPFmtpLine) {
+			continue
+		}
+
+		// flexfec-03 is not part of the enabled codec lists, retain it when
+		// the transport direction has FlexFEC enabled
+		if mime.IsMimeTypeStringFlexFEC03(c.RTPCodecCapability.MimeType) {
+			if enableFlexFEC {
+				filteredCodecs = append(filteredCodecs, c)
+			}
 			continue
 		}
 

@@ -15,7 +15,8 @@
 package dynacast
 
 import (
-	"sort"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -497,20 +498,73 @@ func TestCodecRegression(t *testing.T) {
 	})
 }
 
-func subscribedCodecsAsString(c1 []*livekit.SubscribedCodec) string {
-	sort.Slice(c1, func(i, j int) bool { return c1[i].Codec < c1[j].Codec })
-	var s1 string
-	for _, c := range c1 {
-		s1 += c.String()
+func TestResendCommittedQuality(t *testing.T) {
+	var lock sync.Mutex
+	var notified []string
+	dm := NewDynacastManagerVideo(DynacastManagerVideoParams{
+		// keeps the downgrade below pending for the whole test
+		DynacastPauseDelay: time.Minute,
+		Listener: &testDynacastManagerListener{
+			onSubscribedMaxQualityChange: func(subscribedQualities []*livekit.SubscribedCodec) {
+				lock.Lock()
+				notified = append(notified, subscribedCodecsAsString(subscribedQualities))
+				lock.Unlock()
+			},
+		},
+	})
+	defer dm.Close()
+	notifications := func() []string {
+		lock.Lock()
+		defer lock.Unlock()
+		return slices.Clone(notified)
 	}
-	return s1
+
+	// nothing committed yet, nothing to resend
+	dm.ResendCommittedQuality()
+	time.Sleep(100 * time.Millisecond)
+	require.Empty(t, notifications())
+
+	dm.NotifySubscriberMaxQuality("s1", mime.MimeTypeVP8, livekit.VideoQuality_LOW)
+	require.Eventually(t, func() bool { return len(notifications()) == 1 }, 5*time.Second, 10*time.Millisecond)
+
+	// the downgrade waits for the debounce, LOW is still the committed quality
+	dm.NotifySubscriberMaxQuality("s1", mime.MimeTypeVP8, livekit.VideoQuality_OFF)
+	time.Sleep(100 * time.Millisecond)
+	require.Len(t, notifications(), 1)
+
+	// the resend notifies LOW again, without committing the pending OFF
+	dm.ResendCommittedQuality()
+	require.Eventually(t, func() bool { return len(notifications()) == 2 }, 5*time.Second, 10*time.Millisecond)
+	require.Equal(t, notifications()[0], notifications()[1])
+
+	// no layer paused, nothing to resend
+	dm.NotifySubscriberMaxQuality("s1", mime.MimeTypeVP8, livekit.VideoQuality_HIGH)
+	require.Eventually(t, func() bool { return len(notifications()) == 3 }, 5*time.Second, 10*time.Millisecond)
+	dm.ResendCommittedQuality()
+	time.Sleep(100 * time.Millisecond)
+	require.Len(t, notifications(), 3)
+}
+
+func subscribedCodecsAsString(c1 []*livekit.SubscribedCodec) string {
+	slices.SortFunc(c1, func(a, b *livekit.SubscribedCodec) int {
+		return strings.Compare(a.Codec, b.Codec)
+	})
+
+	var s1 strings.Builder
+	for _, c := range c1 {
+		s1.WriteString(c.String())
+	}
+	return s1.String()
 }
 
 func subscribedAudioCodecsAsString(c1 []*livekit.SubscribedAudioCodec) string {
-	sort.Slice(c1, func(i, j int) bool { return c1[i].Codec < c1[j].Codec })
-	var s1 string
+	slices.SortFunc(c1, func(a, b *livekit.SubscribedAudioCodec) int {
+		return strings.Compare(a.Codec, b.Codec)
+	})
+
+	var s1 strings.Builder
 	for _, c := range c1 {
-		s1 += c.String()
+		s1.WriteString(c.String())
 	}
-	return s1
+	return s1.String()
 }

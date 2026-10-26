@@ -25,12 +25,12 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/guid"
+	"github.com/livekit/protocol/utils/protojson"
 	"github.com/livekit/protocol/webhook"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -111,7 +111,7 @@ func TestWebhooks(t *testing.T) {
 
 			// room closed
 			rm := server.RoomManager().GetRoom(context.Background(), testRoom)
-			rm.Close(types.ParticipantCloseReasonNone)
+			rm.Close(types.RoomCloseReasonAPIDelete)
 			testutils.WithTimeout(t, func() string {
 				if ts.GetEvent(webhook.EventRoomFinished) == nil {
 					return "did not receive RoomFinished"
@@ -119,6 +119,7 @@ func TestWebhooks(t *testing.T) {
 				return ""
 			})
 			require.Equal(t, testRoom, ts.GetEvent(webhook.EventRoomFinished).Room.Name)
+			require.Equal(t, livekit.RoomEndReason_ROOM_END_API_DELETE, ts.GetEvent(webhook.EventRoomFinished).RoomEndReason)
 		})
 	}
 }

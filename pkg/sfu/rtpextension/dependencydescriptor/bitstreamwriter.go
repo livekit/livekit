@@ -103,7 +103,7 @@ func (w *BitStreamWriter) writePartialByte(source uint8, sourceBitCount int, tar
 }
 
 func (w *BitStreamWriter) WriteNonSymmetric(val, numValues uint32) error {
-	if !(val < numValues && numValues <= 1<<31) {
+	if val >= numValues || numValues > 1<<31 {
 		return fmt.Errorf("invalid argument, val %d, numValues %d", val, numValues)
 	}
 	if numValues == 1 {

@@ -46,10 +46,10 @@ import (
 	"github.com/livekit/protocol/signalling"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
-	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/transport/transportfakes"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/protocol/datatrack"
 )
 
 type SignalRequestHandler func(msg *livekit.SignalRequest) error
@@ -63,6 +63,10 @@ type RTCClient struct {
 	conn                    *websocket.Conn
 	publisher               *rtc.PCTransport
 	subscriber              *rtc.PCTransport
+	enabledCodecs           []*livekit.Codec
+	forceRelay              bool
+	enableFlexFEC           bool
+	transportReady          chan struct{}
 	// sid => track
 	localTracks        map[string]webrtc.TrackLocal
 	trackSenders       map[string]*webrtc.RTPSender
@@ -91,10 +95,12 @@ type RTCClient struct {
 	// remote tracks waiting to be processed
 	pendingRemoteTracks []*webrtc.TrackRemote
 
-	pendingTrackWriters     []TrackWriter
-	OnConnected             func()
-	OnDataReceived          func(data []byte, sid string)
-	OnDataUnlabeledReceived func(data []byte)
+	pendingTrackWriters []TrackWriter
+	// callbacks are set by tests while the client is already running, and read
+	// from the signal and data channel goroutines
+	onConnected             atomic.Pointer[func()]
+	onDataReceived          atomic.Pointer[func(data []byte, sid string)]
+	onDataUnlabeledReceived atomic.Pointer[func(data []byte)]
 	refreshToken            string
 
 	// map of livekit.ParticipantID and last packet
@@ -137,6 +143,8 @@ type Options struct {
 	SignalResponseInterceptor SignalResponseInterceptor
 	UseJoinRequestQueryParam  bool
 	RTCServicePath            string
+	ForceRelay                bool
+	EnableFlexFEC             bool
 }
 
 func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
@@ -223,8 +231,6 @@ func SetAuthorizationToken(header http.Header, token string) {
 }
 
 func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Options) (*RTCClient, error) {
-	var err error
-
 	c := &RTCClient{
 		useSinglePeerConnection:    useSinglePeerConnection,
 		conn:                       conn,
@@ -238,19 +244,11 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 		bytesReceived:              make(map[livekit.ParticipantID]uint64),
 		pendingPublishedDataTracks: make(map[uint16]*livekit.DataTrackInfo),
 		subscribedDataTracks:       make(map[livekit.ParticipantID]map[uint16]*DataTrackRemote),
+		transportReady:             make(chan struct{}),
 	}
 	c.nextDataTrackHandle.Store(uint32(rand.IntN(8192)))
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 
-	conf := rtc.WebRTCConfig{
-		WebRTCConfig: rtcconfig.WebRTCConfig{
-			Configuration: rtcConf,
-		},
-	}
-	conf.SettingEngine.SetLite(false)
-	conf.SettingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleClient)
-	ff := buffer.NewFactoryOfBufferFactory(500, 200)
-	conf.SetBufferFactory(ff.CreateBufferFactory())
 	var codecs []*livekit.Codec
 	for _, codec := range []*livekit.Codec{
 		{
@@ -276,6 +274,38 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 			codecs = append(codecs, codec)
 		}
 	}
+	c.enabledCodecs = codecs
+
+	if opts != nil {
+		c.signalRequestInterceptor = opts.SignalRequestInterceptor
+		c.signalResponseInterceptor = opts.SignalResponseInterceptor
+		c.forceRelay = opts.ForceRelay
+		c.enableFlexFEC = opts.EnableFlexFEC
+	}
+
+	return c, nil
+}
+
+func (c *RTCClient) createTransport(rtcconf webrtc.Configuration) error {
+	var err error
+
+	conf := rtc.WebRTCConfig{
+		WebRTCConfig: rtcconfig.WebRTCConfig{
+			Configuration: rtcconf,
+		},
+	}
+	conf.SettingEngine.SetLite(false)
+	conf.SettingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleClient)
+	ff := buffer.NewFactoryOfBufferFactory(500, 200)
+	conf.SetBufferFactory(ff.CreateBufferFactory())
+
+	if c.enableFlexFEC {
+		fecConfig := rtc.FlexFECDirectionConfig{
+			Enabled: true,
+		}
+		conf.Publisher.FlexFEC = fecConfig
+		conf.Subscriber.FlexFEC = fecConfig
+	}
 
 	//
 	// The signal targets are from point of view of server.
@@ -287,7 +317,8 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 	c.publisher, err = rtc.NewPCTransport(rtc.TransportParams{
 		Config:                           &conf,
 		DirectionConfig:                  conf.Subscriber,
-		EnabledCodecs:                    codecs,
+		EnabledPublishCodecs:             c.enabledCodecs,
+		EnabledSubscribeCodecs:           c.enabledCodecs,
 		IsOfferer:                        true,
 		IsSendSide:                       true,
 		Handler:                          publisherHandler,
@@ -297,7 +328,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 		EnableDataTracks:                 true,
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	publisherHandler.OnICECandidateCalls(func(ic *webrtc.ICECandidate, t livekit.SignalTarget) error {
@@ -328,51 +359,56 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 		}
 		c.pendingDataTrackWriters = nil
 
-		if c.OnConnected != nil {
-			go c.OnConnected()
+		if f := c.onConnected.Load(); f != nil {
+			go (*f)()
 		}
 	})
 	publisherHandler.OnOfferCalls(c.onOffer)
 	publisherHandler.OnFullyEstablishedCalls(func() {
-		logger.Debugw("publisher fully established", "participant", c.localParticipant.Identity, "pID", c.localParticipant.Sid)
+		logger.Debugw("publisher fully established", "participant", c.localParticipant.Identity, "participantID", c.localParticipant.Sid)
 		c.publisherFullyEstablished.Store(true)
 	})
 
 	ordered := true
-	if err := c.publisher.CreateDataChannel(rtc.ReliableDataChannel, &webrtc.DataChannelInit{
-		Ordered: &ordered,
-	}); err != nil {
-		return nil, err
+	if c.useSinglePeerConnection {
+		if err := createNegotiatedDataChannels(c.publisher); err != nil {
+			return err
+		}
+	} else {
+		if err := c.publisher.CreateDataChannel(rtc.ReliableDataChannel, &webrtc.DataChannelInit{
+			Ordered: &ordered,
+		}); err != nil {
+			return err
+		}
 	}
-
 	if err := c.publisher.CreateDataChannel("pubraw", &webrtc.DataChannelInit{
 		Ordered: &ordered,
 	}); err != nil {
-		return nil, err
-	}
-
-	ordered = false
-	maxRetransmits := uint16(0)
-	if err := c.publisher.CreateDataChannel(rtc.LossyDataChannel, &webrtc.DataChannelInit{
-		Ordered:        &ordered,
-		MaxRetransmits: &maxRetransmits,
-	}); err != nil {
-		return nil, err
-	}
-
-	if err := c.publisher.CreateDataChannel(rtc.DataTrackDataChannel, &webrtc.DataChannelInit{
-		Ordered:        &ordered,
-		MaxRetransmits: &maxRetransmits,
-	}); err != nil {
-		return nil, err
+		return err
 	}
 
 	if !c.useSinglePeerConnection {
+		maxRetransmits := uint16(0)
+		ordered = false
+		if err := c.publisher.CreateDataChannel(rtc.LossyDataChannel, &webrtc.DataChannelInit{
+			Ordered:        &ordered,
+			MaxRetransmits: &maxRetransmits,
+		}); err != nil {
+			return err
+		}
+		if err := c.publisher.CreateDataChannel(rtc.DataTrackDataChannel, &webrtc.DataChannelInit{
+			Ordered:        &ordered,
+			MaxRetransmits: &maxRetransmits,
+		}); err != nil {
+			return err
+		}
+
 		subscriberHandler := &transportfakes.FakeHandler{}
 		c.subscriber, err = rtc.NewPCTransport(rtc.TransportParams{
 			Config:                           &conf,
 			DirectionConfig:                  conf.Publisher,
-			EnabledCodecs:                    codecs,
+			EnabledPublishCodecs:             c.enabledCodecs,
+			EnabledSubscribeCodecs:           c.enabledCodecs,
 			Handler:                          subscriberHandler,
 			DatachannelMaxReceiverBufferSize: 1500,
 			DatachannelSlowThreshold:         1024 * 1024 * 1024,
@@ -380,14 +416,14 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 			EnableDataTracks:                 true,
 		})
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		ordered := true
 		if err := c.subscriber.CreateReadableDataChannel("subraw", &webrtc.DataChannelInit{
 			Ordered: &ordered,
 		}); err != nil {
-			return nil, err
+			return err
 		}
 
 		subscriberHandler.OnICECandidateCalls(func(ic *webrtc.ICECandidate, t livekit.SignalTarget) error {
@@ -421,12 +457,12 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 			}
 			c.pendingDataTrackWriters = nil
 
-			if c.OnConnected != nil {
-				go c.OnConnected()
+			if f := c.onConnected.Load(); f != nil {
+				go (*f)()
 			}
 		})
 		subscriberHandler.OnFullyEstablishedCalls(func() {
-			logger.Debugw("subscriber fully established", "participant", c.localParticipant.Identity, "pID", c.localParticipant.Sid)
+			logger.Debugw("subscriber fully established", "participant", c.localParticipant.Identity, "participantID", c.localParticipant.Sid)
 			c.subscriberFullyEstablished.Store(true)
 		})
 		subscriberHandler.OnAnswerCalls(func(answer webrtc.SessionDescription, answerId uint32, _midToTrackID map[string]string) error {
@@ -446,16 +482,26 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 		go c.ensurePublisherConnected()
 	}
 
-	if opts != nil {
-		c.signalRequestInterceptor = opts.SignalRequestInterceptor
-		c.signalResponseInterceptor = opts.SignalResponseInterceptor
-	}
-
-	return c, nil
+	return nil
 }
 
 func (c *RTCClient) ID() livekit.ParticipantID {
 	return c.id
+}
+
+// SetOnConnected is safe to call after the client is running.
+func (c *RTCClient) SetOnConnected(f func()) {
+	c.onConnected.Store(&f)
+}
+
+// SetOnDataReceived is safe to call after the client is running.
+func (c *RTCClient) SetOnDataReceived(f func(data []byte, sid string)) {
+	c.onDataReceived.Store(&f)
+}
+
+// SetOnDataUnlabeledReceived is safe to call after the client is running.
+func (c *RTCClient) SetOnDataUnlabeledReceived(f func(data []byte)) {
+	c.onDataUnlabeledReceived.Store(&f)
 }
 
 // create an offer for the server
@@ -497,6 +543,29 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 			c.remoteParticipants[livekit.ParticipantID(p.Sid)] = p
 		}
 		c.lock.Unlock()
+
+		var iceServers []webrtc.ICEServer
+		for _, is := range msg.Join.IceServers {
+			iceServers = append(iceServers, webrtc.ICEServer{
+				URLs:       is.Urls,
+				Username:   is.Username,
+				Credential: is.Credential,
+			})
+		}
+		if len(iceServers) == 0 {
+			iceServers = rtcConf.ICEServers
+		}
+		rtcconf := rtcConf
+		rtcconf.ICEServers = iceServers
+		if c.forceRelay {
+			rtcconf.ICETransportPolicy = webrtc.ICETransportPolicyRelay
+		}
+
+		if err := c.createTransport(rtcconf); err != nil {
+			return err
+		}
+		close(c.transportReady)
+
 		// if publish only, negotiate
 		if !msg.Join.SubscriberPrimary {
 			c.subscriberAsPrimary.Store(false)
@@ -632,7 +701,7 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 					livekit.ParticipantID(publishedDataTrack.PublisherSid),
 					uint16(handle),
 					livekit.TrackID(publishedDataTrack.TrackSid),
-					logger.GetLogger().WithValues("participant", c.localParticipant.Identity, "pID", c.localParticipant.Sid),
+					logger.GetLogger().WithValues("participant", c.localParticipant.Identity, "participantID", c.localParticipant.Sid),
 				)
 			}
 		}
@@ -654,8 +723,11 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 	return nil
 }
 
-func (c *RTCClient) WaitUntilConnected() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+func (c *RTCClient) WaitUntilConnected(timeout time.Duration) error {
+	if timeout == 0 {
+		timeout = 20 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	for {
 		select {
@@ -827,9 +899,9 @@ func (c *RTCClient) SetAttributes(attrs map[string]string) error {
 
 func (c *RTCClient) hasPrimaryEverConnected() bool {
 	if c.subscriberAsPrimary.Load() {
-		return c.subscriber.HasEverConnected()
+		return c.subscriber.PeerConnectionHasEverConnected()
 	} else {
-		return c.publisher.HasEverConnected()
+		return c.publisher.PeerConnectionHasEverConnected()
 	}
 }
 
@@ -846,6 +918,11 @@ func AddTrackNoWriter() AddTrackOption {
 }
 
 func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string, opts ...AddTrackOption) (writer TrackWriter, err error) {
+	select {
+	case <-c.transportReady:
+	case <-c.ctx.Done():
+		return nil, c.ctx.Err()
+	}
 	var params AddTrackParams
 	for _, opt := range opts {
 		opt(&params)
@@ -860,7 +937,7 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string, 
 		logger.Errorw(
 			"add track failed", err,
 			"participant", c.localParticipant.Identity,
-			"pID", c.localParticipant.Sid,
+			"participantID", c.localParticipant.Sid,
 			"trackID", track.ID(),
 		)
 		return
@@ -1062,7 +1139,13 @@ func (c *RTCClient) LastAnswer() *webrtc.SessionDescription {
 }
 
 func (c *RTCClient) ensurePublisherConnected() error {
-	if c.publisher.HasEverConnected() {
+	select {
+	case <-c.transportReady:
+	case <-c.ctx.Done():
+		return c.ctx.Err()
+	}
+
+	if c.publisher.PeerConnectionHasEverConnected() {
 		return nil
 	}
 
@@ -1092,15 +1175,15 @@ func (c *RTCClient) handleDataMessage(kind livekit.DataPacket_Kind, data []byte)
 	}
 	dp.Kind = kind
 	if val, ok := dp.Value.(*livekit.DataPacket_User); ok {
-		if c.OnDataReceived != nil {
-			c.OnDataReceived(val.User.Payload, val.User.ParticipantSid)
+		if f := c.onDataReceived.Load(); f != nil {
+			(*f)(val.User.Payload, val.User.ParticipantSid)
 		}
 	}
 }
 
 func (c *RTCClient) handleDataMessageUnlabeled(data []byte) {
-	if c.OnDataUnlabeledReceived != nil {
-		c.OnDataUnlabeledReceived(data)
+	if f := c.onDataUnlabeledReceived.Load(); f != nil {
+		(*f)(data)
 	}
 }
 
@@ -1209,7 +1292,7 @@ func (c *RTCClient) processRemoteTrack(track *webrtc.TrackRemote) {
 		logger.Infow(
 			"client caching track",
 			"participant", c.localParticipant.Identity,
-			"pID", c.ID(),
+			"participantID", c.ID(),
 			"codec", track.Codec(),
 			"ssrc", track.SSRC(),
 		)
@@ -1230,7 +1313,7 @@ func (c *RTCClient) processRemoteTrack(track *webrtc.TrackRemote) {
 	logger.Infow(
 		"client added track",
 		"participant", c.localParticipant.Identity,
-		"pID", c.ID(),
+		"participantID", c.ID(),
 		"publisherID", publisherID,
 		"trackID", trackID,
 		"codec", track.Codec(),
@@ -1253,7 +1336,7 @@ func (c *RTCClient) processRemoteTrack(track *webrtc.TrackRemote) {
 			logger.Infow(
 				"client track removed",
 				"participant", c.localParticipant.Identity,
-				"pID", c.ID(),
+				"participantID", c.ID(),
 				"publisherID", publisherID,
 				"trackID", trackID,
 				"codec", track.Codec(),
@@ -1274,7 +1357,7 @@ func (c *RTCClient) processRemoteTrack(track *webrtc.TrackRemote) {
 			logger.Infow(
 				"consumed from participant",
 				"participant", c.localParticipant.Identity,
-				"pID", c.ID(),
+				"participantID", c.ID(),
 				"publisherID", publisherID,
 				"trackID", trackID,
 				"size", numBytes,
@@ -1292,6 +1375,28 @@ func (c *RTCClient) BytesReceived() uint64 {
 	}
 	c.lock.Unlock()
 	return total
+}
+
+func (c *RTCClient) IsLocalCandidateRelaySelected() bool {
+	var info *types.ICEConnectionInfo
+	if c.subscriberAsPrimary.Load() {
+		if c.subscriber != nil {
+			info = c.subscriber.GetICEConnectionInfo()
+		}
+	} else {
+		if c.publisher != nil {
+			info = c.publisher.GetICEConnectionInfo()
+		}
+	}
+	if info == nil {
+		return false
+	}
+	for _, local := range info.Local {
+		if local.SelectedOrder > 0 && local.Candidate != nil && local.Candidate.Typ == webrtc.ICECandidateTypeRelay {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *RTCClient) SendNacks(count int) {
@@ -1314,4 +1419,39 @@ func (c *RTCClient) SendNacks(count int) {
 
 func encodeQueryParam(key, value string) string {
 	return fmt.Sprintf("&%s=%s", url.QueryEscape(key), url.QueryEscape(value))
+}
+
+// createNegotiatedDataChannels creates the well-known data channels the way protocol >= 18 clients do:
+// out-of-band with fixed IDs, matching what the server creates in single peer connection mode.
+func createNegotiatedDataChannels(t *rtc.PCTransport) error {
+	negotiated := true
+	ordered := true
+	reliableID := uint16(livekit.NegotiatedDataChannelID_NDCI_RELIABLE)
+	if err := t.CreateDataChannel(rtc.ReliableDataChannel, &webrtc.DataChannelInit{
+		Ordered:    &ordered,
+		Negotiated: &negotiated,
+		ID:         &reliableID,
+	}); err != nil {
+		return err
+	}
+
+	ordered = false
+	maxRetransmits := uint16(0)
+	lossyID := uint16(livekit.NegotiatedDataChannelID_NDCI_LOSSY)
+	if err := t.CreateDataChannel(rtc.LossyDataChannel, &webrtc.DataChannelInit{
+		Ordered:        &ordered,
+		MaxRetransmits: &maxRetransmits,
+		Negotiated:     &negotiated,
+		ID:             &lossyID,
+	}); err != nil {
+		return err
+	}
+
+	dataTrackID := uint16(livekit.NegotiatedDataChannelID_NDCI_DATA_TRACK)
+	return t.CreateDataChannel(rtc.DataTrackDataChannel, &webrtc.DataChannelInit{
+		Ordered:        &ordered,
+		MaxRetransmits: &maxRetransmits,
+		Negotiated:     &negotiated,
+		ID:             &dataTrackID,
+	})
 }

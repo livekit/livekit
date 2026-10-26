@@ -19,13 +19,18 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/jxskiss/base62"
 	"github.com/pion/sdp/v3"
+	"github.com/pion/stun/v3"
+	"github.com/pion/turn/v5"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 	"github.com/thoas/go-funk"
@@ -39,6 +44,9 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/service"
+	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/datachannel"
 	"github.com/livekit/livekit-server/pkg/testutils"
 	testclient "github.com/livekit/livekit-server/test/client"
@@ -232,6 +240,217 @@ func TestSinglePublisher(t *testing.T) {
 				}
 				return ""
 			})
+		})
+	}
+}
+
+func TestConnectionStats(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	s, finish := setupSingleNodeTest("TestConnectionStats")
+	defer finish()
+
+	for _, testRTCServicePath := range testRTCServicePaths {
+		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
+			c1 := createRTCClient("c1", defaultServerPort, testRTCServicePath, nil)
+			c2 := createRTCClient("c2", defaultServerPort, testRTCServicePath, nil)
+			waitUntilConnected(t, c1, c2)
+			defer func() {
+				c1.Stop()
+				c2.Stop()
+			}()
+
+			// both clients publish audio + video
+			t1, err := c1.AddStaticTrack("audio/opus", "audio", "c1audio")
+			require.NoError(t, err)
+			defer t1.Stop()
+			t2, err := c1.AddStaticTrack("video/vp8", "video", "c1video")
+			require.NoError(t, err)
+			defer t2.Stop()
+
+			t3, err := c2.AddStaticTrack("audio/opus", "audio", "c2audio")
+			require.NoError(t, err)
+			defer t3.Stop()
+			t4, err := c2.AddStaticTrack("video/vp8", "video", "c2video")
+			require.NoError(t, err)
+			defer t4.Stop()
+
+			// wait for cross-subscriptions: each client should receive 2 tracks from the other
+			testutils.WithTimeout(t, func() string {
+				if len(c1.SubscribedTracks()[c2.ID()]) != 2 {
+					return "c1 did not subscribe to both tracks from c2"
+				}
+				if len(c2.SubscribedTracks()[c1.ID()]) != 2 {
+					return "c2 did not subscribe to both tracks from c1"
+				}
+				return ""
+			})
+
+			room := s.RoomManager().GetRoom(context.Background(), testRoom)
+			require.NotNil(t, room)
+
+			// hook the upstream WebRTCReceiver.OnStatsUpdate and downstream DownTrack.OnStatsUpdate
+			// callbacks so we can verify the AnalyticsStat delivered through each carries valid
+			// delta data. MediaTrack.Receivers() returns one entry per potential codec; only those
+			// matching the actually published codec are *sfu.WebRTCReceiver, the rest are
+			// placeholder *rtc.DummyReceiver instances that we skip.
+			type statCapture struct {
+				lock sync.Mutex
+				stat *livekit.AnalyticsStat
+			}
+			receiverCaptures := make(map[livekit.TrackID]*statCapture)
+			downTrackCaptures := make(map[livekit.ParticipantIdentity]map[livekit.TrackID]*statCapture)
+			for _, identity := range []livekit.ParticipantIdentity{"c1", "c2"} {
+				p := room.GetParticipant(identity)
+				require.NotNil(t, p, "participant %s not found", identity)
+				for _, mt := range p.GetPublishedTracks() {
+					rc := &statCapture{}
+					receiverCaptures[mt.ID()] = rc
+					var hooked int
+					for _, r := range mt.Receivers() {
+						if dr, ok := r.(*rtc.DummyReceiver); ok {
+							underlying := dr.Receiver()
+							if underlying == nil {
+								continue
+							}
+							r = underlying
+						}
+						wr, ok := r.(*sfu.WebRTCReceiver)
+						if !ok {
+							continue
+						}
+						wr.OnStatsUpdate(func(_ *sfu.WebRTCReceiver, stat *livekit.AnalyticsStat) {
+							rc.lock.Lock()
+							rc.stat = stat
+							rc.lock.Unlock()
+						})
+						hooked++
+					}
+					require.Greater(t, hooked, 0, "no live WebRTCReceiver found for published track %s", mt.ID())
+				}
+
+				dtCaps := make(map[livekit.TrackID]*statCapture)
+				downTrackCaptures[identity] = dtCaps
+				for _, st := range p.GetSubscribedTracks() {
+					dt := st.DownTrack()
+					require.NotNil(t, dt, "subscribed track %s has no DownTrack", st.ID())
+					dc := &statCapture{}
+					dtCaps[st.ID()] = dc
+					dt.OnStatsUpdate(func(_ *sfu.DownTrack, stat *livekit.AnalyticsStat) {
+						dc.lock.Lock()
+						dc.stat = stat
+						dc.lock.Unlock()
+					})
+				}
+			}
+
+			validateAnalyticsStat := func(stat *livekit.AnalyticsStat) string {
+				if stat == nil {
+					return "stat nil"
+				}
+				if len(stat.Streams) == 0 {
+					return "stat has no streams"
+				}
+				var totalPackets uint32
+				var totalBytes uint64
+				for _, s := range stat.Streams {
+					totalPackets += s.PrimaryPackets
+					totalBytes += s.PrimaryBytes
+				}
+				if totalPackets == 0 {
+					return "stat has no packets across streams"
+				}
+				if totalBytes == 0 {
+					return "stat has no bytes across streams"
+				}
+				return ""
+			}
+
+			// wait for cumulative + delta + OnStatsUpdate-derived stats. the
+			// connection-quality update interval is 5s, so allow plenty of time for
+			// the receiver OnStatsUpdate callback to fire at least once and for
+			// the downstream connection-quality scorer to compute a real score.
+			testutils.WithTimeout(t, func() string {
+				for _, identity := range []livekit.ParticipantIdentity{"c1", "c2"} {
+					p := room.GetParticipant(identity)
+					if p == nil {
+						return fmt.Sprintf("participant %s not found", identity)
+					}
+
+					// upstream (publisher) cumulative stats
+					published := p.GetPublishedTracks()
+					if len(published) != 2 {
+						return fmt.Sprintf("%s expected 2 published tracks, got %d", identity, len(published))
+					}
+					for _, mt := range published {
+						lmt, ok := mt.(types.LocalMediaTrack)
+						if !ok {
+							return fmt.Sprintf("%s published track %s is not a LocalMediaTrack", identity, mt.ID())
+						}
+						stats := lmt.GetTrackStats()
+						if stats == nil {
+							return fmt.Sprintf("%s upstream cumulative stats nil for track %s", identity, mt.ID())
+						}
+						if stats.Packets == 0 {
+							return fmt.Sprintf("%s upstream cumulative stats has no packets for track %s", identity, mt.ID())
+						}
+						if stats.Bytes == 0 {
+							return fmt.Sprintf("%s upstream cumulative stats has no bytes for track %s", identity, mt.ID())
+						}
+
+						// upstream delta stats fed into the receiver OnStatsUpdate path
+						rc, ok := receiverCaptures[mt.ID()]
+						if !ok {
+							return fmt.Sprintf("%s missing receiver capture for track %s", identity, mt.ID())
+						}
+						rc.lock.Lock()
+						stat := rc.stat
+						rc.lock.Unlock()
+						if msg := validateAnalyticsStat(stat); msg != "" {
+							return fmt.Sprintf("%s upstream OnStatsUpdate %s for track %s", identity, msg, mt.ID())
+						}
+					}
+
+					// downstream (subscriber) cumulative stats and DownTrack OnStatsUpdate
+					// delta stats captured from the listener path
+					subscribed := p.GetSubscribedTracks()
+					if len(subscribed) != 2 {
+						return fmt.Sprintf("%s expected 2 subscribed tracks, got %d", identity, len(subscribed))
+					}
+					for _, st := range subscribed {
+						dt := st.DownTrack()
+						if dt == nil {
+							return fmt.Sprintf("%s subscribed track %s has no DownTrack", identity, st.ID())
+						}
+						stats := dt.GetTrackStats()
+						if stats == nil {
+							return fmt.Sprintf("%s downstream cumulative stats nil for track %s", identity, st.ID())
+						}
+						if stats.Packets == 0 {
+							return fmt.Sprintf("%s downstream cumulative stats has no packets for track %s", identity, st.ID())
+						}
+						if stats.Bytes == 0 {
+							return fmt.Sprintf("%s downstream cumulative stats has no bytes for track %s", identity, st.ID())
+						}
+
+						// downstream delta stats fed into the DownTrack OnStatsUpdate path
+						dc, ok := downTrackCaptures[identity][st.ID()]
+						if !ok {
+							return fmt.Sprintf("%s missing DownTrack capture for track %s", identity, st.ID())
+						}
+						dc.lock.Lock()
+						stat := dc.stat
+						dc.lock.Unlock()
+						if msg := validateAnalyticsStat(stat); msg != "" {
+							return fmt.Sprintf("%s downstream OnStatsUpdate %s for track %s", identity, msg, st.ID())
+						}
+					}
+				}
+				return ""
+			}, 15*time.Second)
 		})
 	}
 }
@@ -546,12 +765,20 @@ func TestSingleNodeUpdateSubscriptionPermissions(t *testing.T) {
 				SetIdentity("sub")
 			token, err := at.ToJWT()
 			require.NoError(t, err)
-			sub := createRTCClientWithToken(token, defaultServerPort, testRTCServicePath, nil)
+			sub := createRTCClientWithToken(token, defaultServerPort, testRTCServicePath, &testclient.Options{
+				AutoSubscribe:          true,
+				AutoSubscribeDataTrack: true,
+			})
 
 			waitUntilConnected(t, pub, sub)
 
 			writers := publishTracksForClients(t, pub)
 			defer stopWriters(writers...)
+
+			// publish a data track as well
+			dtw, err := pub.PublishDataTrack()
+			require.NoError(t, err)
+			defer dtw.Stop()
 
 			// wait sub receives tracks
 			testutils.WithTimeout(t, func() string {
@@ -564,6 +791,10 @@ func TestSingleNodeUpdateSubscriptionPermissions(t *testing.T) {
 				}
 				return ""
 			})
+
+			// no subscriptions should have been made while canSubscribe is false
+			require.Empty(t, sub.SubscribedTracks()[pub.ID()])
+			require.Empty(t, sub.SubscribedDataTracks()[pub.ID()])
 
 			// set permissions out of band
 			ctx := contextWithToken(adminRoomToken(testRoom))
@@ -579,11 +810,13 @@ func TestSingleNodeUpdateSubscriptionPermissions(t *testing.T) {
 
 			testutils.WithTimeout(t, func() string {
 				tracks := sub.SubscribedTracks()[pub.ID()]
-				if len(tracks) == 2 {
-					return ""
-				} else {
+				if len(tracks) != 2 {
 					return fmt.Sprintf("expected 2 tracks subscribed, actual: %d", len(tracks))
 				}
+				if len(sub.SubscribedDataTracks()[pub.ID()]) != 1 {
+					return "expected data track to be subscribed"
+				}
+				return ""
 			})
 		})
 	}
@@ -867,30 +1100,30 @@ func TestDataPublishSlowSubscriber(t *testing.T) {
 
 			// no data should be dropped for fast subscriber
 			var fastDataIndex atomic.Uint64
-			fastSub.OnDataReceived = func(data []byte, sid string) {
+			fastSub.SetOnDataReceived(func(data []byte, sid string) {
 				idx := binary.BigEndian.Uint64(data[len(data)-8:])
 				require.Equal(t, fastDataIndex.Load()+1, idx)
 				fastDataIndex.Store(idx)
-			}
+			})
 
 			// no data should be dropped for slow subscriber that is above threshold
 			var slowNoDropDataIndex atomic.Uint64
 			var drainSlowSubNotDrop atomic.Bool
 			slowNoDropReader := testclient.NewDataChannelReader(dataChannelSlowThreshold * 2)
-			slowSubNotDrop.OnDataReceived = func(data []byte, sid string) {
+			slowSubNotDrop.SetOnDataReceived(func(data []byte, sid string) {
 				idx := binary.BigEndian.Uint64(data[len(data)-8:])
 				require.Equal(t, slowNoDropDataIndex.Load()+1, idx)
 				slowNoDropDataIndex.Store(idx)
 				if !drainSlowSubNotDrop.Load() {
 					slowNoDropReader.Read(data, sid)
 				}
-			}
+			})
 
 			// data should be dropped for slow subscriber that is below threshold
 			var slowDropDataIndex atomic.Uint64
 			dropped := make(chan struct{})
 			slowDropReader := testclient.NewDataChannelReader(dataChannelSlowThreshold / 2)
-			slowSubDrop.OnDataReceived = func(data []byte, sid string) {
+			slowSubDrop.SetOnDataReceived(func(data []byte, sid string) {
 				select {
 				case <-dropped:
 					return
@@ -902,7 +1135,7 @@ func TestDataPublishSlowSubscriber(t *testing.T) {
 				}
 				slowDropDataIndex.Store(idx)
 				slowDropReader.Read(data, sid)
-			}
+			})
 
 			// publisher sends data as fast as possible, it will block by the slowest subscriber above the slow threshold
 			var (
@@ -1094,6 +1327,496 @@ func TestSinglePublisherDataTrack(t *testing.T) {
 					if t.IsSubscriber(c3.ID()) {
 						return "c3 was not a subscriber of c1's data tracks"
 					}
+				}
+				return ""
+			})
+		})
+	}
+}
+
+func TestTurnRelay(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	testCases := []struct {
+		name                     string
+		allowRestrictedPeerCIDRs []string
+		denyPeerCIDRs            []string
+		expectedToConnect        bool
+	}{
+		{
+			"allow",
+			[]string{"10.0.0.0/8", "192.168.0.0/16"},
+			nil,
+			true,
+		},
+		{
+			"not-allowed",
+			nil,
+			nil,
+			false,
+		},
+		{
+			"denied-overrides-allowed",
+			[]string{"10.0.0.0/8", "192.168.0.0/16"},
+			[]string{"10.0.0.0/8", "192.168.0.0/16"},
+			false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := createSingleNodeServer(func(c *config.Config) {
+				c.TURN.Enabled = true
+				c.TURN.UDPPort = 3478
+				c.TURN.AllowRestrictedPeerCIDRs = tc.allowRestrictedPeerCIDRs
+				c.TURN.DenyPeerCIDRs = tc.denyPeerCIDRs
+			})
+			go func() {
+				if err := s.Start(); err != nil {
+					logger.Errorw("server returned error", err)
+				}
+			}()
+			defer s.Stop(true)
+
+			waitForServerToStart(s)
+
+			c1 := createRTCClient("relay_c1", defaultServerPort, testRTCServicePathv0, &testclient.Options{
+				AutoSubscribe: true,
+				ForceRelay:    true,
+			})
+			defer c1.Stop()
+
+			if tc.expectedToConnect {
+				waitUntilConnected(t, c1)
+
+				testutils.WithTimeout(t, func() string {
+					if !c1.IsLocalCandidateRelaySelected() {
+						return "expected local candidate to be relay"
+					}
+					return ""
+				})
+			} else {
+				ensureNotConnected(t, c1)
+			}
+		})
+	}
+}
+
+func TestTurnAuthFailure(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	const turnUDPPort = 3478
+
+	s := createSingleNodeServer(func(c *config.Config) {
+		c.TURN.Enabled = true
+		c.TURN.UDPPort = turnUDPPort
+	})
+	go func() {
+		if err := s.Start(); err != nil {
+			logger.Errorw("server returned error", err)
+		}
+	}()
+	defer s.Stop(true)
+
+	waitForServerToStart(s)
+
+	// build a known-good username/password pair so individual cases can mutate
+	// only the part they are exercising.
+	pID := livekit.ParticipantID("PA_authfail")
+	authHandler := service.NewTURNAuthHandler(auth.NewSimpleKeyProvider(testApiKey, testApiSecret))
+	validUsername, validExpiry := authHandler.CreateUsername(testApiKey, pID, 300)
+	validPassword, err := authHandler.CreatePassword(testApiKey, pID, validExpiry)
+	require.NoError(t, err)
+
+	// username encoded with an already-expired timestamp; constructed directly
+	// because CreateUsername floors non-positive TTLs to the default.
+	expiredUsername := base62.EncodeToString(fmt.Appendf(nil, "%s|%s|%d", testApiKey, pID, time.Now().Add(-time.Minute).Unix()))
+
+	// username encoded with an api key the server does not know about.
+	unknownAPIKeyUsername, _ := authHandler.CreateUsername("unknown-api-key", pID, 300)
+
+	// password whose hash was generated for an expiry that doesn't match the
+	// one encoded in the username. The server reconstructs the password using
+	// the username's expiry, so the integrity check fails.
+	mismatchedExpiryPassword, err := authHandler.CreatePassword(testApiKey, pID, validExpiry+60)
+	require.NoError(t, err)
+	require.NotEqual(t, validPassword, mismatchedExpiryPassword)
+
+	// username carrying expiry=0 must be rejected outright; constructed
+	// directly because CreateUsername always stamps a real expiry.
+	zeroExpiryUsername := base62.EncodeToString(fmt.Appendf(nil, "%s|%s|%d", testApiKey, pID, 0))
+
+	// username with only apiKey|pID (no expiry component) is the legacy
+	// pre-expiry form and must be rejected.
+	twoPartUsername := base62.EncodeToString(fmt.Appendf(nil, "%s|%s", testApiKey, pID))
+
+	testCases := []struct {
+		name     string
+		username string
+		password string
+	}{
+		{
+			name:     "unparseable-username",
+			username: "not-base62!!!",
+			password: validPassword,
+		},
+		{
+			name:     "wrong-password",
+			username: validUsername,
+			password: "wrongpassword",
+		},
+		{
+			name:     "expired-username",
+			username: expiredUsername,
+			password: validPassword,
+		},
+		{
+			name:     "unknown-api-key",
+			username: unknownAPIKeyUsername,
+			password: validPassword,
+		},
+		{
+			name:     "password-expiry-mismatch",
+			username: validUsername,
+			password: mismatchedExpiryPassword,
+		},
+		{
+			name:     "zero-expiry-username",
+			username: zeroExpiryUsername,
+			password: validPassword,
+		},
+		{
+			name:     "two-part-username",
+			username: twoPartUsername,
+			password: validPassword,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			conn, err := net.ListenPacket("udp4", "0.0.0.0:0")
+			require.NoError(t, err)
+			defer conn.Close()
+
+			client, err := turn.NewClient(&turn.ClientConfig{
+				TURNServerAddr: fmt.Sprintf("127.0.0.1:%d", turnUDPPort),
+				Username:       tc.username,
+				Password:       tc.password,
+				Realm:          service.LivekitRealm,
+				Conn:           conn,
+			})
+			require.NoError(t, err)
+			defer client.Close()
+			require.NoError(t, client.Listen())
+
+			_, allocErr := client.Allocate()
+			require.Error(t, allocErr)
+
+			// pion's TURN server replies with 400 Bad Request for any
+			// authenticated-allocate failure (unknown user or integrity check
+			// mismatch); the initial unauthenticated probe is what returns 401.
+			var turnErr *stun.TurnError
+			require.ErrorAs(t, allocErr, &turnErr)
+			require.Equal(t, stun.CodeBadRequest, turnErr.ErrorCodeAttr.Code)
+		})
+	}
+}
+
+// dataBlobCapture buffers RequestResponse, StoreDataBlobResponse, and GetDataBlobResponse messages
+// sent to a test client so they can be asserted on. Other messages flow through to the
+// default handler.
+type dataBlobCapture struct {
+	mu               sync.Mutex
+	requestResponses []*livekit.RequestResponse
+	storeResponses   []*livekit.StoreDataBlobResponse
+	blobResponses    []*livekit.GetDataBlobResponse
+}
+
+func (c *dataBlobCapture) interceptor() testclient.SignalResponseInterceptor {
+	return func(msg *livekit.SignalResponse, next testclient.SignalResponseHandler) error {
+		switch m := msg.Message.(type) {
+		case *livekit.SignalResponse_RequestResponse:
+			c.mu.Lock()
+			c.requestResponses = append(c.requestResponses, m.RequestResponse)
+			c.mu.Unlock()
+		case *livekit.SignalResponse_StoreDataBlobResponse:
+			c.mu.Lock()
+			c.storeResponses = append(c.storeResponses, m.StoreDataBlobResponse)
+			c.mu.Unlock()
+		case *livekit.SignalResponse_GetDataBlobResponse:
+			c.mu.Lock()
+			c.blobResponses = append(c.blobResponses, m.GetDataBlobResponse)
+			c.mu.Unlock()
+		}
+		return next(msg)
+	}
+}
+
+func (c *dataBlobCapture) takeRequestResponse() *livekit.RequestResponse {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.requestResponses) == 0 {
+		return nil
+	}
+	rr := c.requestResponses[0]
+	c.requestResponses = c.requestResponses[1:]
+	return rr
+}
+
+func (c *dataBlobCapture) takeStoreResponse() *livekit.StoreDataBlobResponse {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.storeResponses) == 0 {
+		return nil
+	}
+	sr := c.storeResponses[0]
+	c.storeResponses = c.storeResponses[1:]
+	return sr
+}
+
+func (c *dataBlobCapture) takeBlobResponse() *livekit.GetDataBlobResponse {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.blobResponses) == 0 {
+		return nil
+	}
+	sr := c.blobResponses[0]
+	c.blobResponses = c.blobResponses[1:]
+	return sr
+}
+
+func (c *dataBlobCapture) requestResponseCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.requestResponses)
+}
+
+func setupDataBlobServer(t *testing.T, name string, enable bool) (*service.LivekitServer, func()) {
+	logger.Infow("----------------STARTING TEST----------------", "test", name)
+	s := createSingleNodeServer(func(c *config.Config) {
+		c.EnableParticipantDataBlob = enable
+		c.Limit.MaxDataBlobSize = 1024
+	})
+	go func() {
+		if err := s.Start(); err != nil {
+			logger.Errorw("server returned error", err)
+		}
+	}()
+	waitForServerToStart(s)
+	return s, func() {
+		s.Stop(true)
+		logger.Infow("----------------FINISHING TEST----------------", "test", name)
+	}
+}
+
+func TestSingleNodeDataBlob(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, finish := setupDataBlobServer(t, "TestSingleNodeDataBlob", true)
+	defer finish()
+
+	for _, testRTCServicePath := range testRTCServicePaths {
+		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
+			pubCapture := &dataBlobCapture{}
+			subCapture := &dataBlobCapture{}
+
+			pub := createRTCClient("pub", defaultServerPort, testRTCServicePath, &testclient.Options{
+				AutoSubscribe:             true,
+				SignalResponseInterceptor: pubCapture.interceptor(),
+			})
+			sub := createRTCClient("sub", defaultServerPort, testRTCServicePath, &testclient.Options{
+				AutoSubscribe:             true,
+				SignalResponseInterceptor: subCapture.interceptor(),
+			})
+			waitUntilConnected(t, pub, sub)
+			defer stopClients(pub, sub)
+
+			key := &livekit.DataBlobKey{
+				Key: &livekit.DataBlobKey_Generic{
+					Generic: "blob-1",
+				},
+			}
+			contents := []byte("definition-bytes")
+
+			// publisher stores a blob
+			require.NoError(t, pub.SendRequest(&livekit.SignalRequest{
+				Message: &livekit.SignalRequest_StoreDataBlobRequest{
+					StoreDataBlobRequest: &livekit.StoreDataBlobRequest{
+						RequestId: 1,
+						Blob: &livekit.DataBlob{
+							Key:      key,
+							Contents: contents,
+						},
+					},
+				},
+			}))
+
+			testutils.WithTimeout(t, func() string {
+				resp := pubCapture.takeStoreResponse()
+				if resp == nil {
+					return "publisher did not receive store response"
+				}
+				if resp.RequestId != 1 {
+					return fmt.Sprintf("expected store response request id 1, got %d", resp.RequestId)
+				}
+				if resp.Key == nil {
+					return "store response missing key"
+				}
+				if resp.Key.String() != key.String() {
+					return fmt.Sprintf("expected stored blob key %s, got %s", key.String(), resp.Key.String())
+				}
+				return ""
+			})
+			require.Equal(t, 0, pubCapture.requestResponseCount(), "publisher should not receive an error response on success")
+
+			// subscriber asks for the blob
+			require.NoError(t, sub.SendRequest(&livekit.SignalRequest{
+				Message: &livekit.SignalRequest_GetDataBlobRequest{
+					GetDataBlobRequest: &livekit.GetDataBlobRequest{
+						ParticipantIdentity: "pub",
+						Key:                 key,
+					},
+				},
+			}))
+
+			testutils.WithTimeout(t, func() string {
+				resp := subCapture.takeBlobResponse()
+				if resp == nil {
+					return "subscriber did not receive blob response"
+				}
+				if resp.Blob == nil {
+					return "blob response missing blob"
+				}
+				if resp.Blob.Key.String() != key.String() {
+					return fmt.Sprintf("expected blob key %s, got %s", key.String(), resp.Blob.Key.String())
+				}
+				if string(resp.Blob.Contents) != string(contents) {
+					return fmt.Sprintf("expected contents %q, got %q", contents, resp.Blob.Contents)
+				}
+				return ""
+			})
+
+			// subscriber asks for an unknown blob on a known publisher
+			require.NoError(t, sub.SendRequest(&livekit.SignalRequest{
+				Message: &livekit.SignalRequest_GetDataBlobRequest{
+					GetDataBlobRequest: &livekit.GetDataBlobRequest{
+						ParticipantIdentity: "pub",
+						Key: &livekit.DataBlobKey{
+							Key: &livekit.DataBlobKey_Generic{
+								Generic: "does-not-exist",
+							},
+						},
+					},
+				},
+			}))
+
+			testutils.WithTimeout(t, func() string {
+				rr := subCapture.takeRequestResponse()
+				if rr == nil {
+					return "subscriber did not receive RequestResponse for missing blob"
+				}
+				if rr.Reason != livekit.RequestResponse_NOT_FOUND {
+					return fmt.Sprintf("expected NOT_FOUND, got %s", rr.Reason)
+				}
+				return ""
+			})
+
+			// subscriber asks for a blob on an unknown publisher identity
+			require.NoError(t, sub.SendRequest(&livekit.SignalRequest{
+				Message: &livekit.SignalRequest_GetDataBlobRequest{
+					GetDataBlobRequest: &livekit.GetDataBlobRequest{
+						ParticipantIdentity: "unknown-publisher",
+						Key:                 key,
+					},
+				},
+			}))
+
+			testutils.WithTimeout(t, func() string {
+				rr := subCapture.takeRequestResponse()
+				if rr == nil {
+					return "subscriber did not receive RequestResponse for unknown publisher"
+				}
+				if rr.Reason != livekit.RequestResponse_NOT_FOUND {
+					return fmt.Sprintf("expected NOT_FOUND, got %s", rr.Reason)
+				}
+				return ""
+			})
+
+			// publisher sends an invalid blob (empty key)
+			require.NoError(t, pub.SendRequest(&livekit.SignalRequest{
+				Message: &livekit.SignalRequest_StoreDataBlobRequest{
+					StoreDataBlobRequest: &livekit.StoreDataBlobRequest{
+						Blob: &livekit.DataBlob{
+							Contents: contents,
+						},
+					},
+				},
+			}))
+
+			testutils.WithTimeout(t, func() string {
+				rr := pubCapture.takeRequestResponse()
+				if rr == nil {
+					return "publisher did not receive RequestResponse for invalid define"
+				}
+				if rr.Reason != livekit.RequestResponse_INVALID_REQUEST {
+					return fmt.Sprintf("expected INVALID_REQUEST, got %s", rr.Reason)
+				}
+				return ""
+			})
+		})
+	}
+}
+
+func TestSingleNodeDataBlobDisabled(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, finish := setupDataBlobServer(t, "TestSingleNodeDataBlobDisabled", false)
+	defer finish()
+
+	for _, testRTCServicePath := range testRTCServicePaths {
+		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
+			pubCapture := &dataBlobCapture{}
+			pub := createRTCClient("pub", defaultServerPort, testRTCServicePath, &testclient.Options{
+				AutoSubscribe:             true,
+				SignalResponseInterceptor: pubCapture.interceptor(),
+			})
+			waitUntilConnected(t, pub)
+			defer stopClients(pub)
+
+			require.NoError(t, pub.SendRequest(&livekit.SignalRequest{
+				Message: &livekit.SignalRequest_StoreDataBlobRequest{
+					StoreDataBlobRequest: &livekit.StoreDataBlobRequest{
+						Blob: &livekit.DataBlob{
+							Key: &livekit.DataBlobKey{
+								Key: &livekit.DataBlobKey_Generic{
+									Generic: "blob-1",
+								},
+							},
+							Contents: []byte("definition-bytes"),
+						},
+					},
+				},
+			}))
+
+			testutils.WithTimeout(t, func() string {
+				rr := pubCapture.takeRequestResponse()
+				if rr == nil {
+					return "publisher did not receive RequestResponse"
+				}
+				if rr.Reason != livekit.RequestResponse_NOT_ALLOWED {
+					return fmt.Sprintf("expected NOT_ALLOWED, got %s", rr.Reason)
 				}
 				return ""
 			})

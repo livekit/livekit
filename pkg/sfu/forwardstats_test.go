@@ -1,0 +1,466 @@
+package sfu
+
+import (
+	"math"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
+
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
+	"github.com/livekit/protocol/livekit"
+)
+
+// initPrometheus initializes the global forward-latency collectors so that the
+// worker's metric emission has non-nil targets. Init returns early if already
+// initialized, so it is safe to call from multiple tests.
+func initPrometheus(t *testing.T) {
+	t.Helper()
+	require.NoError(t, prometheus.Init("test", livekit.NodeType_SERVER))
+}
+
+// ---------------------------------------------------------------------------
+// forwardSummary
+// ---------------------------------------------------------------------------
+
+// bucketSum totals a summary's per-bucket counts, independent of the bucketing
+// scheme, so tests can assert samples landed without hard-coding bucket indices.
+func bucketSum(s forwardSummary) int64 {
+	var n int64
+	for _, b := range s.buckets {
+		n += b.count
+	}
+	return n
+}
+
+func TestForwardSummary_AddSample(t *testing.T) {
+	var s forwardSummary
+
+	// empty summary
+	require.Equal(t, int64(0), s.count)
+
+	s.addSample(3000) // 3us
+	s.addSample(1000) // 1us
+	s.addSample(2000) // 2us
+
+	require.Equal(t, int64(3), s.count)
+	require.Equal(t, int64(1000), s.minNs)
+	require.Equal(t, int64(3000), s.maxNs)
+	require.Equal(t, s.count, bucketSum(s)) // every sample landed in a bucket
+}
+
+func TestForwardSummary_Merge(t *testing.T) {
+	var empty forwardSummary
+	var a, b forwardSummary
+	a.addSample(1000)
+	a.addSample(2000)
+	b.addSample(5000)
+	b.addSample(3000)
+
+	// merging with empty is identity, in both directions
+	require.Equal(t, a, a.merge(empty))
+	require.Equal(t, a, empty.merge(a))
+
+	m := a.merge(b)
+	require.Equal(t, int64(4), m.count)
+	require.Equal(t, int64(1000), m.minNs)
+	require.Equal(t, int64(5000), m.maxNs)
+	// merge sums the per-bucket counts
+	require.Equal(t, bucketSum(a)+bucketSum(b), bucketSum(m))
+	require.Equal(t, m.count, bucketSum(m))
+}
+
+func TestForwardSummary_Percentile(t *testing.T) {
+	// empty -> zero
+	require.Zero(t, forwardSummary{}.percentile(0.5))
+
+	// half the samples fast (1us), half a slow tail (100us). A percentile is not
+	// dragged toward the tail the way the mean is -- why the reported metric is
+	// p90, not the mean.
+	var s forwardSummary
+	for i := 0; i < 5; i++ {
+		s.addSample(1000) // 1us
+	}
+	for i := 0; i < 5; i++ {
+		s.addSample(100_000) // 100us
+	}
+	require.Equal(t, int64(10), s.count)
+
+	// p50 lands in the fast cluster, unmoved by the 100us tail.
+	require.Equal(t, 1*time.Microsecond, s.percentile(0.5))
+	// p90 crosses into the slow cluster.
+	require.Equal(t, 100*time.Microsecond, s.percentile(0.9))
+
+	// a single sample reports exactly its latency, not the top edge of its bucket
+	// (nominal-edge interpolation would report the bucket's upper reach instead).
+	var single forwardSummary
+	single.addSample(int64(20 * time.Millisecond))
+	require.Equal(t, 20*time.Millisecond, single.percentile(0.9))
+
+	// identical samples share a bucket but must not invent intra-bucket spread.
+	var u forwardSummary
+	for i := 0; i < 8; i++ {
+		u.addSample(int64(2 * time.Millisecond))
+	}
+	require.Equal(t, 2*time.Millisecond, u.percentile(0.5))
+	require.Equal(t, 2*time.Millisecond, u.percentile(0.99))
+}
+
+func TestForwardSummary_ThresholdResolution(t *testing.T) {
+	// Nodes whose p90 packets cluster near a 300us overload threshold.
+	// Interpolating within each bucket's observed range reports a tight tail
+	// exactly, so each cluster lands on the correct side of 300us.
+	build := func(tailUs int64) forwardSummary {
+		var s forwardSummary
+		for i := 0; i < 850; i++ {
+			s.addSample(50 * int64(time.Microsecond))
+		}
+		for i := 0; i < 150; i++ {
+			s.addSample(tailUs * int64(time.Microsecond))
+		}
+		return s
+	}
+
+	require.Less(t, build(265).percentile(0.9), 300*time.Microsecond)    // below -> no trip
+	require.Greater(t, build(310).percentile(0.9), 300*time.Microsecond) // just above -> trips
+	require.Greater(t, build(500).percentile(0.9), 300*time.Microsecond) // well above -> trips
+
+	// a tight tail is reported exactly, regardless of where it sits in the bucket.
+	require.Equal(t, 265*time.Microsecond, build(265).percentile(0.9))
+	require.Equal(t, 310*time.Microsecond, build(310).percentile(0.9))
+	require.Equal(t, 500*time.Microsecond, build(500).percentile(0.9))
+}
+
+// ---------------------------------------------------------------------------
+// forwardSampleBuffer
+// ---------------------------------------------------------------------------
+
+func shardOf(arrival int64) int {
+	return int((uint64(arrival) >> 6) & forwardSampleShardSel)
+}
+
+// arrivalForShard returns the n-th arrival value that maps to a fixed shard.
+// Incrementing arrival by (1<<10) advances (arrival>>6) by 16, leaving the low
+// 4 selection bits unchanged.
+func arrivalForShard(n int) int64 {
+	return int64(n) << 10
+}
+
+func TestForwardSampleBuffer_PushDrain(t *testing.T) {
+	var b forwardSampleBuffer
+
+	const n = 1000
+	for i := 0; i < n; i++ {
+		b.push(int64(i), int64((i+1)*1000))
+	}
+
+	got := map[int64]int{}
+	total := 0
+	b.drain(func(v int64) {
+		got[v]++
+		total++
+	})
+	require.Equal(t, n, total)
+	require.Equal(t, uint64(0), b.dropped.Load())
+	for i := 0; i < n; i++ {
+		require.Equal(t, 1, got[int64((i+1)*1000)], "sample %d missing", i)
+	}
+
+	// draining again yields nothing (read cursor advanced)
+	total = 0
+	b.drain(func(v int64) { total++ })
+	require.Equal(t, 0, total)
+}
+
+func TestForwardSampleBuffer_Overflow(t *testing.T) {
+	var b forwardSampleBuffer
+
+	const extra = 100
+	const n = forwardSampleShardCap + extra
+
+	// pin every push to a single shard so it overflows
+	for i := 0; i < n; i++ {
+		b.push(arrivalForShard(i), int64(i)*1000)
+	}
+	require.Equal(t, 0, shardOf(arrivalForShard(0)))
+	require.Equal(t, shardOf(arrivalForShard(0)), shardOf(arrivalForShard(n-1)))
+
+	var drained []int64
+	b.drain(func(v int64) { drained = append(drained, v) })
+
+	// exactly a shard's worth survives; the oldest `extra` are dropped and counted
+	require.Len(t, drained, forwardSampleShardCap)
+	require.Equal(t, uint64(extra), b.dropped.Load())
+
+	// survivors are the most recent cap samples, in order
+	for j, v := range drained {
+		require.Equal(t, int64(extra+j)*1000, v)
+	}
+}
+
+func TestForwardSampleBuffer_DefersUncommitted(t *testing.T) {
+	var b forwardSampleBuffer
+	sh := &b.shards[0]
+
+	// simulate a producer that reserved index 0 but has not published its value
+	sh.writeIdx.Store(1)
+
+	got := 0
+	b.drain(func(int64) { got++ })
+	require.Equal(t, 0, got, "uncommitted slot must not be read")
+	require.Equal(t, uint64(0), sh.readIdx, "cursor must not advance past an uncommitted slot")
+	require.Equal(t, uint64(0), b.dropped.Load())
+
+	// producer publishes the value; next drain picks it up
+	sh.ring[0].Store(1234)
+	sh.seq[0].Store(1)
+
+	var vals []int64
+	b.drain(func(v int64) { vals = append(vals, v) })
+	require.Equal(t, []int64{1234}, vals)
+	require.Equal(t, uint64(1), sh.readIdx)
+	require.Equal(t, uint64(0), b.dropped.Load())
+}
+
+func TestForwardSampleBuffer_Concurrent(t *testing.T) {
+	var b forwardSampleBuffer
+	var stop atomic.Bool
+
+	var consumed int64
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for !stop.Load() {
+			b.drain(func(int64) { consumed++ })
+			time.Sleep(time.Millisecond)
+		}
+		b.drain(func(int64) { consumed++ }) // final sweep
+	}()
+
+	const producers = 8
+	const perProducer = 100_000
+	var wg sync.WaitGroup
+	for p := 0; p < producers; p++ {
+		wg.Add(1)
+		go func(seed int64) {
+			defer wg.Done()
+			for i := int64(0); i < perProducer; i++ {
+				b.push(seed*7+i, (i%50)*int64(time.Microsecond))
+			}
+		}(int64(p))
+	}
+	wg.Wait()
+	stop.Store(true)
+	<-done
+
+	// with a consumer keeping pace no samples should be lost
+	require.Equal(t, int64(producers*perProducer), consumed+int64(b.dropped.Load()))
+}
+
+// ---------------------------------------------------------------------------
+// ForwardStats
+// ---------------------------------------------------------------------------
+
+func TestForwardStats_Update(t *testing.T) {
+	s := &ForwardStats{ring: make([]forwardIntervalSummary, 1)}
+
+	// below threshold
+	transit, isHigh := s.Update(1000, 1000+int64(5*time.Millisecond))
+	require.Equal(t, int64(5*time.Millisecond), transit)
+	require.False(t, isHigh)
+
+	// above threshold
+	transit, isHigh = s.Update(1000, 1000+int64(25*time.Millisecond))
+	require.Equal(t, int64(25*time.Millisecond), transit)
+	require.True(t, isHigh)
+
+	// exactly at threshold is not "high" (strictly greater)
+	_, isHigh = s.Update(0, int64(cHighForwardingLatency))
+	require.False(t, isHigh)
+}
+
+func TestForwardStats_Flush(t *testing.T) {
+	initPrometheus(t)
+
+	s := &ForwardStats{ring: make([]forwardIntervalSummary, 4)}
+
+	for i := 0; i < 10; i++ {
+		s.Update(0, int64((i+1)*1000)) // 1us..10us
+	}
+
+	s.flush()
+
+	require.Equal(t, 1, s.ringLen)
+	summ := s.ring[0].transit
+	require.Equal(t, int64(10), summ.count)
+	require.Equal(t, int64(1000), summ.minNs)
+	require.Equal(t, int64(10000), summ.maxNs)
+	require.Equal(t, uint64(0), s.samples.dropped.Load())
+
+	// a subsequent flush with no new samples appends an empty summary
+	s.flush()
+	require.Equal(t, 2, s.ringLen)
+	require.Equal(t, int64(0), s.ring[1].transit.count)
+}
+
+func TestForwardSample_Pack(t *testing.T) {
+	transit, delay := unpackForwardSample(packForwardSample(250_000, 7_168))
+	require.Equal(t, int64(250_000), transit)
+	require.Equal(t, int64(7_168), delay)
+
+	// scheduling delay keeps 256 ns resolution
+	_, delay = unpackForwardSample(packForwardSample(250_000, 7_300))
+	require.Equal(t, int64(7_168), delay)
+
+	// no scheduling delay, and a zero delay is a sample, not "none"
+	_, delay = unpackForwardSample(packForwardSample(1_000, -1))
+	require.Equal(t, int64(-1), delay)
+	_, delay = unpackForwardSample(packForwardSample(1_000, 0))
+	require.Equal(t, int64(0), delay)
+
+	// a long stall keeps its full transit; the delay saturates and never reads as "none"
+	transit, delay = unpackForwardSample(packForwardSample(10*int64(time.Second), 10*int64(time.Second)))
+	require.Equal(t, 10*int64(time.Second), transit)
+	require.Equal(t, int64((forwardNoSchedulingDelay-1)<<forwardSchedulingDelayShift), delay)
+	transit, _ = unpackForwardSample(packForwardSample(math.MaxInt64, -1))
+	require.Equal(t, int64(forwardMaxTransitNs), transit)
+
+	// a negative transit (clock skew) clamps to zero
+	transit, _ = unpackForwardSample(packForwardSample(-5, -1))
+	require.Equal(t, int64(0), transit)
+}
+
+func TestSaturatingNs(t *testing.T) {
+	require.Equal(t, uint32(1_000_000), saturatingNs(time.Millisecond))
+	// a 5s p90 saturates instead of wrapping to ~705ms
+	require.Equal(t, uint32(math.MaxUint32), saturatingNs(5*time.Second))
+	require.Equal(t, uint32(0), saturatingNs(-time.Second))
+}
+
+func TestForwardStats_SchedulingDelay(t *testing.T) {
+	initPrometheus(t)
+
+	s := &ForwardStats{ring: make([]forwardIntervalSummary, 2)}
+
+	// a burst: only the first packet found the forwarder idle
+	s.UpdateWithSchedulingDelay(0, 300_000, 4_096)
+	for i := 0; i < 9; i++ {
+		s.Update(0, 300_000)
+	}
+	s.flush()
+
+	summ := s.ring[0]
+	require.Equal(t, int64(10), summ.transit.count)
+	require.Equal(t, int64(1), summ.scheduling.count)
+	require.Equal(t, 4096*time.Nanosecond, summ.scheduling.percentile(forwardLatencyPercentile))
+	require.Equal(t, 300*time.Microsecond, s.GetStats(0))
+
+	require.NotPanics(t, s.report)
+}
+
+func TestForwardStats_ReportWindow(t *testing.T) {
+	initPrometheus(t)
+
+	// window of 3 summary buckets
+	s := &ForwardStats{ring: make([]forwardIntervalSummary, 3)}
+
+	s.Update(0, 1000)
+	s.flush()
+	s.Update(0, 3000)
+	s.flush()
+
+	// report merges the whole window without panicking and reflects both samples
+	var w forwardSummary
+	for i := 0; i < s.ringLen; i++ {
+		w = w.merge(s.ring[i].transit)
+	}
+	require.Equal(t, int64(2), w.count)
+	require.Equal(t, int64(1000), w.minNs)
+	require.Equal(t, int64(3000), w.maxNs)
+
+	require.NotPanics(t, s.report)
+}
+
+func TestForwardStats_GetStats(t *testing.T) {
+	initPrometheus(t)
+
+	// 5 buckets, each covering one 100ms summary interval.
+	s := &ForwardStats{ring: make([]forwardIntervalSummary, 5), summaryInterval: 100 * time.Millisecond}
+
+	// fold five 100ms buckets, one sample each, descending 5ms..1ms so trailing
+	// windows have distinct maxima.
+	for i := 5; i >= 1; i-- {
+		s.Update(0, int64(i)*int64(time.Millisecond))
+		s.flush()
+	}
+	require.Equal(t, 5, s.ringLen)
+
+	// whole window {1..5ms}: p90 clamps to the observed max, 5ms.
+	require.Equal(t, 5*time.Millisecond, s.GetStats(0))
+	require.Equal(t, 5*time.Millisecond, s.GetStats(time.Second))
+
+	// ~200ms covers only the two most recent buckets {2ms, 1ms}: a lower window
+	// than the full one, and above the single most-recent bucket.
+	require.Less(t, s.GetStats(200*time.Millisecond), 3*time.Millisecond)
+	require.Greater(t, s.GetStats(200*time.Millisecond), s.GetStats(time.Nanosecond))
+
+	// a sub-interval yields only the most recent bucket, ~1ms.
+	require.Equal(t, 1*time.Millisecond, s.GetStats(time.Nanosecond))
+}
+
+func TestForwardStats_Lifecycle(t *testing.T) {
+	initPrometheus(t)
+
+	s := NewForwardStats(5*time.Millisecond, 20*time.Millisecond, 100*time.Millisecond)
+	for i := 0; i < 1000; i++ {
+		s.Update(int64(i), int64(i)+int64(time.Millisecond))
+	}
+	time.Sleep(60 * time.Millisecond) // let the worker flush/report a few times
+	require.NotPanics(t, s.Stop)
+}
+
+func TestNewForwardStats_RingSizing(t *testing.T) {
+	// ringCap = ceil(window / summaryInterval)
+	s := NewForwardStats(100*time.Millisecond, time.Second, time.Second)
+	require.Equal(t, 10, len(s.ring))
+	s.Stop()
+
+	// rounds up a partial interval
+	s = NewForwardStats(100*time.Millisecond, time.Second, 250*time.Millisecond)
+	require.Equal(t, 3, len(s.ring))
+	s.Stop()
+
+	// never smaller than one bucket, even if window < summaryInterval
+	s = NewForwardStats(time.Second, time.Second, 100*time.Millisecond)
+	require.Equal(t, 1, len(s.ring))
+	s.Stop()
+}
+
+// ---------------------------------------------------------------------------
+// benchmark: per-packet cost of Update (run with -cpu 1,8).
+// ---------------------------------------------------------------------------
+
+// benchArrival advances the arrival timestamp by 64ns per packet so that
+// consecutive packets from one goroutine map to successive shards
+// ((arrival>>6)&mask increments each step). A distinct per-goroutine base
+// spreads goroutines across shards.
+func benchArrival(base, i int64) int64 {
+	return base + i*64
+}
+
+func BenchmarkForwardStatsUpdate(b *testing.B) {
+	s := &ForwardStats{ring: make([]forwardIntervalSummary, 1)}
+
+	var gid atomic.Int64
+	b.RunParallel(func(pb *testing.PB) {
+		base := gid.Add(1) * 1_000_003
+		var i int64
+		for pb.Next() {
+			i++
+			arrival := benchArrival(base, i)
+			s.Update(arrival, arrival+int64(2*time.Millisecond))
+		}
+	})
+}

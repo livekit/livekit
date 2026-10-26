@@ -122,7 +122,7 @@ func LoggerWithParticipant(l logger.Logger, identity livekit.ParticipantIdentity
 		values = append(values, "participant", identity)
 	}
 	if sid != "" {
-		values = append(values, "pID", sid)
+		values = append(values, "participantID", sid)
 	}
 	values = append(values, "remote", isRemote)
 	// enable sampling per participant
@@ -171,6 +171,11 @@ func MaybeTruncateIP(addr string) string {
 	}
 
 	return addr[:len(addr)-3] + "..."
+}
+
+func IsIPv6(addr string) bool {
+	ipAddr := net.ParseIP(addr)
+	return ipAddr != nil && ipAddr.To4() == nil
 }
 
 func ChunkProtoBatch[T proto.Message](batch []T, target int) [][]T {

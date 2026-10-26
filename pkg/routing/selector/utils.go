@@ -16,7 +16,7 @@ package selector
 
 import (
 	"math/rand/v2"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/thoas/go-funk"
@@ -24,6 +24,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/utils"
 )
 
 const AvailableSeconds = 5
@@ -124,42 +125,42 @@ func selectLowestSortedNode(nodes []*livekit.Node, sortBy string) (*livekit.Node
 		idx := funk.RandomInt(0, len(nodes))
 		return nodes[idx], nil
 	case "sysload":
-		sort.Slice(nodes, func(i, j int) bool {
-			return GetNodeSysload(nodes[i]) < GetNodeSysload(nodes[j])
+		slices.SortFunc(nodes, func(a, b *livekit.Node) int {
+			return utils.Signum(GetNodeSysload(a) - GetNodeSysload(b))
 		})
 		return nodes[0], nil
 	case "cpuload":
-		sort.Slice(nodes, func(i, j int) bool {
-			return nodes[i].Stats.CpuLoad < nodes[j].Stats.CpuLoad
+		slices.SortFunc(nodes, func(a, b *livekit.Node) int {
+			return utils.Signum(a.Stats.CpuLoad - b.Stats.CpuLoad)
 		})
 		return nodes[0], nil
 	case "rooms":
-		sort.Slice(nodes, func(i, j int) bool {
-			return nodes[i].Stats.NumRooms < nodes[j].Stats.NumRooms
+		slices.SortFunc(nodes, func(a, b *livekit.Node) int {
+			return utils.Signum(a.Stats.NumRooms - b.Stats.NumRooms)
 		})
 		return nodes[0], nil
 	case "clients":
-		sort.Slice(nodes, func(i, j int) bool {
-			return nodes[i].Stats.NumClients < nodes[j].Stats.NumClients
+		slices.SortFunc(nodes, func(a, b *livekit.Node) int {
+			return utils.Signum(a.Stats.NumClients - b.Stats.NumClients)
 		})
 		return nodes[0], nil
 	case "tracks":
-		sort.Slice(nodes, func(i, j int) bool {
-			return nodes[i].Stats.NumTracksIn+nodes[i].Stats.NumTracksOut < nodes[j].Stats.NumTracksIn+nodes[j].Stats.NumTracksOut
+		slices.SortFunc(nodes, func(a, b *livekit.Node) int {
+			return utils.Signum((a.Stats.NumTracksIn + a.Stats.NumTracksOut) - (b.Stats.NumTracksIn + b.Stats.NumTracksOut))
 		})
 		return nodes[0], nil
 	case "bytespersec":
-		sort.Slice(nodes, func(i, j int) bool {
-			ratei := &livekit.NodeStatsRate{}
-			if len(nodes[i].Stats.Rates) > 0 {
-				ratei = nodes[i].Stats.Rates[0]
+		slices.SortFunc(nodes, func(a, b *livekit.Node) int {
+			ratea := &livekit.NodeStatsRate{}
+			if len(a.Stats.Rates) > 0 {
+				ratea = a.Stats.Rates[0]
 			}
 
-			ratej := &livekit.NodeStatsRate{}
-			if len(nodes[j].Stats.Rates) > 0 {
-				ratej = nodes[j].Stats.Rates[0]
+			rateb := &livekit.NodeStatsRate{}
+			if len(b.Stats.Rates) > 0 {
+				rateb = b.Stats.Rates[0]
 			}
-			return ratei.BytesIn+ratei.BytesOut < ratej.BytesIn+ratej.BytesOut
+			return utils.Signum((ratea.BytesIn + ratea.BytesOut) - (rateb.BytesIn + rateb.BytesOut))
 		})
 		return nodes[0], nil
 	default:

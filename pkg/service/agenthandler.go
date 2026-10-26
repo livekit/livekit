@@ -1,0 +1,589 @@
+// Copyright 2024 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package service
+
+import (
+	"context"
+	"errors"
+	"math/rand"
+	"slices"
+	"sort"
+	"sync"
+	"time"
+
+	"google.golang.org/protobuf/types/known/emptypb"
+
+	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/protocol/utils"
+	"github.com/livekit/psrpc"
+
+	"github.com/livekit/livekit-server/pkg/agent"
+	"github.com/livekit/livekit-server/pkg/agent/endpoint"
+	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/version"
+)
+
+func DispatchAgentWorkerSignal(c agent.SignalConn, h agent.WorkerSignalHandler, l logger.Logger) bool {
+	req, _, err := c.ReadWorkerMessage()
+	if err != nil {
+		if IsWebSocketCloseError(err) {
+			l.Debugw("worker closed WS connection", "wsError", err)
+		} else {
+			l.Errorw("error reading from websocket", err)
+		}
+		return false
+	}
+
+	if err := agent.DispatchWorkerSignal(req, h); err != nil {
+		l.Warnw("unable to handle worker signal", err, "req", logger.Proto(req))
+		return false
+	}
+
+	return true
+}
+
+func HandshakeAgentWorker(c agent.SignalConn, serverInfo *livekit.ServerInfo, registration agent.WorkerRegistration, l logger.Logger, handlers ...agent.WorkerRegisterHandler) (r agent.WorkerRegistration, ok bool) {
+	wr := agent.NewWorkerRegisterer(c, serverInfo, registration, handlers...)
+	if err := c.SetReadDeadline(wr.Deadline()); err != nil {
+		return
+	}
+	for !wr.Registered() {
+		if ok = DispatchAgentWorkerSignal(c, wr, l); !ok {
+			return
+		}
+	}
+	if err := c.SetReadDeadline(time.Time{}); err != nil {
+		return
+	}
+	return wr.Registration(), true
+}
+
+type AgentHandler struct {
+	agentServer rpc.AgentInternalServer
+	// the server's only configured api key, when exactly one exists: the
+	// unauthenticated identity for public endpoints regardless of which node
+	// holds the workers
+	singleAPIKey string
+	mu           sync.Mutex
+	logger       logger.Logger
+
+	serverInfo  *livekit.ServerInfo
+	workers     map[string]*agent.Worker
+	jobToWorker map[livekit.JobID]*agent.Worker
+	keyProvider auth.KeyProvider
+	targetLoad  float32
+
+	endpointRegistry *endpoint.Registry
+	endpointScopes   *EndpointScopes
+	endpointsConfig  agent.EndpointsConfig
+
+	namespaceWorkers    map[workerKey][]*agent.Worker
+	roomKeyCount        int
+	publisherKeyCount   int
+	participantKeyCount int
+	namespaces          []string // namespaces deprecated
+	agentNames          []string
+
+	roomTopic        string
+	publisherTopic   string
+	participantTopic string
+}
+
+type workerKey struct {
+	agentName  string
+	namespace  string
+	jobType    livekit.JobType
+	deployment string
+}
+
+// NewAgentHandler builds the node's agent worker handler, shared by the
+// transport services.
+func NewAgentHandler(
+	conf *config.Config,
+	currentNode routing.LocalNode,
+	bus psrpc.MessageBus,
+	keyProvider auth.KeyProvider,
+	registry *endpoint.Registry,
+	scopes *EndpointScopes,
+) (*AgentHandler, error) {
+	h := &AgentHandler{
+		logger:           logger.GetLogger().WithComponent("agents"),
+		workers:          make(map[string]*agent.Worker),
+		jobToWorker:      make(map[livekit.JobID]*agent.Worker),
+		namespaceWorkers: make(map[workerKey][]*agent.Worker),
+		serverInfo: &livekit.ServerInfo{
+			Edition:       livekit.ServerInfo_Standard,
+			Version:       version.Version,
+			Protocol:      types.CurrentProtocol,
+			AgentProtocol: agent.CurrentProtocol,
+			Region:        conf.Region,
+			NodeId:        string(currentNode.NodeID()),
+		},
+		keyProvider:      keyProvider,
+		targetLoad:       conf.Agents.TargetLoad,
+		roomTopic:        agent.RoomAgentTopic,
+		publisherTopic:   agent.PublisherAgentTopic,
+		participantTopic: agent.ParticipantAgentTopic,
+		endpointRegistry: registry,
+		endpointScopes:   scopes,
+		endpointsConfig:  conf.Agents.Endpoints,
+	}
+	if len(conf.Keys) == 1 {
+		for key := range conf.Keys {
+			h.singleAPIKey = key
+		}
+	}
+
+	agentServer, err := rpc.NewAgentInternalServer(h, bus)
+	if err != nil {
+		return nil, err
+	}
+	h.agentServer = agentServer
+
+	return h, nil
+}
+
+// endpointRegisterHandler negotiates a worker's endpoint settings, refusing any
+// declaration when endpoints are turned off.
+func (h *AgentHandler) endpointRegisterHandler(req *livekit.RegisterWorkerRequest, res *livekit.RegisterWorkerResponse, reg *agent.WorkerRegistration) error {
+	if len(req.GetEndpoints()) > 0 && h.endpointsConfig.Disabled {
+		return errors.New("agent HTTP endpoints are disabled on this server")
+	}
+	return agent.EndpointRegisterHandler(req, res, reg)
+}
+
+// HandleConnection serves a worker's control connection with no data-plane
+// session (the WebSocket path: control and job dispatch only).
+func (h *AgentHandler) HandleConnection(ctx context.Context, conn agent.SignalConn, registration agent.WorkerRegistration) {
+	h.handleConnection(ctx, conn, registration, nil)
+}
+
+// handleConnection serves a worker's control connection. sess is the worker's
+// data-plane session when it registered over WebTransport (control and HTTP
+// exchanges share it); nil for a WebSocket control connection, which serves no
+// endpoints.
+func (h *AgentHandler) handleConnection(ctx context.Context, conn agent.SignalConn, registration agent.WorkerRegistration, sess endpoint.Session) {
+	// without a session there is no data plane, so endpoint settings are withheld
+	// rather than promising routes nothing will serve
+	var handlers []agent.WorkerRegisterHandler
+	if sess != nil {
+		handlers = append(handlers, h.endpointRegisterHandler)
+	}
+	registration, ok := HandshakeAgentWorker(conn, h.serverInfo, registration, h.logger, handlers...)
+	if !ok {
+		return
+	}
+
+	apiKey := GetAPIKey(ctx)
+	apiSecret := h.keyProvider.GetSecret(apiKey)
+
+	worker := agent.NewWorker(registration, apiKey, apiSecret, conn, h.logger)
+	h.registerWorker(worker)
+
+	if sess == nil && len(registration.Endpoints) > 0 {
+		worker.Logger().Infow("endpoints ignored, connection has no data plane",
+			"agentName", registration.AgentName,
+			"deployment", registration.Deployment,
+		)
+	}
+
+	endpointTeardown := h.registerEndpoints(worker, sess)
+
+	handlerWorker := &agentHandlerWorker{h, worker}
+	for ok := true; ok; {
+		ok = DispatchAgentWorkerSignal(conn, handlerWorker, worker.Logger())
+	}
+
+	if endpointTeardown != nil {
+		endpointTeardown()
+	}
+	h.deregisterWorker(worker)
+	worker.Close()
+}
+
+// registerEndpoints registers a worker's endpoint manifest into the scope its
+// api key, agent name and deployment address, binding it to the worker's
+// data-plane session. The registration lives exactly as long as the control
+// connection, so the returned teardown must run when that connection ends; it
+// is nil when the worker serves no endpoints. A nil session (WebSocket control
+// path) registers nothing, since HTTP endpoints require a WebTransport session
+// to serve them.
+func (h *AgentHandler) registerEndpoints(w *agent.Worker, sess endpoint.Session) func() {
+	if sess == nil || w.EndpointSettings == nil {
+		return nil
+	}
+	manifest, err := endpoint.ParseManifest(w.Endpoints)
+	if err != nil {
+		// validated during the handshake; a failure here is a programming error
+		w.Logger().Errorw("endpoint manifest failed to re-parse", err)
+		return nil
+	}
+	reg := endpoint.NewRegistration(endpoint.RegistrationParams{
+		WorkerID: w.ID,
+		Manifest: manifest,
+		Session:  sess,
+		Draining: w.Draining,
+	})
+	key := newEndpointScopeKey(w.APIKey(), w.AgentName, w.Deployment)
+	h.endpointRegistry.Register(h.endpointScopes.acquire(key), reg)
+	w.Logger().Infow("endpoints registered",
+		"namespace", w.Namespace,
+		"agentName", w.AgentName,
+		"deployment", w.Deployment,
+		"workerID", w.ID,
+		"manifest", manifest,
+	)
+	return func() {
+		h.endpointRegistry.Deregister(reg)
+		h.endpointScopes.release(key)
+	}
+}
+
+func (h *AgentHandler) registerWorker(w *agent.Worker) {
+	h.mu.Lock()
+
+	h.workers[w.ID] = w
+
+	key := workerKey{w.AgentName, w.Namespace, w.JobType, w.Deployment}
+
+	workers := h.namespaceWorkers[key]
+	created := len(workers) == 0
+
+	if created {
+		nameTopic := agent.GetAgentTopic(w.AgentName, w.Namespace, w.Deployment)
+		var typeTopic string
+		switch w.JobType {
+		case livekit.JobType_JT_ROOM:
+			typeTopic = h.roomTopic
+		case livekit.JobType_JT_PUBLISHER:
+			typeTopic = h.publisherTopic
+		case livekit.JobType_JT_PARTICIPANT:
+			typeTopic = h.participantTopic
+		}
+
+		err := h.agentServer.RegisterJobRequestTopic(nameTopic, typeTopic)
+		if err != nil {
+			h.mu.Unlock()
+
+			w.Logger().Errorw("failed to register job request topic", err)
+			w.Close()
+			return
+		}
+
+		switch w.JobType {
+		case livekit.JobType_JT_ROOM:
+			h.roomKeyCount++
+		case livekit.JobType_JT_PUBLISHER:
+			h.publisherKeyCount++
+		case livekit.JobType_JT_PARTICIPANT:
+			h.participantKeyCount++
+		}
+
+		h.namespaces = append(h.namespaces, w.Namespace)
+		sort.Strings(h.namespaces)
+		h.agentNames = append(h.agentNames, w.AgentName)
+		sort.Strings(h.agentNames)
+	}
+
+	h.namespaceWorkers[key] = append(workers, w)
+	h.mu.Unlock()
+
+	h.logger.Infow("worker registered",
+		"namespace", w.Namespace,
+		"jobType", w.JobType,
+		"agentName", w.AgentName,
+		"deployment", w.Deployment,
+		"workerID", w.ID,
+	)
+	if created {
+		err := h.agentServer.PublishWorkerRegistered(context.Background(), agent.DefaultHandlerNamespace, &emptypb.Empty{})
+		// TODO: when this happens, should we disconnect the worker so it'll retry?
+		if err != nil {
+			w.Logger().Errorw("failed to publish worker registered", err, "namespace", w.Namespace, "jobType", w.JobType, "agentName", w.AgentName)
+		}
+	}
+}
+
+func (h *AgentHandler) deregisterWorker(w *agent.Worker) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	delete(h.workers, w.ID)
+
+	key := workerKey{w.AgentName, w.Namespace, w.JobType, w.Deployment}
+
+	workers, ok := h.namespaceWorkers[key]
+	if !ok {
+		return
+	}
+	index := slices.Index(workers, w)
+	if index == -1 {
+		return
+	}
+
+	if len(workers) > 1 {
+		h.namespaceWorkers[key] = slices.Delete(workers, index, index+1)
+	} else {
+		h.logger.Infow("last worker deregistered",
+			"namespace", w.Namespace,
+			"jobType", w.JobType,
+			"agentName", w.AgentName,
+			"deployment", w.Deployment,
+			"workerID", w.ID,
+		)
+		delete(h.namespaceWorkers, key)
+
+		topic := agent.GetAgentTopic(w.AgentName, w.Namespace, w.Deployment)
+
+		switch w.JobType {
+		case livekit.JobType_JT_ROOM:
+			h.roomKeyCount--
+			h.agentServer.DeregisterJobRequestTopic(topic, h.roomTopic)
+		case livekit.JobType_JT_PUBLISHER:
+			h.publisherKeyCount--
+			h.agentServer.DeregisterJobRequestTopic(topic, h.publisherTopic)
+		case livekit.JobType_JT_PARTICIPANT:
+			h.participantKeyCount--
+			h.agentServer.DeregisterJobRequestTopic(topic, h.participantTopic)
+		}
+
+		// agentNames and namespaces contains repeated entries for each agentNames/namespaces combinations
+		if i := slices.Index(h.namespaces, w.Namespace); i != -1 {
+			h.namespaces = slices.Delete(h.namespaces, i, i+1)
+		}
+		if i := slices.Index(h.agentNames, w.AgentName); i != -1 {
+			h.agentNames = slices.Delete(h.agentNames, i, i+1)
+		}
+	}
+
+	jobs := w.RunningJobs()
+	for jobID := range jobs {
+		h.deregisterJob(jobID)
+	}
+}
+
+func (h *AgentHandler) deregisterJob(jobID livekit.JobID) {
+	h.agentServer.DeregisterJobTerminateTopic(string(jobID))
+
+	delete(h.jobToWorker, jobID)
+
+	// TODO update dispatch state
+}
+
+func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.JobRequestResponse, error) {
+	logger := h.logger.WithUnlikelyValues(
+		"jobID", job.Id,
+		"namespace", job.Namespace,
+		"agentName", job.AgentName,
+		"deployment", job.Deployment,
+		"jobType", job.Type.String(),
+	)
+	if job.Room != nil {
+		logger = logger.WithValues("room", job.Room.Name, "roomID", job.Room.Sid)
+	}
+	if job.Participant != nil {
+		logger = logger.WithValues("participant", job.Participant.Identity)
+	}
+
+	key := workerKey{job.AgentName, job.Namespace, job.Type, job.Deployment}
+	attempted := make(map[*agent.Worker]struct{})
+	for {
+		selected, err := h.selectWorkerWeightedByLoad(key, attempted)
+		if err != nil {
+			logger.Warnw("no worker available to handle job", err)
+			return nil, psrpc.NewError(psrpc.ResourceExhausted, err)
+		}
+
+		logger := logger.WithValues("workerID", selected.ID)
+		attempted[selected] = struct{}{}
+
+		state, err := selected.AssignJob(ctx, job, nil)
+		switch state.GetStatus() {
+		case livekit.JobStatus_JS_RUNNING:
+			logger.Infow("assigned job to worker", "apiKey", selected.APIKey())
+			jobID := livekit.JobID(job.Id)
+			if err := h.agentServer.RegisterJobTerminateTopic(job.Id); err != nil {
+				logger.Errorw("failed to register JobTerminate handler", err)
+			}
+
+			// checked under h.mu after registering so that either this or the job/worker cleanup, whichever runs second, releases the handler.
+			h.mu.Lock()
+			if _, err := selected.GetJobState(jobID); err == nil && h.workers[selected.ID] == selected {
+				h.jobToWorker[jobID] = selected
+			} else {
+				h.deregisterJob(jobID)
+			}
+			h.mu.Unlock()
+			fallthrough
+		case livekit.JobStatus_JS_SUCCESS:
+			return &rpc.JobRequestResponse{
+				State: state,
+			}, nil
+		default:
+			retry := utils.ErrorIsOneOf(err, agent.ErrWorkerNotAvailable, agent.ErrWorkerClosed)
+			logger.Warnw("failed to assign job to worker", err, "retry", retry)
+			if !retry {
+				return nil, err
+			}
+		}
+	}
+}
+
+func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job) float32 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	var affinity float32
+	for _, w := range h.workers {
+		if w.AgentName != job.AgentName || w.Namespace != job.Namespace || w.JobType != job.Type || w.Deployment != job.Deployment {
+			continue
+		}
+
+		if w.Status() == livekit.WorkerStatus_WS_AVAILABLE {
+			affinity += max(0, h.targetLoad-w.Load())
+		}
+	}
+
+	return affinity
+}
+
+func (h *AgentHandler) JobTerminate(ctx context.Context, req *rpc.JobTerminateRequest) (*rpc.JobTerminateResponse, error) {
+	h.mu.Lock()
+	w := h.jobToWorker[livekit.JobID(req.JobId)]
+	h.mu.Unlock()
+
+	if w == nil {
+		return nil, psrpc.NewErrorf(psrpc.NotFound, "no worker for jobID")
+	}
+
+	state, err := w.TerminateJob(livekit.JobID(req.JobId), req.Reason)
+
+	// the job is no longer tracked as running, and the worker may never send an
+	// ended status update for it, so deregister it here. deregistering from
+	// inside this handler is safe because psrpc force closes the handler
+	// without waiting for in-flight requests.
+	h.mu.Lock()
+	h.deregisterJob(livekit.JobID(req.JobId))
+	h.mu.Unlock()
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &rpc.JobTerminateResponse{
+		State: state,
+	}, nil
+}
+
+func (h *AgentHandler) CheckEnabled(ctx context.Context, req *rpc.CheckEnabledRequest) (*rpc.CheckEnabledResponse, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	// This doesn't return the full agentName -> namespace mapping, which can cause some unnecessary RPC.
+	// namespaces are however deprecated.
+	return &rpc.CheckEnabledResponse{
+		Namespaces:         slices.Compact(slices.Clone(h.namespaces)),
+		AgentNames:         slices.Compact(slices.Clone(h.agentNames)),
+		RoomEnabled:        h.roomKeyCount != 0,
+		PublisherEnabled:   h.publisherKeyCount != 0,
+		ParticipantEnabled: h.participantKeyCount != 0,
+	}, nil
+}
+
+func (h *AgentHandler) DrainConnections(interval time.Duration, force bool) {
+	// Snapshot workers and release the lock before Close. Worker.Close closes the
+	// signal connection, which unblocks HandleConnection's read loop so it can call
+	// deregisterWorker — that needs h.mu. Holding the lock across Close deadlocks drain.
+	h.mu.Lock()
+	workers := make([]*agent.Worker, 0, len(h.workers))
+	for _, w := range h.workers {
+		workers = append(workers, w)
+	}
+	h.mu.Unlock()
+
+	if !force {
+		// jitter drain start
+		time.Sleep(time.Duration(rand.Int63n(int64(interval))))
+
+		t := time.NewTicker(interval)
+		defer t.Stop()
+
+		for _, w := range workers {
+			w.Close()
+			<-t.C
+		}
+	} else {
+		// drain as quickly as possible when forced
+		for _, w := range workers {
+			w.Close()
+		}
+	}
+}
+
+func (h *AgentHandler) selectWorkerWeightedByLoad(key workerKey, ignore map[*agent.Worker]struct{}) (*agent.Worker, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	workers, ok := h.namespaceWorkers[key]
+	if !ok {
+		return nil, errors.New("no workers available")
+	}
+
+	normalizedLoads := make(map[*agent.Worker]float32)
+	var availableSum float32
+	for _, w := range workers {
+		if _, ok := ignore[w]; !ok && w.Status() == livekit.WorkerStatus_WS_AVAILABLE {
+			normalizedLoads[w] = max(0, 1-w.Load())
+			availableSum += normalizedLoads[w]
+		}
+	}
+
+	if availableSum == 0 {
+		return nil, errors.New("no workers with sufficient capacity")
+	}
+
+	currentSum := rand.Float32() * availableSum
+	for w, load := range normalizedLoads {
+		if currentSum -= load; currentSum <= 0 {
+			return w, nil
+		}
+	}
+	return workers[0], nil
+}
+
+var _ agent.WorkerSignalHandler = (*agentHandlerWorker)(nil)
+
+type agentHandlerWorker struct {
+	h *AgentHandler
+	*agent.Worker
+}
+
+func (w *agentHandlerWorker) HandleUpdateJob(update *livekit.UpdateJobStatus) error {
+	if err := w.Worker.HandleUpdateJob(update); err != nil {
+		return err
+	}
+
+	if agent.JobStatusIsEnded(update.Status) {
+		w.h.mu.Lock()
+		w.h.deregisterJob(livekit.JobID(update.JobId))
+		w.h.mu.Unlock()
+	}
+	return nil
+}

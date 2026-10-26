@@ -15,38 +15,62 @@
 package service_test
 
 import (
+	"context"
+	"flag"
 	"fmt"
 	"log"
 	"net"
 	"os"
 	"testing"
+	"time"
 
 	"go.uber.org/atomic"
 
-	"github.com/ory/dockertest/v3"
+	mobyclient "github.com/moby/moby/client"
+	"github.com/ory/dockertest/v4"
 )
 
-var Docker *dockertest.Pool
+var Docker dockertest.ClosablePool
+
+// go test -docker=false ./pkg/service skips the tests that need a docker
+// daemon, for a checkout without one. Running them is the default: a run that
+// quietly covers less than the last one is worse than a run that stops, so a
+// daemon that should be there and is not still fails the whole package.
+var useDocker = flag.Bool("docker", true, "run the tests that need a docker daemon")
 
 func TestMain(m *testing.M) {
-	pool, err := dockertest.NewPool("")
-	if err != nil {
-		log.Fatalf("Could not construct pool: %s", err)
-	}
+	// m.Run would parse them, but the flag is read before that
+	flag.Parse()
 
-	// uses pool to try to connect to Docker
-	err = pool.Client.Ping()
-	if err != nil {
-		log.Fatalf("Could not connect to Docker: %s", err)
+	if *useDocker {
+		ctx := context.Background()
+		pool, err := dockertest.NewPool(ctx, "")
+		if err != nil {
+			log.Fatalf("Could not construct pool: %s", err)
+		}
+
+		// uses pool to try to connect to Docker
+		_, err = pool.Client().Ping(ctx, mobyclient.PingOptions{})
+		if err != nil {
+			log.Fatalf("Could not connect to Docker: %s", err)
+		}
+		Docker = pool
 	}
-	Docker = pool
 
 	code := m.Run()
 	os.Exit(code)
 }
 
+func requireDocker(t testing.TB) {
+	t.Helper()
+
+	if !*useDocker {
+		t.Skip("this test needs a docker daemon, and -docker=false says there is none")
+	}
+}
+
 func waitTCPPort(t testing.TB, addr string) {
-	if err := Docker.Retry(func() error {
+	if err := Docker.Retry(t.Context(), 30*time.Second, func() error {
 		conn, err := net.Dial("tcp", addr)
 		if err != nil {
 			t.Log(err)
@@ -62,15 +86,20 @@ func waitTCPPort(t testing.TB, addr string) {
 var redisLast atomic.Uint32
 
 func runRedis(t testing.TB) string {
-	c, err := Docker.RunWithOptions(&dockertest.RunOptions{
-		Name:       fmt.Sprintf("lktest-redis-%d", redisLast.Inc()),
-		Repository: "redis", Tag: "latest",
-	})
+	requireDocker(t)
+
+	c, err := Docker.Run(t.Context(),
+		"redis",
+		dockertest.WithName(fmt.Sprintf("lktest-redis-%d", redisLast.Inc())),
+		dockertest.WithTag("latest"),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_ = Docker.Purge(c)
+		// t.Context() is canceled before cleanup funcs run, so use a
+		// non-canceled context to let the container stop/remove complete.
+		_ = c.Close(context.Background())
 	})
 	addr := c.GetHostPort("6379/tcp")
 	waitTCPPort(t, addr)

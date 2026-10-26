@@ -10,20 +10,6 @@ import (
 )
 
 type FakeServiceStore struct {
-	ListParticipantsStub        func(context.Context, livekit.RoomName) ([]*livekit.ParticipantInfo, error)
-	listParticipantsMutex       sync.RWMutex
-	listParticipantsArgsForCall []struct {
-		arg1 context.Context
-		arg2 livekit.RoomName
-	}
-	listParticipantsReturns struct {
-		result1 []*livekit.ParticipantInfo
-		result2 error
-	}
-	listParticipantsReturnsOnCall map[int]struct {
-		result1 []*livekit.ParticipantInfo
-		result2 error
-	}
 	ListRoomsStub        func(context.Context, []livekit.RoomName) ([]*livekit.Room, error)
 	listRoomsMutex       sync.RWMutex
 	listRoomsArgsForCall []struct {
@@ -36,21 +22,6 @@ type FakeServiceStore struct {
 	}
 	listRoomsReturnsOnCall map[int]struct {
 		result1 []*livekit.Room
-		result2 error
-	}
-	LoadParticipantStub        func(context.Context, livekit.RoomName, livekit.ParticipantIdentity) (*livekit.ParticipantInfo, error)
-	loadParticipantMutex       sync.RWMutex
-	loadParticipantArgsForCall []struct {
-		arg1 context.Context
-		arg2 livekit.RoomName
-		arg3 livekit.ParticipantIdentity
-	}
-	loadParticipantReturns struct {
-		result1 *livekit.ParticipantInfo
-		result2 error
-	}
-	loadParticipantReturnsOnCall map[int]struct {
-		result1 *livekit.ParticipantInfo
 		result2 error
 	}
 	LoadRoomStub        func(context.Context, livekit.RoomName, bool) (*livekit.Room, *livekit.RoomInternal, error)
@@ -86,71 +57,6 @@ type FakeServiceStore struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
-}
-
-func (fake *FakeServiceStore) ListParticipants(arg1 context.Context, arg2 livekit.RoomName) ([]*livekit.ParticipantInfo, error) {
-	fake.listParticipantsMutex.Lock()
-	ret, specificReturn := fake.listParticipantsReturnsOnCall[len(fake.listParticipantsArgsForCall)]
-	fake.listParticipantsArgsForCall = append(fake.listParticipantsArgsForCall, struct {
-		arg1 context.Context
-		arg2 livekit.RoomName
-	}{arg1, arg2})
-	stub := fake.ListParticipantsStub
-	fakeReturns := fake.listParticipantsReturns
-	fake.recordInvocation("ListParticipants", []interface{}{arg1, arg2})
-	fake.listParticipantsMutex.Unlock()
-	if stub != nil {
-		return stub(arg1, arg2)
-	}
-	if specificReturn {
-		return ret.result1, ret.result2
-	}
-	return fakeReturns.result1, fakeReturns.result2
-}
-
-func (fake *FakeServiceStore) ListParticipantsCallCount() int {
-	fake.listParticipantsMutex.RLock()
-	defer fake.listParticipantsMutex.RUnlock()
-	return len(fake.listParticipantsArgsForCall)
-}
-
-func (fake *FakeServiceStore) ListParticipantsCalls(stub func(context.Context, livekit.RoomName) ([]*livekit.ParticipantInfo, error)) {
-	fake.listParticipantsMutex.Lock()
-	defer fake.listParticipantsMutex.Unlock()
-	fake.ListParticipantsStub = stub
-}
-
-func (fake *FakeServiceStore) ListParticipantsArgsForCall(i int) (context.Context, livekit.RoomName) {
-	fake.listParticipantsMutex.RLock()
-	defer fake.listParticipantsMutex.RUnlock()
-	argsForCall := fake.listParticipantsArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
-}
-
-func (fake *FakeServiceStore) ListParticipantsReturns(result1 []*livekit.ParticipantInfo, result2 error) {
-	fake.listParticipantsMutex.Lock()
-	defer fake.listParticipantsMutex.Unlock()
-	fake.ListParticipantsStub = nil
-	fake.listParticipantsReturns = struct {
-		result1 []*livekit.ParticipantInfo
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *FakeServiceStore) ListParticipantsReturnsOnCall(i int, result1 []*livekit.ParticipantInfo, result2 error) {
-	fake.listParticipantsMutex.Lock()
-	defer fake.listParticipantsMutex.Unlock()
-	fake.ListParticipantsStub = nil
-	if fake.listParticipantsReturnsOnCall == nil {
-		fake.listParticipantsReturnsOnCall = make(map[int]struct {
-			result1 []*livekit.ParticipantInfo
-			result2 error
-		})
-	}
-	fake.listParticipantsReturnsOnCall[i] = struct {
-		result1 []*livekit.ParticipantInfo
-		result2 error
-	}{result1, result2}
 }
 
 func (fake *FakeServiceStore) ListRooms(arg1 context.Context, arg2 []livekit.RoomName) ([]*livekit.Room, error) {
@@ -219,72 +125,6 @@ func (fake *FakeServiceStore) ListRoomsReturnsOnCall(i int, result1 []*livekit.R
 	}
 	fake.listRoomsReturnsOnCall[i] = struct {
 		result1 []*livekit.Room
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *FakeServiceStore) LoadParticipant(arg1 context.Context, arg2 livekit.RoomName, arg3 livekit.ParticipantIdentity) (*livekit.ParticipantInfo, error) {
-	fake.loadParticipantMutex.Lock()
-	ret, specificReturn := fake.loadParticipantReturnsOnCall[len(fake.loadParticipantArgsForCall)]
-	fake.loadParticipantArgsForCall = append(fake.loadParticipantArgsForCall, struct {
-		arg1 context.Context
-		arg2 livekit.RoomName
-		arg3 livekit.ParticipantIdentity
-	}{arg1, arg2, arg3})
-	stub := fake.LoadParticipantStub
-	fakeReturns := fake.loadParticipantReturns
-	fake.recordInvocation("LoadParticipant", []interface{}{arg1, arg2, arg3})
-	fake.loadParticipantMutex.Unlock()
-	if stub != nil {
-		return stub(arg1, arg2, arg3)
-	}
-	if specificReturn {
-		return ret.result1, ret.result2
-	}
-	return fakeReturns.result1, fakeReturns.result2
-}
-
-func (fake *FakeServiceStore) LoadParticipantCallCount() int {
-	fake.loadParticipantMutex.RLock()
-	defer fake.loadParticipantMutex.RUnlock()
-	return len(fake.loadParticipantArgsForCall)
-}
-
-func (fake *FakeServiceStore) LoadParticipantCalls(stub func(context.Context, livekit.RoomName, livekit.ParticipantIdentity) (*livekit.ParticipantInfo, error)) {
-	fake.loadParticipantMutex.Lock()
-	defer fake.loadParticipantMutex.Unlock()
-	fake.LoadParticipantStub = stub
-}
-
-func (fake *FakeServiceStore) LoadParticipantArgsForCall(i int) (context.Context, livekit.RoomName, livekit.ParticipantIdentity) {
-	fake.loadParticipantMutex.RLock()
-	defer fake.loadParticipantMutex.RUnlock()
-	argsForCall := fake.loadParticipantArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
-}
-
-func (fake *FakeServiceStore) LoadParticipantReturns(result1 *livekit.ParticipantInfo, result2 error) {
-	fake.loadParticipantMutex.Lock()
-	defer fake.loadParticipantMutex.Unlock()
-	fake.LoadParticipantStub = nil
-	fake.loadParticipantReturns = struct {
-		result1 *livekit.ParticipantInfo
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *FakeServiceStore) LoadParticipantReturnsOnCall(i int, result1 *livekit.ParticipantInfo, result2 error) {
-	fake.loadParticipantMutex.Lock()
-	defer fake.loadParticipantMutex.Unlock()
-	fake.LoadParticipantStub = nil
-	if fake.loadParticipantReturnsOnCall == nil {
-		fake.loadParticipantReturnsOnCall = make(map[int]struct {
-			result1 *livekit.ParticipantInfo
-			result2 error
-		})
-	}
-	fake.loadParticipantReturnsOnCall[i] = struct {
-		result1 *livekit.ParticipantInfo
 		result2 error
 	}{result1, result2}
 }

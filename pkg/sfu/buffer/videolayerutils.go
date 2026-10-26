@@ -422,7 +422,7 @@ func GetSpatialLayerForRid(mimeType mime.MimeType, rid string, ti *livekit.Track
 	//    corresponding to the back up codec mime type should
 	//    be updated in `TrackInfo`. This is a bit tricky
 	//    for a couple of cases
-	//    a. Browsers like Firefox use a different CID everytime.
+	//    a. Browsers like Firefox use a different CID every time.
 	//       So, it cannot be matched between `AddTrack` and SDP.
 	//       One option is to look for a published track with
 	//       back up codec and apply it there. But, that becomes

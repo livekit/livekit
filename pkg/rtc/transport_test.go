@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pion/dtls/v3/pkg/protocol/handshake"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
@@ -28,9 +29,11 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
 	"github.com/livekit/livekit-server/pkg/rtc/transport/transportfakes"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/testutils"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
+	lksdp "github.com/livekit/protocol/sdp"
 )
 
 func TestMissingAnswerDuringICERestart(t *testing.T) {
@@ -58,8 +61,8 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 	handleICEExchange(t, transportA, transportB, handlerA, handlerB)
 
 	connectTransports(t, transportA, transportB, handlerA, handlerB, false, 1, 1)
-	require.Equal(t, webrtc.ICEConnectionStateConnected, transportA.pc.ICEConnectionState())
-	require.Equal(t, webrtc.ICEConnectionStateConnected, transportB.pc.ICEConnectionState())
+	require.True(t, iceConnected(transportA.pc))
+	require.True(t, iceConnected(transportB.pc))
 
 	var negotiationState atomic.Value
 	transportA.OnNegotiationStateChanged(func(state transport.NegotiationState) {
@@ -80,8 +83,8 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 	}, 10*time.Second, time.Millisecond*10, "transportA offer not received")
 
 	connectTransports(t, transportA, transportB, handlerA, handlerB, true, 1, 1)
-	require.Equal(t, webrtc.ICEConnectionStateConnected, transportA.pc.ICEConnectionState())
-	require.Equal(t, webrtc.ICEConnectionStateConnected, transportB.pc.ICEConnectionState())
+	require.True(t, iceConnected(transportA.pc))
+	require.True(t, iceConnected(transportB.pc))
 
 	transportA.Close()
 	transportB.Close()
@@ -205,6 +208,122 @@ func TestNegotiationTiming(t *testing.T) {
 	transportB.Close()
 }
 
+func TestFirstNegotiationUsesFastDebounce(t *testing.T) {
+	offered := make(chan string, 2)
+	newOfferer := func(name string) *PCTransport {
+		handler := &transportfakes.FakeHandler{}
+		handler.OnOfferCalls(func(webrtc.SessionDescription, uint32, map[string]string) error {
+			select {
+			case offered <- name:
+			default:
+			}
+			return nil
+		})
+		transport, err := NewPCTransport(TransportParams{
+			Config:    &WebRTCConfig{},
+			IsOfferer: true,
+			Handler:   handler,
+		})
+		require.NoError(t, err)
+		t.Cleanup(transport.Close)
+		_, err = transport.pc.CreateDataChannel(ReliableDataChannel, nil)
+		require.NoError(t, err)
+		return transport
+	}
+
+	// a transport that negotiated just now waits for the full debounce
+	recent := newOfferer("recent")
+	recent.lock.Lock()
+	recent.updateLastNegotiateLocked()
+	recent.lock.Unlock()
+	recent.Negotiate(false)
+
+	// a new transport starts later, but its first offer uses the fast debounce and goes out first
+	time.Sleep(20 * time.Millisecond)
+	newOfferer("fresh").Negotiate(false)
+
+	for _, want := range []string{"fresh", "recent"} {
+		select {
+		case got := <-offered:
+			require.Equal(t, want, got)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("no offer from %s", want)
+		}
+	}
+}
+
+func TestDTLSHandshakeSkipsHelloVerify(t *testing.T) {
+	// the SFU offers as on the subscriber connection, and a plain pion peer answers active like a browser,
+	// so the SFU is the DTLS server and only the peer sends ClientHello
+	handler := &transportfakes.FakeHandler{}
+	sfu, err := NewPCTransport(TransportParams{Config: &WebRTCConfig{}, IsOfferer: true, Handler: handler})
+	require.NoError(t, err)
+	defer sfu.Close()
+	_, err = sfu.pc.CreateDataChannel(ReliableDataChannel, nil)
+	require.NoError(t, err)
+
+	var clientHellos atomic.Int32
+	se := webrtc.SettingEngine{}
+	require.NoError(t, se.SetAnsweringDTLSRole(webrtc.DTLSRoleClient))
+	se.SetDTLSClientHelloMessageHook(func(m handshake.MessageClientHello) handshake.Message {
+		clientHellos.Inc()
+		return &m
+	})
+	client, err := webrtc.NewAPI(webrtc.WithSettingEngine(se)).NewPeerConnection(webrtc.Configuration{})
+	require.NoError(t, err)
+	defer client.Close()
+
+	var lock sync.Mutex
+	var pending []webrtc.ICECandidateInit
+	hasOffer := false
+	handler.OnICECandidateCalls(func(c *webrtc.ICECandidate, _ livekit.SignalTarget) error {
+		if c == nil {
+			return nil
+		}
+		lock.Lock()
+		defer lock.Unlock()
+		if !hasOffer {
+			pending = append(pending, c.ToJSON())
+			return nil
+		}
+		return client.AddICECandidate(c.ToJSON())
+	})
+	client.OnICECandidate(func(c *webrtc.ICECandidate) {
+		if c != nil {
+			sfu.AddICECandidate(c.ToJSON())
+		}
+	})
+	handler.OnOfferCalls(func(offer webrtc.SessionDescription, offerId uint32, _ map[string]string) error {
+		lock.Lock()
+		if err := client.SetRemoteDescription(offer); err != nil {
+			lock.Unlock()
+			return err
+		}
+		hasOffer = true
+		for _, c := range pending {
+			_ = client.AddICECandidate(c)
+		}
+		lock.Unlock()
+
+		answer, err := client.CreateAnswer(nil)
+		if err != nil {
+			return err
+		}
+		if err := client.SetLocalDescription(answer); err != nil {
+			return err
+		}
+		return sfu.HandleRemoteDescription(answer, offerId)
+	})
+	sfu.Negotiate(true)
+
+	require.Eventually(t, func() bool {
+		return sfu.IsEstablished() && client.ConnectionState() == webrtc.PeerConnectionStateConnected
+	}, 10*time.Second, 10*time.Millisecond, "transports did not connect")
+
+	// a HelloVerifyRequest from the SFU makes the peer send its ClientHello a second time, with the cookie
+	require.Equal(t, int32(1), clientHellos.Load())
+}
+
 func TestFirstOfferMissedDuringICERestart(t *testing.T) {
 	params := TransportParams{
 		Config:    &WebRTCConfig{},
@@ -268,8 +387,8 @@ func TestFirstOfferMissedDuringICERestart(t *testing.T) {
 
 	// ensure we are connected
 	require.Eventually(t, func() bool {
-		return transportA.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected &&
-			transportB.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected &&
+		return iceConnected(transportA.pc) &&
+			iceConnected(transportB.pc) &&
 			offerCount.Load() == 2
 	}, testutils.ConnectTimeout, 10*time.Millisecond, "transport did not connect")
 
@@ -345,8 +464,8 @@ func TestFirstAnswerMissedDuringICERestart(t *testing.T) {
 
 	// ensure we are connected
 	require.Eventually(t, func() bool {
-		return transportA.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected &&
-			transportB.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected &&
+		return iceConnected(transportA.pc) &&
+			iceConnected(transportB.pc) &&
 			offerCount.Load() == 2
 	}, testutils.ConnectTimeout, 10*time.Millisecond, "transport did not connect")
 
@@ -400,7 +519,7 @@ func TestNegotiationFailed(t *testing.T) {
 func TestFilteringCandidates(t *testing.T) {
 	params := TransportParams{
 		Config: &WebRTCConfig{},
-		EnabledCodecs: []*livekit.Codec{
+		EnabledPublishCodecs: []*livekit.Codec{
 			{Mime: mime.MimeTypeOpus.String()},
 			{Mime: mime.MimeTypeVP8.String()},
 			{Mime: mime.MimeTypeH264.String()},
@@ -516,6 +635,15 @@ func TestFilteringCandidates(t *testing.T) {
 	transport.Close()
 }
 
+// iceConnected reports whether a peer connection's ICE has established. The
+// controlling agent (the offerer) advances Connected -> Completed once its
+// connectivity checks finish, so asserting exactly Connected races the poll
+// against that transition; both states mean the transport is up.
+func iceConnected(pc *webrtc.PeerConnection) bool {
+	s := pc.ICEConnectionState()
+	return s == webrtc.ICEConnectionStateConnected || s == webrtc.ICEConnectionStateCompleted
+}
+
 func handleICEExchange(t *testing.T, a, b *PCTransport, ah, bh *transportfakes.FakeHandler) {
 	ah.OnICECandidateCalls(func(candidate *webrtc.ICECandidate, target livekit.SignalTarget) error {
 		if candidate == nil {
@@ -561,7 +689,7 @@ func connectTransports(t *testing.T, offerer, answerer *PCTransport, offererHand
 	}, 10*time.Second, time.Millisecond*10, fmt.Sprintf("offer count mismatch, expected: %d, actual: %d", expectedOfferCount, offerCount.Load()))
 
 	require.Eventually(t, func() bool {
-		return offerer.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected
+		return iceConnected(offerer.pc)
 	}, 10*time.Second, time.Millisecond*10, "offerer did not become connected")
 
 	require.Eventually(t, func() bool {
@@ -569,7 +697,7 @@ func connectTransports(t *testing.T, offerer, answerer *PCTransport, offererHand
 	}, 10*time.Second, time.Millisecond*10, fmt.Sprintf("answer count mismatch, expected: %d, actual: %d", expectedAnswerCount, answerCount.Load()))
 
 	require.Eventually(t, func() bool {
-		return answerer.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected
+		return iceConnected(answerer.pc)
 	}, 10*time.Second, time.Millisecond*10, "answerer did not become connected")
 
 	transportsConnected := untilTransportsConnected(offererHandler, answererHandler)
@@ -617,7 +745,7 @@ func TestConfigureAudioTransceiver(t *testing.T) {
 			tr, err := pc.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly})
 			require.NoError(t, err)
 
-			configureSenderAudio(tr, testcase.stereo, testcase.nack)
+			configureSenderAudio(tr, testcase.stereo, testcase.nack, nil)
 			codecs := tr.Sender().GetParameters().Codecs
 			for _, codec := range codecs {
 				if mime.IsMimeTypeStringOpus(codec.MimeType) {
@@ -634,4 +762,314 @@ func TestConfigureAudioTransceiver(t *testing.T) {
 			}
 		})
 	}
+}
+
+// When answering a subscriber offer, the sender's audio payload type must echo
+// the payload type the offer assigned (RFC 3264), otherwise Firefox decodes no
+// audio. See https://github.com/livekit/livekit/issues/4599.
+func TestConfigureAudioTransceiverEchoesOfferPayloadType(t *testing.T) {
+	var me webrtc.MediaEngine
+	registerCodecs(&me, []*livekit.Codec{{Mime: mime.MimeTypeOpus.String()}}, RTCPFeedbackConfig{Audio: []webrtc.RTCPFeedback{{Type: webrtc.TypeRTCPFBNACK}}}, false)
+	pc, err := webrtc.NewAPI(webrtc.WithMediaEngine(&me)).NewPeerConnection(webrtc.Configuration{})
+	require.NoError(t, err)
+	defer pc.Close()
+	tr, err := pc.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly})
+	require.NoError(t, err)
+
+	// offer mapped Opus to a payload type different from the server MediaEngine's.
+	const offeredOpusPT = webrtc.PayloadType(109)
+	configureSenderAudio(tr, false, true, map[mime.MimeType]webrtc.PayloadType{mime.MimeTypeOpus: offeredOpusPT})
+
+	var found bool
+	for _, codec := range tr.Sender().GetParameters().Codecs {
+		if mime.IsMimeTypeStringOpus(codec.MimeType) {
+			require.Equal(t, offeredOpusPT, codec.PayloadType)
+			found = true
+		}
+	}
+	require.True(t, found, "opus codec must be present in sender preferences")
+}
+
+// In single-PC mode the publisher PC carries both publish and subscribe
+// directions. If the MediaEngine were built only from the publish codec list,
+// the SDP offer would not advertise some codecs in the m-section even though
+// the subscribe direction is supposed to support it. This regression-tests
+// the union behavior in newPeerConnection: build the MediaEngine from publish +
+// subscribe codec lists.
+func TestSinglePCMediaEngineUnionsCodecs(t *testing.T) {
+	videoMSectionCodecs := func(transport *PCTransport) []string {
+		_, err := transport.pc.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo)
+		require.NoError(t, err)
+		offer, err := transport.pc.CreateOffer(nil)
+		require.NoError(t, err)
+		parsed, err := offer.Unmarshal()
+		require.NoError(t, err)
+		var rtpmaps []string
+		for _, m := range parsed.MediaDescriptions {
+			if m.MediaName.Media != "video" {
+				continue
+			}
+			for _, a := range m.Attributes {
+				if a.Key == "rtpmap" {
+					rtpmaps = append(rtpmaps, a.Value)
+				}
+			}
+		}
+		return rtpmaps
+	}
+
+	sdpHasH264 := func(rtpmaps []string) bool {
+		for _, r := range rtpmaps {
+			if strings.Contains(r, "H264/") {
+				return true
+			}
+		}
+		return false
+	}
+
+	publishOnly := []*livekit.Codec{
+		{Mime: mime.MimeTypeOpus.String()},
+		{Mime: mime.MimeTypeVP8.String()},
+	}
+	subscribeOnly := []*livekit.Codec{
+		{Mime: mime.MimeTypeOpus.String()},
+		{Mime: mime.MimeTypeVP8.String()},
+		{Mime: mime.MimeTypeH264.String()},
+	}
+
+	// Control: only publish codecs set (dual-PC publisher PC). H.264 absent.
+	dualPC, err := NewPCTransport(TransportParams{
+		Config:               &WebRTCConfig{},
+		EnabledPublishCodecs: publishOnly,
+		Handler:              &transportfakes.FakeHandler{},
+	})
+	require.NoError(t, err)
+	require.False(t, sdpHasH264(videoMSectionCodecs(dualPC)),
+		"dual-PC publisher must not advertise H.264 when it's stripped from the publish list")
+
+	// Single-PC publisher PC: both lists set. H.264 must appear.
+	singlePC, err := NewPCTransport(TransportParams{
+		Config:                 &WebRTCConfig{},
+		EnabledPublishCodecs:   publishOnly,
+		EnabledSubscribeCodecs: subscribeOnly,
+		IsSendSide:             true,
+		Handler:                &transportfakes.FakeHandler{},
+	})
+	require.NoError(t, err)
+	require.True(t, sdpHasH264(videoMSectionCodecs(singlePC)),
+		"single-PC publisher must advertise H.264 from the subscribe list even when it's stripped from the publish list")
+}
+
+// Regression test for restrictReceiverCodecsToPublishList: subscribe-only
+// codecs (e.g., H.264) registered for subscriptions must not leak into the
+// recv-side m-section of an answer, or the peer could publish them.
+func TestSinglePCAnswerStripsSubscribeOnlyCodecsFromRecvSide(t *testing.T) {
+	publishCodecs := []*livekit.Codec{
+		{Mime: mime.MimeTypeOpus.String()},
+		{Mime: mime.MimeTypeVP8.String()},
+	}
+	subscribeCodecs := []*livekit.Codec{
+		{Mime: mime.MimeTypeOpus.String()},
+		{Mime: mime.MimeTypeVP8.String()},
+		{Mime: mime.MimeTypeH264.String()},
+	}
+
+	handler := &transportfakes.FakeHandler{}
+	server, err := NewPCTransport(TransportParams{
+		Config:                 &WebRTCConfig{},
+		EnabledPublishCodecs:   publishCodecs,
+		EnabledSubscribeCodecs: subscribeCodecs,
+		IsSendSide:             true,
+		Handler:                handler,
+	})
+	require.NoError(t, err)
+	defer server.Close()
+
+	var clientME webrtc.MediaEngine
+	require.NoError(t, registerCodecs(&clientME, subscribeCodecs, RTCPFeedbackConfig{}, false))
+	client, err := webrtc.NewAPI(webrtc.WithMediaEngine(&clientME)).NewPeerConnection(webrtc.Configuration{})
+	require.NoError(t, err)
+	defer client.Close()
+
+	_, err = client.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{
+		Direction: webrtc.RTPTransceiverDirectionSendonly,
+	})
+	require.NoError(t, err)
+	offer, err := client.CreateOffer(nil)
+	require.NoError(t, err)
+	require.Contains(t, offer.SDP, "H264/", "offer must advertise H.264")
+	require.NoError(t, client.SetLocalDescription(offer))
+
+	var answer atomic.Pointer[webrtc.SessionDescription]
+	handler.OnAnswerCalls(func(sd webrtc.SessionDescription, _ uint32, _ map[string]string) error {
+		answer.Store(&sd)
+		return nil
+	})
+	require.NoError(t, server.HandleRemoteDescription(*client.LocalDescription(), 1))
+
+	require.Eventually(t, func() bool {
+		return answer.Load() != nil
+	}, 5*time.Second, 10*time.Millisecond, "server did not produce answer")
+
+	parsed, err := answer.Load().Unmarshal()
+	require.NoError(t, err)
+
+	var videoSection *sdp.MediaDescription
+	for _, m := range parsed.MediaDescriptions {
+		if m.MediaName.Media == "video" {
+			videoSection = m
+			break
+		}
+	}
+	require.NotNil(t, videoSection, "answer missing video m-section")
+
+	for _, a := range videoSection.Attributes {
+		if a.Key != "rtpmap" {
+			continue
+		}
+		require.NotContains(t, a.Value, "H264/",
+			"answer must not advertise H.264 in recv-side m-section: %s", a.Value)
+	}
+}
+
+// the parsed remote offer kept by the transport must follow every accepted offer
+// and survive an offer that does not parse
+func TestRemoteOfferParsedTracksOffers(t *testing.T) {
+	codecs := []*livekit.Codec{{Mime: mime.MimeTypeVP8.String()}}
+	handler := &transportfakes.FakeHandler{}
+	tr, err := NewPCTransport(TransportParams{
+		Config: &WebRTCConfig{
+			// offers from a real client carry RTX pairs that the transport registers here
+			BufferFactory: buffer.NewFactoryOfBufferFactory(500, 200).CreateBufferFactory(),
+		},
+		EnabledPublishCodecs: codecs,
+		IsOfferer:            false,
+		Handler:              handler,
+	})
+	require.NoError(t, err)
+	defer tr.Close()
+
+	var clientME webrtc.MediaEngine
+	require.NoError(t, registerCodecs(&clientME, codecs, RTCPFeedbackConfig{}, false))
+	client, err := webrtc.NewAPI(webrtc.WithMediaEngine(&clientME)).NewPeerConnection(webrtc.Configuration{})
+	require.NoError(t, err)
+	defer client.Close()
+
+	handler.OnAnswerCalls(func(sd webrtc.SessionDescription, _ uint32, _ map[string]string) error {
+		return client.SetRemoteDescription(sd)
+	})
+
+	mids := func(parsed *sdp.SessionDescription) []string {
+		var out []string
+		for _, m := range parsed.MediaDescriptions {
+			mid, _ := m.Attribute(sdp.AttrKeyMID)
+			out = append(out, mid)
+		}
+		return out
+	}
+
+	var offerId uint32
+	sendOffer := func(numSections int) {
+		_, err := client.AddTransceiverFromKind(
+			webrtc.RTPCodecTypeVideo,
+			webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly},
+		)
+		require.NoError(t, err)
+		offer, err := client.CreateOffer(nil)
+		require.NoError(t, err)
+		require.NoError(t, client.SetLocalDescription(offer))
+
+		offerId++
+		setCalls := handler.OnSetRemoteDescriptionOfferCallCount()
+		require.NoError(t, tr.HandleRemoteDescription(offer, offerId))
+		require.Eventually(t, func() bool {
+			return handler.OnSetRemoteDescriptionOfferCallCount() > setCalls
+		}, 5*time.Second, 10*time.Millisecond)
+
+		parsed := tr.RemoteOfferParsed()
+		require.NotNil(t, parsed)
+		require.Len(t, parsed.MediaDescriptions, numSections)
+		var want []string
+		for _, tc := range client.GetTransceivers() {
+			want = append(want, tc.Mid())
+		}
+		require.Equal(t, want, mids(parsed))
+
+		// wait for the answer so that the client can offer again
+		require.Eventually(t, func() bool {
+			return client.SignalingState() == webrtc.SignalingStateStable
+		}, 5*time.Second, 10*time.Millisecond)
+	}
+
+	sendOffer(1)
+	sendOffer(2)
+
+	// an offer that does not parse fails the negotiation and leaves the last parse alone
+	before := tr.RemoteOfferParsed()
+	failures := handler.OnNegotiationFailedCallCount()
+	require.NoError(t, tr.HandleRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: "not an sdp"}, offerId+1))
+	require.Eventually(t, func() bool {
+		return handler.OnNegotiationFailedCallCount() > failures
+	}, 5*time.Second, 10*time.Millisecond)
+	require.Same(t, before, tr.RemoteOfferParsed())
+}
+
+// in one-shot signalling mode an ICE restart arrives as an SDP fragment that is patched into
+// the remote offer and set on pion directly, the stored parse must follow it
+func TestRemoteOfferParsedFollowsICERestartFragment(t *testing.T) {
+	codecs := []*livekit.Codec{{Mime: mime.MimeTypeVP8.String()}}
+	handler := &transportfakes.FakeHandler{}
+	tr, err := NewPCTransport(TransportParams{
+		Config: &WebRTCConfig{
+			BufferFactory: buffer.NewFactoryOfBufferFactory(500, 200).CreateBufferFactory(),
+		},
+		EnabledPublishCodecs:     codecs,
+		IsOfferer:                false,
+		UseOneShotSignallingMode: true,
+		Handler:                  handler,
+	})
+	require.NoError(t, err)
+	defer tr.Close()
+
+	var clientME webrtc.MediaEngine
+	require.NoError(t, registerCodecs(&clientME, codecs, RTCPFeedbackConfig{}, false))
+	client, err := webrtc.NewAPI(webrtc.WithMediaEngine(&clientME)).NewPeerConnection(webrtc.Configuration{})
+	require.NoError(t, err)
+	defer client.Close()
+
+	_, err = client.AddTransceiverFromKind(
+		webrtc.RTPCodecTypeVideo,
+		webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly},
+	)
+	require.NoError(t, err)
+	offer, err := client.CreateOffer(nil)
+	require.NoError(t, err)
+	require.NoError(t, client.SetLocalDescription(offer))
+
+	require.NoError(t, tr.HandleRemoteDescription(offer, 1))
+	before := tr.RemoteOfferParsed()
+	require.NotNil(t, before)
+	ufrag, _, err := lksdp.ExtractICECredential(before)
+	require.NoError(t, err)
+	require.NotEqual(t, "restartUfrag", ufrag)
+
+	_, _, err = tr.GetAnswer()
+	require.NoError(t, err)
+
+	mid := client.GetTransceivers()[0].Mid()
+	fragment := "m=video 9 UDP/TLS/RTP/SAVPF 96\r\n" +
+		"a=mid:" + mid + "\r\n" +
+		"a=ice-ufrag:restartUfrag\r\n" +
+		"a=ice-pwd:restartPwd0123456789abcdef\r\n" +
+		"a=candidate:1 1 udp 2122260223 192.0.2.1 61764 typ host generation 0\r\n"
+	answer, err := tr.HandleICERestartSDPFragment(fragment)
+	require.NoError(t, err)
+	require.NotEmpty(t, answer)
+
+	after := tr.RemoteOfferParsed()
+	require.NotSame(t, before, after)
+	ufrag, pwd, err := lksdp.ExtractICECredential(after)
+	require.NoError(t, err)
+	require.Equal(t, "restartUfrag", ufrag)
+	require.Equal(t, "restartPwd0123456789abcdef", pwd)
 }

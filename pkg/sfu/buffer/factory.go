@@ -40,6 +40,7 @@ func (f *FactoryOfBufferFactory) CreateBufferFactory() *Factory {
 		rtpBuffers:           make(map[uint32]*Buffer),
 		rtcpReaders:          make(map[uint32]*RTCPReader),
 		rtxPair:              make(map[uint32]uint32),
+		fecPair:              make(map[uint32]uint32),
 	}
 }
 
@@ -50,6 +51,7 @@ type Factory struct {
 	rtpBuffers           map[uint32]*Buffer
 	rtcpReaders          map[uint32]*RTCPReader
 	rtxPair              map[uint32]uint32 // repair -> base
+	fecPair              map[uint32]uint32 // fec -> base
 }
 
 func (f *Factory) GetOrNew(packetType packetio.BufferPacketType, ssrc uint32) io.ReadWriteCloser {
@@ -89,10 +91,27 @@ func (f *Factory) GetOrNew(packetType packetio.BufferPacketType, ssrc uint32) io
 				break
 			}
 		}
+		for fec, base := range f.fecPair {
+			if fec == ssrc {
+				buffer.setFECRepairBufferLimit()
+				baseBuffer, ok := f.rtpBuffers[base]
+				if ok {
+					buffer.SetPrimaryBufferForFEC(baseBuffer)
+				}
+				break
+			} else if base == ssrc {
+				fecBuffer, ok := f.rtpBuffers[fec]
+				if ok {
+					fecBuffer.SetPrimaryBufferForFEC(buffer)
+				}
+				break
+			}
+		}
 		buffer.OnClose(func() {
 			f.Lock()
 			delete(f.rtpBuffers, ssrc)
 			delete(f.rtxPair, ssrc)
+			delete(f.fecPair, ssrc)
 			f.Unlock()
 		})
 		return buffer
@@ -118,6 +137,21 @@ func (f *Factory) GetRTCPReader(ssrc uint32) *RTCPReader {
 	return f.rtcpReaders[ssrc]
 }
 
+// SetStreamInfoProbe installs probe on the buffer of ssrc, reporting whether that
+// buffer exists. False means the stream can never be identified.
+func (f *Factory) SetStreamInfoProbe(ssrc uint32, probe *StreamInfoProbe) bool {
+	f.RLock()
+	buffer := f.rtpBuffers[ssrc]
+	f.RUnlock()
+
+	if buffer == nil {
+		return false
+	}
+
+	buffer.SetStreamInfoProbe(probe)
+	return true
+}
+
 func (f *Factory) SetRTXPair(repair, base uint32, rsid string) {
 	f.Lock()
 	repairBuffer, baseBuffer := f.rtpBuffers[repair], f.rtpBuffers[base]
@@ -130,5 +164,20 @@ func (f *Factory) SetRTXPair(repair, base uint32, rsid string) {
 		if rsid != "" {
 			baseBuffer.NotifyRTX(base, repair, rsid)
 		}
+	}
+}
+
+func (f *Factory) SetFECPair(fec, base uint32) {
+	f.Lock()
+	fecBuffer, baseBuffer := f.rtpBuffers[fec], f.rtpBuffers[base]
+	if fecBuffer == nil || baseBuffer == nil {
+		f.fecPair[fec] = base
+	}
+	f.Unlock()
+	if fecBuffer != nil && baseBuffer == nil {
+		fecBuffer.setFECRepairBufferLimit()
+	}
+	if fecBuffer != nil && baseBuffer != nil {
+		fecBuffer.SetPrimaryBufferForFEC(baseBuffer)
 	}
 }

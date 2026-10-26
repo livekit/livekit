@@ -20,10 +20,13 @@ import (
 	"time"
 
 	"github.com/thoas/go-funk"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 )
+
+var _ OSSServiceStore = (*LocalStore)(nil)
 
 // encapsulates CRUD operations for room settings
 type LocalStore struct {
@@ -201,7 +204,7 @@ func (s *LocalStore) StoreAgentDispatch(ctx context.Context, dispatch *livekit.A
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	clone := utils.CloneProto(dispatch)
+	clone := proto.CloneOf(dispatch)
 	if clone.State != nil {
 		clone.State.Jobs = nil
 	}
@@ -240,13 +243,13 @@ func (s *LocalStore) ListAgentDispatches(ctx context.Context, roomName livekit.R
 
 	var js []*livekit.Job
 	for _, j := range agentJobs {
-		js = append(js, utils.CloneProto(j))
+		js = append(js, proto.CloneOf(j))
 	}
 	var ds []*livekit.AgentDispatch
 
 	m := make(map[string]*livekit.AgentDispatch)
 	for _, d := range agentDispatches {
-		clone := utils.CloneProto(d)
+		clone := proto.CloneOf(d)
 		m[d.Id] = clone
 		ds = append(ds, clone)
 	}
@@ -254,7 +257,7 @@ func (s *LocalStore) ListAgentDispatches(ctx context.Context, roomName livekit.R
 	for _, j := range js {
 		d := m[j.DispatchId]
 		if d != nil {
-			d.State.Jobs = append(d.State.Jobs, utils.CloneProto(j))
+			d.State.Jobs = append(d.State.Jobs, proto.CloneOf(j))
 		}
 	}
 
@@ -265,7 +268,7 @@ func (s *LocalStore) StoreAgentJob(ctx context.Context, job *livekit.Job) error 
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	clone := utils.CloneProto(job)
+	clone := proto.CloneOf(job)
 	clone.Room = nil
 	if clone.Participant != nil {
 		clone.Participant = &livekit.ParticipantInfo{

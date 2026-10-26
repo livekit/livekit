@@ -16,6 +16,7 @@ package types
 
 import (
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/pion/rtcp"
@@ -29,11 +30,11 @@ import (
 	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/protocol/datatrack"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -43,6 +44,7 @@ import (
 //counterfeiter:generate . WebsocketClient
 type WebsocketClient interface {
 	ReadMessage() (messageType int, p []byte, err error)
+	NextReader() (messageType int, r io.Reader, err error)
 	WriteMessage(messageType int, data []byte) error
 	WriteControl(messageType int, data []byte, deadline time.Time) error
 	SetReadDeadline(deadline time.Time) error
@@ -117,6 +119,8 @@ const (
 	ParticipantCloseReasonUserUnavailable
 	ParticipantCloseReasonUserRejected
 	ParticipantCloseReasonMoveFailed
+	ParticipantCloseReasonAgentError
+	ParticipantCloseReasonSIPTrunkFailure
 )
 
 func (p ParticipantCloseReason) String() string {
@@ -177,6 +181,10 @@ func (p ParticipantCloseReason) String() string {
 		return "USER_REJECTED"
 	case ParticipantCloseReasonMoveFailed:
 		return "MOVE_FAILED"
+	case ParticipantCloseReasonAgentError:
+		return "AGENT_ERROR"
+	case ParticipantCloseReasonSIPTrunkFailure:
+		return "SIP_TRUNK_FAILURE"
 	default:
 		return fmt.Sprintf("%d", int(p))
 	}
@@ -214,10 +222,34 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 		return livekit.DisconnectReason_USER_UNAVAILABLE
 	case ParticipantCloseReasonUserRejected:
 		return livekit.DisconnectReason_USER_REJECTED
+	case ParticipantCloseReasonAgentError:
+		return livekit.DisconnectReason_AGENT_ERROR
+	case ParticipantCloseReasonSIPTrunkFailure:
+		return livekit.DisconnectReason_SIP_TRUNK_FAILURE
 	default:
 		// the other types will map to unknown reason
 		return livekit.DisconnectReason_UNKNOWN_REASON
 	}
+}
+
+// ---------------------------------------------
+
+// IsIntentionalDisconnect reports whether a disconnect reason represents an
+// intentional/expected closure (client leaving, admin action, room teardown,
+// migration, etc.) as opposed to a connection failure.
+func IsIntentionalDisconnect(reason livekit.DisconnectReason) bool {
+	switch reason {
+	case livekit.DisconnectReason_CLIENT_INITIATED,
+		livekit.DisconnectReason_SERVER_SHUTDOWN,
+		livekit.DisconnectReason_DUPLICATE_IDENTITY,
+		livekit.DisconnectReason_MIGRATION,
+		livekit.DisconnectReason_PARTICIPANT_REMOVED,
+		livekit.DisconnectReason_ROOM_DELETED,
+		livekit.DisconnectReason_ROOM_CLOSED,
+		livekit.DisconnectReason_SIP_TRUNK_FAILURE:
+		return true
+	}
+	return false
 }
 
 // ---------------------------------------------
@@ -268,10 +300,75 @@ func (s SignallingCloseReason) String() string {
 }
 
 // ---------------------------------------------
+
 const (
 	ParticipantCloseKeyNormal = "normal"
 	ParticipantCloseKeyWHIP   = "whip"
 )
+
+// ---------------------------------------------
+
+type RoomCloseReason int
+
+const (
+	RoomCloseReasonUnknown RoomCloseReason = iota
+	RoomCloseReasonAPIDelete
+	RoomCloseReasonIdleTimeout
+	RoomCloseReasonServerShutdown
+	RoomCloseReasonSuperseded
+	RoomCloseReasonOpenFailed
+)
+
+func (r RoomCloseReason) String() string {
+	switch r {
+	case RoomCloseReasonUnknown:
+		return "UNKNOWN"
+	case RoomCloseReasonAPIDelete:
+		return "API_DELETE"
+	case RoomCloseReasonIdleTimeout:
+		return "IDLE_TIMEOUT"
+	case RoomCloseReasonServerShutdown:
+		return "SERVER_SHUTDOWN"
+	case RoomCloseReasonSuperseded:
+		return "SUPERSEDED"
+	case RoomCloseReasonOpenFailed:
+		return "OPEN_FAILED"
+	default:
+		return fmt.Sprintf("%d", int(r))
+	}
+}
+
+func (r RoomCloseReason) ToProto() livekit.RoomEndReason {
+	switch r {
+	case RoomCloseReasonAPIDelete:
+		return livekit.RoomEndReason_ROOM_END_API_DELETE
+	case RoomCloseReasonIdleTimeout:
+		return livekit.RoomEndReason_ROOM_END_IDLE_TIMEOUT
+	case RoomCloseReasonServerShutdown:
+		return livekit.RoomEndReason_ROOM_END_SERVER_SHUTDOWN
+	case RoomCloseReasonSuperseded:
+		return livekit.RoomEndReason_ROOM_END_SUPERSEDED
+	case RoomCloseReasonOpenFailed:
+		return livekit.RoomEndReason_ROOM_END_OPEN_FAILED
+	default:
+		return livekit.RoomEndReason_ROOM_END_UNKNOWN
+	}
+}
+
+// ToParticipantCloseReason gives the reason participants are closed with when the
+// room closes for this reason, so the two can never disagree.
+func (r RoomCloseReason) ToParticipantCloseReason() ParticipantCloseReason {
+	switch r {
+	case RoomCloseReasonAPIDelete:
+		return ParticipantCloseReasonServiceRequestDeleteRoom
+	case RoomCloseReasonIdleTimeout, RoomCloseReasonSuperseded:
+		return ParticipantCloseReasonRoomClosed
+	case RoomCloseReasonServerShutdown:
+		return ParticipantCloseReasonRoomManagerStop
+	default:
+		return ParticipantCloseReasonNone
+	}
+}
 
 // ---------------------------------------------
 
@@ -283,6 +380,7 @@ type Participant interface {
 	ConnectedAt() time.Time
 	CloseReason() ParticipantCloseReason
 	Kind() livekit.ParticipantInfo_Kind
+	KindDetails() []livekit.ParticipantInfo_KindDetail
 	IsRecorder() bool
 	IsDependent() bool
 	IsAgent() bool
@@ -332,6 +430,9 @@ type Participant interface {
 	HandleReceivedDataTrackMessage([]byte, *datatrack.Packet, int64)
 
 	GetParticipantListener() ParticipantListener
+
+	AddDataBlob(dataBlob *livekit.DataBlob)
+	GetDataBlob(key *livekit.DataBlobKey) *livekit.DataBlob
 }
 
 // -------------------------------------------------------
@@ -342,10 +443,11 @@ type AddTrackParams struct {
 }
 
 type MoveToRoomParams struct {
-	RoomName      livekit.RoomName
-	ParticipantID livekit.ParticipantID
-	Listener      LocalParticipantListener
-	Helper        LocalParticipantHelper
+	RoomName          livekit.RoomName
+	ParticipantID     livekit.ParticipantID
+	Listener          LocalParticipantListener
+	TelemetryListener ParticipantTelemetryListener
+	Helper            LocalParticipantHelper
 }
 
 type DataMessageCache struct {
@@ -380,13 +482,15 @@ type LocalParticipant interface {
 	GetReporter() roomobs.ParticipantSessionReporter
 	GetReporterResolver() roomobs.ParticipantReporterResolver
 	GetAdaptiveStream() bool
+	GetEnableStartAtDesiredQuality() bool
 	ProtocolVersion() ProtocolVersion
 	SupportsSyncStreamID() bool
-	SupportsTransceiverReuse() bool
+	SupportsTransceiverReuse(mt MediaTrack) bool
 	IsUsingSinglePeerConnection() bool
 	IsReady() bool
 	ActiveAt() time.Time
 	Disconnected() <-chan struct{}
+	IsConnectionCanceled(closeReason ParticipantCloseReason) bool
 	IsIdle() bool
 	SubscriberAsPrimary() bool
 	GetClientInfo() *livekit.ClientInfo
@@ -395,11 +499,13 @@ type LocalParticipant interface {
 	GetPlayoutDelayConfig() *livekit.PlayoutDelay
 	GetPendingTrack(trackID livekit.TrackID) *livekit.TrackInfo
 	GetICEConnectionInfo() []*ICEConnectionInfo
+	HasICEConnected() bool
 	HasConnected() bool
 	GetEnabledPublishCodecs() []*livekit.Codec
 	GetPublisherICESessionUfrag() (string, error)
 	SupportsMoving() error
 	GetLastReliableSequence(migrateOut bool) uint32
+	IsWarpEnabled() bool
 
 	SwapResponseSink(sink routing.MessageSink, reason SignallingCloseReason)
 	GetResponseSink() routing.MessageSink
@@ -418,6 +524,7 @@ type LocalParticipant interface {
 
 	// permissions
 	ClaimGrants() *auth.ClaimGrants
+	TokenExpiresAt() time.Time
 	SetPermission(permission *livekit.ParticipantPermission) bool
 	CanPublish() bool
 	CanPublishSource(source livekit.TrackSource) bool
@@ -447,6 +554,7 @@ type LocalParticipant interface {
 	UnsubscribeFromTrack(trackID livekit.TrackID)
 	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings)
 	GetSubscribedTracks() []SubscribedTrack
+	GetSubscribedDataTracks() []DataDownTrack
 	IsTrackNameSubscribed(publisherIdentity livekit.ParticipantIdentity, trackName string) bool
 	SubscribeToDataTrack(trackID livekit.TrackID)
 	UnsubscribeFromDataTrack(trackID livekit.TrackID)
@@ -475,10 +583,11 @@ type LocalParticipant interface {
 	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
 	SendSubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool) error
 	SendRefreshToken(token string) error
-	HandleReconnectAndSendResponse(reconnectReason livekit.ReconnectReason, reconnectResponse *livekit.ReconnectResponse) error
+	HandleReconnectAndSendResponse(reconnectReason livekit.ReconnectReason, reconnectResponse *livekit.ReconnectResponse, recentlyDisconnectedParticipants []*livekit.ParticipantInfo) error
 	IssueFullReconnect(reason ParticipantCloseReason)
 	SendRoomMovedResponse(moved *livekit.RoomMovedResponse) error
 	SendDataTrackSubscriberHandles(handles map[uint32]*livekit.DataTrackSubscriberHandles_PublishedDataTrack) error
+	GetRecentlyDisconnectedParticipants() []*livekit.ParticipantInfo
 
 	AddOnClose(key string, callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))
@@ -498,6 +607,9 @@ type LocalParticipant interface {
 		dataTracks []*livekit.PublishDataTrackResponse,
 	)
 	IsReconnect() bool
+	IsMigration() bool
+	LeaveSession(leave func())
+	JoinSession(join func())
 	MoveToRoom(params MoveToRoomParams)
 
 	UpdateMediaRTT(rtt uint32)
@@ -537,6 +649,9 @@ type LocalParticipant interface {
 	HandlePublishDataTrackRequest(*livekit.PublishDataTrackRequest)
 	HandleUnpublishDataTrackRequest(*livekit.UnpublishDataTrackRequest)
 	HandleUpdateDataSubscription(*livekit.UpdateDataSubscription)
+	HandleStoreDataBlobRequest(*livekit.StoreDataBlobRequest)
+	HandleGetDataBlobRequest(*livekit.GetDataBlobRequest)
+	ProcessGetDataBlobRequest(*livekit.GetDataBlobRequest, Participant)
 
 	HandleSignalMessage(msg proto.Message) error
 
@@ -547,6 +662,8 @@ type LocalParticipant interface {
 	ClearParticipantListener()
 
 	GetNextSubscribedDataTrackHandle() uint16
+
+	GetAllDataBlob() []*livekit.DataBlob
 }
 
 // ---------------------------------------------
@@ -596,6 +713,8 @@ type LocalParticipantListener interface {
 	)
 	OnUpdateSubscriptionPermission(LocalParticipant, *livekit.SubscriptionPermission) error
 	OnUpdateDataSubscriptions(LocalParticipant, *livekit.UpdateDataSubscription)
+	OnStoreDataBlob(LocalParticipant, *livekit.DataBlob)
+	OnGetDataBlob(LocalParticipant, *livekit.GetDataBlobRequest)
 	OnSyncState(LocalParticipant, *livekit.SyncState) error
 	OnSimulateScenario(LocalParticipant, *livekit.SimulateScenario) error
 	OnLeave(LocalParticipant, ParticipantCloseReason)
@@ -627,6 +746,10 @@ func (*NullLocalParticipantListener) OnUpdateSubscriptionPermission(LocalPartici
 }
 func (*NullLocalParticipantListener) OnUpdateDataSubscriptions(LocalParticipant, *livekit.UpdateDataSubscription) {
 }
+func (*NullLocalParticipantListener) OnStoreDataBlob(LocalParticipant, *livekit.DataBlob) {
+}
+func (*NullLocalParticipantListener) OnGetDataBlob(LocalParticipant, *livekit.GetDataBlobRequest) {
+}
 func (*NullLocalParticipantListener) OnSyncState(LocalParticipant, *livekit.SyncState) error {
 	return nil
 }
@@ -639,13 +762,14 @@ func (*NullLocalParticipantListener) OnLeave(LocalParticipant, ParticipantCloseR
 
 //counterfeiter:generate . ParticipantTelemetryListener
 type ParticipantTelemetryListener interface {
-	OnTrackPublishRequested(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo)
+	OnTrackPublishRequested(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool)
 	OnTrackPublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool)
-	OnTrackUnpublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool)
+	OnTrackUnpublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, wasPublishedLocally bool, shouldSendEvent bool)
 	OnTrackSubscribeRequested(pID livekit.ParticipantID, ti *livekit.TrackInfo)
 	OnTrackSubscribed(pID livekit.ParticipantID, ti *livekit.TrackInfo, publisherInfo *livekit.ParticipantInfo, shouldSendEvent bool)
 	OnTrackUnsubscribed(pID livekit.ParticipantID, ti *livekit.TrackInfo, shouldSendEvent bool)
-	OnTrackSubscribeFailed(pID livekit.ParticipantID, ti livekit.TrackID, err error, isUserError bool)
+	OnTrackSubscribeFailed(pID livekit.ParticipantID, trackID livekit.TrackID, err error, isUserError bool)
+	OnTrackSubscribeStreamStarted(pID livekit.ParticipantID, ti *livekit.TrackInfo, elapsed time.Duration)
 	OnTrackMuted(pID livekit.ParticipantID, ti *livekit.TrackInfo)
 	OnTrackUnmuted(pID livekit.ParticipantID, ti *livekit.TrackInfo)
 	OnTrackPublishedUpdate(pID livekit.ParticipantID, ti *livekit.TrackInfo)
@@ -660,11 +784,11 @@ var _ ParticipantTelemetryListener = (*NullParticipantTelemetryListener)(nil)
 
 type NullParticipantTelemetryListener struct{}
 
-func (NullParticipantTelemetryListener) OnTrackPublishRequested(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo) {
+func (NullParticipantTelemetryListener) OnTrackPublishRequested(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool) {
 }
 func (NullParticipantTelemetryListener) OnTrackPublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool) {
 }
-func (NullParticipantTelemetryListener) OnTrackUnpublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool) {
+func (NullParticipantTelemetryListener) OnTrackUnpublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, wasPublishedLocally bool, shouldSendEvent bool) {
 }
 func (NullParticipantTelemetryListener) OnTrackSubscribeRequested(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
 }
@@ -672,7 +796,9 @@ func (NullParticipantTelemetryListener) OnTrackSubscribed(pID livekit.Participan
 }
 func (NullParticipantTelemetryListener) OnTrackUnsubscribed(pID livekit.ParticipantID, ti *livekit.TrackInfo, shouldSendEvent bool) {
 }
-func (NullParticipantTelemetryListener) OnTrackSubscribeFailed(pID livekit.ParticipantID, ti livekit.TrackID, err error, isUserError bool) {
+func (NullParticipantTelemetryListener) OnTrackSubscribeFailed(pID livekit.ParticipantID, trackID livekit.TrackID, err error, isUserError bool) {
+}
+func (NullParticipantTelemetryListener) OnTrackSubscribeStreamStarted(pID livekit.ParticipantID, ti *livekit.TrackInfo, elapsed time.Duration) {
 }
 func (NullParticipantTelemetryListener) OnTrackMuted(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
 }
@@ -761,6 +887,7 @@ type MediaTrack interface {
 	ClearAllReceivers(isExpectedToResume bool)
 
 	IsEncrypted() bool
+	HasPacketTrailer() bool
 }
 
 //counterfeiter:generate . LocalMediaTrack
@@ -771,6 +898,11 @@ type LocalMediaTrack interface {
 
 	HasSignalCid(cid string) bool
 	HasSdpCid(cid string) bool
+
+	SetMigrated(bool)
+	Migrated() bool
+	SetPublished(bool)
+	Published() bool
 
 	GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality)
 	GetTrackStats() *livekit.RTPStats
@@ -798,6 +930,7 @@ type DataTrack interface {
 	AddSubscriber(sub LocalParticipant) (DataDownTrack, error)
 	RemoveSubscriber(participantID livekit.ParticipantID)
 	IsSubscriber(subID livekit.ParticipantID) bool
+	RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity
 
 	AddDataDownTrack(sender DataTrackSender) error
 	DeleteDataDownTrack(subscriberID livekit.ParticipantID)
@@ -810,6 +943,7 @@ type DataTrack interface {
 //counterfeiter:generate . DataDownTrack
 type DataDownTrack interface {
 	Close()
+	OnClose(fn func())
 
 	Handle() uint16
 	PublishDataTrack() DataTrack
@@ -833,6 +967,7 @@ type DataTrackTransport interface {
 type SubscribedTrack interface {
 	AddOnBind(f func(error))
 	IsBound() bool
+	OnSubscribeStreamStarted(f func(elapsed time.Duration))
 	Close(isExpectedToResume bool)
 	OnClose(f func(isExpectedToResume bool))
 	ID() livekit.TrackID
@@ -874,8 +1009,10 @@ type DataResolverResult struct {
 	TrackChangedNotifier ChangeNotifier
 	TrackRemovedNotifier ChangeNotifier
 	DataTrack            DataTrack
-	PublisherID          livekit.ParticipantID
-	PublisherIdentity    livekit.ParticipantIdentity
+	// is permission given to the requesting participant
+	HasPermission     bool
+	PublisherID       livekit.ParticipantID
+	PublisherIdentity livekit.ParticipantIdentity
 }
 
 // MediaTrackResolver locates a specific media track for a subscriber

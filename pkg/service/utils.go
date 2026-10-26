@@ -15,16 +15,20 @@
 package service
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ua-parser/uap-go/uaparser"
 	"gopkg.in/yaml.v3"
@@ -38,6 +42,33 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
+
+var (
+	ErrGzipReadFailed      = errors.New("cannot read decompressed data")
+	ErrGzipTooLarge        = errors.New("decompressed data too large")
+	ErrRequestBodyTooLarge = errors.New("request body too large")
+)
+
+var gzipReaderPool = sync.Pool{
+	New: func() any { return &gzip.Reader{} },
+}
+
+func DecompressGzip(compressed []byte) ([]byte, error) {
+	reader := gzipReaderPool.Get().(*gzip.Reader)
+	defer gzipReaderPool.Put(reader)
+	if err := reader.Reset(bytes.NewReader(compressed)); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrGzipReadFailed, err)
+	}
+
+	out, err := io.ReadAll(io.LimitReader(reader, http.DefaultMaxHeaderBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrGzipReadFailed, err)
+	}
+	if len(out) > http.DefaultMaxHeaderBytes {
+		return nil, ErrGzipTooLarge
+	}
+	return out, nil
+}
 
 func handleError(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...any) {
 	keysAndValues = append(keysAndValues, "status", status)
@@ -70,9 +101,55 @@ func boolValue(s string) bool {
 }
 
 func RemoveDoubleSlashes(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-	if strings.HasPrefix(r.URL.Path, "//") {
+	// Path and RawPath must move together: once they disagree, EscapedPath()
+	// re-encodes from Path and every escape in the request is lost.
+	if strings.HasPrefix(r.URL.EscapedPath(), "//") {
 		r.URL.Path = r.URL.Path[1:]
+		if r.URL.RawPath != "" {
+			r.URL.RawPath = r.URL.RawPath[1:]
+		}
 	}
+	next(w, r)
+}
+
+// WithPathNormalization applies RemoveDoubleSlashes ahead of h, so routing and every
+// middleware below it see one path form.
+func WithPathNormalization(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		RemoveDoubleSlashes(w, r, h.ServeHTTP)
+	})
+}
+
+// RequestBodyLimiter bounds the size of an incoming HTTP request body so that
+// large messages cannot exhaust memory. The Twirp handlers decode the whole
+// body before any grant check runs, so the limit is applied here, up front.
+//
+// It does not decode the body itself: a request whose Content-Length exceeds
+// the limit is rejected with 413, and the body is wrapped with
+// http.MaxBytesReader so a missing or dishonest Content-Length is still caught
+// by the downstream decoder.
+type RequestBodyLimiter struct {
+	maxBytes int64
+}
+
+func NewRequestBodyLimiter(maxBytes int64) *RequestBodyLimiter {
+	return &RequestBodyLimiter{maxBytes: maxBytes}
+}
+
+func (l *RequestBodyLimiter) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	if l.maxBytes <= 0 || r.Body == nil {
+		next(w, r)
+		return
+	}
+
+	// reject early when the declared size already exceeds the limit
+	if r.ContentLength > l.maxBytes {
+		HandleError(w, r, http.StatusRequestEntityTooLarge, ErrRequestBodyTooLarge)
+		return
+	}
+
+	// bound the read in case Content-Length is missing or wrong
+	r.Body = http.MaxBytesReader(w, r.Body, l.maxBytes)
 	next(w, r)
 }
 
@@ -109,6 +186,7 @@ func SetRoomConfiguration(createRequest *livekit.CreateRoomRequest, conf *liveki
 	createRequest.MaxPlayoutDelay = conf.MaxPlayoutDelay
 	createRequest.SyncStreams = conf.SyncStreams
 	createRequest.Metadata = conf.Metadata
+	createRequest.Tags = conf.Tags
 }
 
 func ParseClientInfo(r *http.Request) *livekit.ClientInfo {
@@ -158,6 +236,18 @@ func ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 	ci.DeviceModel = values.Get("device_model")
 	ci.Network = values.Get("network")
 
+	if capStr := values.Get("capabilities"); capStr != "" {
+		for _, name := range strings.Split(capStr, ",") {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			if v, ok := livekit.ClientInfo_Capability_value[name]; ok {
+				ci.Capabilities = append(ci.Capabilities, livekit.ClientInfo_Capability(v))
+			}
+		}
+	}
+
 	AugmentClientInfo(ci, r)
 
 	return ci
@@ -204,6 +294,10 @@ func getUserAgentParser() *uaparser.Parser {
 }
 
 func AugmentClientInfo(ci *livekit.ClientInfo, req *http.Request) {
+	if ci == nil {
+		return
+	}
+
 	// get real address (forwarded http header) - check Cloudflare headers first, fall back to X-Forwarded-For
 	ci.Address = GetClientIP(req)
 
@@ -243,6 +337,7 @@ type ValidateConnectRequestParams struct {
 type ValidateConnectRequestResult struct {
 	roomName          livekit.RoomName
 	grants            *auth.ClaimGrants
+	tokenExpiresAt    time.Time
 	region            string
 	createRoomRequest *livekit.CreateRoomRequest
 }
@@ -271,9 +366,6 @@ func ValidateConnectRequest(
 	if claims.Identity == "" {
 		return res, http.StatusBadRequest, ErrIdentityEmpty
 	}
-	if !limitConfig.CheckParticipantIdentityLength(claims.Identity) {
-		return res, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrParticipantIdentityExceedsLimits, limitConfig.MaxParticipantIdentityLength)
-	}
 
 	if claims.RoomConfig != nil {
 		if err := claims.RoomConfig.CheckCredentials(); err != nil {
@@ -289,8 +381,30 @@ func ValidateConnectRequest(
 	if res.roomName == "" {
 		return res, http.StatusBadRequest, ErrNoRoomName
 	}
-	if !limitConfig.CheckRoomNameLength(string(res.roomName)) {
-		return res, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, limitConfig.MaxRoomNameLength)
+
+	if len(params.metadata) != 0 {
+		// Make sure grant has GetCanUpdateOwnMetadata set
+		if !claims.Video.GetCanUpdateOwnMetadata() {
+			return res, http.StatusUnauthorized, rtc.ErrPermissionDenied
+		}
+		claims.Metadata = params.metadata
+	}
+
+	// Add extra attributes to the participant
+	if len(params.attributes) != 0 {
+		// Make sure grant has GetCanUpdateOwnMetadata set
+		if !claims.Video.GetCanUpdateOwnMetadata() {
+			return res, http.StatusUnauthorized, rtc.ErrPermissionDenied
+		}
+		if claims.Attributes == nil {
+			claims.Attributes = make(map[string]string, len(params.attributes))
+		}
+		for k, v := range params.attributes {
+			if v == "" {
+				continue // do not allow deleting existing attributes
+			}
+			claims.Attributes[k] = v
+		}
 	}
 
 	// this is new connection for existing participant -  with publish only permissions
@@ -302,6 +416,11 @@ func ValidateConnectRequest(
 		// Make sure by default subscribe is off
 		claims.Video.SetCanSubscribe(false)
 		claims.Identity += "#" + params.publish
+	}
+
+	// after the publish suffix, so the identity checked is the one StartSession sees
+	if err := CheckConnectLimits(limitConfig, claims.Identity, res.roomName, claims); err != nil {
+		return res, http.StatusBadRequest, err
 	}
 
 	// room allocator validations
@@ -330,31 +449,46 @@ func ValidateConnectRequest(
 	SetRoomConfiguration(createRequest, claims.GetRoomConfiguration())
 	res.createRoomRequest = createRequest
 
-	if len(params.metadata) != 0 {
-		// Make sure grant has GetCanUpdateOwnMetadata set
-		if !claims.Video.GetCanUpdateOwnMetadata() {
-			return res, http.StatusUnauthorized, rtc.ErrPermissionDenied
-		}
-		claims.Metadata = params.metadata
-	}
-
-	// Add extra attributes to the participant
-	if len(params.attributes) != 0 {
-		// Make sure grant has GetCanUpdateOwnMetadata set
-		if !claims.Video.GetCanUpdateOwnMetadata() {
-			return res, http.StatusUnauthorized, rtc.ErrPermissionDenied
-		}
-		if claims.Attributes == nil {
-			claims.Attributes = make(map[string]string, len(params.attributes))
-		}
-		for k, v := range params.attributes {
-			if v == "" {
-				continue // do not allow deleting existing attributes
-			}
-			claims.Attributes[k] = v
-		}
-	}
-
 	res.grants = claims
+	res.tokenExpiresAt = GetTokenExpiresAt(r.Context())
 	return res, http.StatusOK, nil
+}
+
+// CheckConnectLimits checks a join's identity, room name, participant name, metadata and
+// attributes against the configured limits. Every join path runs it: the signal connection,
+// WHIP, and StartSession on the RTC node, which does not trust the caller's validation.
+// It is exported for servers that embed this package and run their own join paths.
+func CheckConnectLimits(limitConfig config.LimitConfig, identity string, roomName livekit.RoomName, grants *auth.ClaimGrants) error {
+	if !limitConfig.CheckParticipantIdentityLength(identity) {
+		return fmt.Errorf("%w: max length %d", ErrParticipantIdentityExceedsLimits, limitConfig.MaxParticipantIdentityLength)
+	}
+	if !limitConfig.CheckRoomNameLength(string(roomName)) {
+		return fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, limitConfig.MaxRoomNameLength)
+	}
+	if !limitConfig.CheckParticipantNameLength(grants.Name) {
+		return fmt.Errorf("%w: max length %d", ErrNameExceedsLimits, limitConfig.MaxParticipantNameLength)
+	}
+	if !limitConfig.CheckMetadataSize(grants.Metadata) {
+		return fmt.Errorf("%w: max size %d", ErrMetadataExceedsLimits, limitConfig.MaxMetadataSize)
+	}
+	if !limitConfig.CheckAttributesSize(grants.Attributes) {
+		return fmt.Errorf("%w: max size %d", ErrAttributeExceedsLimits, limitConfig.MaxAttributesSize)
+	}
+	return nil
+}
+
+func IsRTCPath(path string) bool {
+	return path == "/rtc" || path == "/rtc/v1"
+}
+
+func IsRTCValidatePath(path string) bool {
+	return path == "/rtc/validate" || path == "/rtc/v1/validate"
+}
+
+func IsAgentWorkerPath(path string) bool {
+	return path == "/agent"
+}
+
+func IsAgentPath(path string) bool {
+	return strings.HasPrefix(path, "/agent")
 }

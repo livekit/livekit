@@ -22,7 +22,7 @@ import (
 	"os"
 
 	"github.com/google/wire"
-	"github.com/pion/turn/v4"
+	"github.com/pion/turn/v5"
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
 	"gopkg.in/yaml.v3"
@@ -35,9 +35,11 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 	"github.com/livekit/psrpc"
+	"github.com/livekit/psrpc/pkg/bus/redisbus"
 	"github.com/livekit/psrpc/pkg/middleware/otelpsrpc"
 
 	"github.com/livekit/livekit-server/pkg/agent"
+	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -56,11 +58,11 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		getNodeStatsConfig,
 		routing.CreateRouter,
 		getLimitConf,
-		config.DefaultAPIConfig,
+		getAPIConf,
 		wire.Bind(new(routing.MessageRouter), new(routing.Router)),
 		wire.Bind(new(livekit.RoomService), new(*RoomService)),
 		telemetry.NewAnalyticsService,
-		telemetry.NewTelemetryService,
+		createTelemetryService,
 		getMessageBus,
 		NewIOInfoService,
 		wire.Bind(new(IOClient), new(*IOInfoService)),
@@ -80,7 +82,12 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewRoomService,
 		NewRTCService,
 		NewWHIPService,
-		NewAgentService,
+		endpoint.NewRegistry,
+		NewEndpointScopes,
+		NewAgentHandler,
+		NewAgentWSService,
+		NewAgentWTService,
+		NewAgentEndpointService,
 		NewAgentDispatchService,
 		getAgentConfig,
 		agent.NewAgentClient,
@@ -171,6 +178,14 @@ func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (webh
 	return webhook.NewDefaultNotifier(wc, provider)
 }
 
+func createTelemetryService(notifier webhook.QueuedNotifier, analytics telemetry.AnalyticsService) telemetry.TelemetryService {
+	svc := telemetry.NewTelemetryService(notifier, analytics)
+	if notifier != nil {
+		notifier.RegisterProcessedHook(svc.Webhook)
+	}
+	return svc
+}
+
 func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 	if !conf.Redis.IsConfigured() {
 		return nil, nil
@@ -185,11 +200,12 @@ func createStore(rc redis.UniversalClient) ObjectStore {
 	return NewLocalStore()
 }
 
-func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
+func getMessageBus(rc redis.UniversalClient, psrpcConf rpc.PSRPCConfig) psrpc.MessageBus {
+	opts := psrpcConf.BusOptions()
 	if rc == nil {
-		return psrpc.NewLocalMessageBus()
+		return psrpc.NewLocalMessageBus(opts...)
 	}
-	return psrpc.NewRedisMessageBus(rc)
+	return redisbus.New(rc, opts...)
 }
 
 func getEgressStore(s ObjectStore) EgressStore {
@@ -290,4 +306,8 @@ func getNodeStatsConfig(config *config.Config) config.NodeStatsConfig {
 
 func getAgentConfig(config *config.Config) agent.Config {
 	return config.Agents
+}
+
+func getAPIConf(config *config.Config) config.APIConfig {
+	return config.API
 }

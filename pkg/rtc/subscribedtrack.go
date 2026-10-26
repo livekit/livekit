@@ -48,6 +48,7 @@ type SubscribedTrackParams struct {
 	Subscriber                   types.LocalParticipant
 	MediaTrack                   types.MediaTrack
 	AdaptiveStream               bool
+	EnableStartAtDesiredQuality  bool
 	TelemetryListener            types.ParticipantTelemetryListener
 	WrappedReceiver              *WrappedReceiver
 	IsRelayed                    bool
@@ -73,7 +74,8 @@ type SubscribedTrack struct {
 	bound           bool
 	onBindCallbacks []func(error)
 
-	onClose atomic.Value // func(bool)
+	onSubscribeStreamStarted atomic.Value //func(time.Duration)
+	onClose                  atomic.Value // func(bool)
 
 	debouncer func(func())
 
@@ -129,18 +131,23 @@ func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) 
 	if isEncrypted {
 		trailer = params.Subscriber.GetTrailer()
 	}
+	subClientInfo := ClientInfo{ClientInfo: params.Subscriber.GetClientInfo()}
+	subSupportsPacketTrailer := subClientInfo.SupportsPacketTrailer()
+	// Strip packet trailer if track has packet trailer but subscriber does not have cap
+	stripPacketTrailer := params.MediaTrack.HasPacketTrailer() && !subSupportsPacketTrailer
 	downTrack, err := sfu.NewDownTrack(sfu.DownTrackParams{
-		Codecs:            codecs,
-		IsEncrypted:       isEncrypted,
-		Source:            params.MediaTrack.Source(),
-		Receiver:          params.WrappedReceiver,
-		BufferFactory:     params.Subscriber.GetBufferFactory(),
-		SubID:             params.Subscriber.ID(),
-		StreamID:          streamID,
-		MaxTrack:          maxTrack,
-		PlayoutDelayLimit: params.Subscriber.GetPlayoutDelayConfig(),
-		Pacer:             params.Subscriber.GetPacer(),
-		Trailer:           trailer,
+		Codecs:             codecs,
+		IsEncrypted:        isEncrypted,
+		Source:             params.MediaTrack.Source(),
+		Receiver:           params.WrappedReceiver,
+		BufferFactory:      params.Subscriber.GetBufferFactory(),
+		SubID:              params.Subscriber.ID(),
+		StreamID:           streamID,
+		MaxTrack:           maxTrack,
+		PlayoutDelayLimit:  params.Subscriber.GetPlayoutDelayConfig(),
+		Pacer:              params.Subscriber.GetPacer(),
+		Trailer:            trailer,
+		StripPacketTrailer: stripPacketTrailer,
 		Logger: LoggerWithTrack(
 			params.Subscriber.GetLogger().WithComponent(sutils.ComponentSub),
 			params.MediaTrack.ID(),
@@ -149,6 +156,8 @@ func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) 
 		RTCPWriter:                     params.Subscriber.WriteSubscriberRTCP,
 		DisableSenderReportPassThrough: params.Subscriber.GetDisableSenderReportPassThrough(),
 		SupportsCodecChange:            params.Subscriber.SupportsCodecChange(),
+		EnableStartAtDesiredQuality:    params.EnableStartAtDesiredQuality,
+		RTXBudget:                      params.SubscriberConfig.RTXBudget,
 		Listener:                       s,
 	})
 	if err != nil {
@@ -207,7 +216,12 @@ func (t *SubscribedTrack) Bound(err error) {
 				t.logger.Debugw("enabling subscriber track settings on bind", "settings", logger.Proto(t.settings))
 			}
 		} else {
-			if t.params.AdaptiveStream {
+			if t.params.EnableStartAtDesiredQuality {
+				// default to HIGH quality so the subscriber acquires the top layer directly instead of
+				// ramping up from a lower layer. adaptive stream clients can still scale down afterwards
+				// based on viewport.
+				t.settings = &livekit.UpdateTrackSettings{Quality: livekit.VideoQuality_HIGH}
+			} else if t.params.AdaptiveStream {
 				t.settings = &livekit.UpdateTrackSettings{Quality: livekit.VideoQuality_LOW}
 			} else {
 				t.settings = &livekit.UpdateTrackSettings{Quality: livekit.VideoQuality_HIGH}
@@ -226,8 +240,12 @@ func (t *SubscribedTrack) Bound(err error) {
 // for DownTrack callback to notify us that it's closed
 func (t *SubscribedTrack) Close(isExpectedToResume bool) {
 	if onClose := t.onClose.Load(); onClose != nil {
-		go onClose.(func(bool))(isExpectedToResume)
+		onClose.(func(bool))(isExpectedToResume)
 	}
+}
+
+func (t *SubscribedTrack) OnSubscribeStreamStarted(f func(time.Duration)) {
+	t.onSubscribeStreamStarted.Store(f)
 }
 
 func (t *SubscribedTrack) OnClose(f func(bool)) {
@@ -306,7 +324,7 @@ func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrack
 	}
 
 	isImmediate = isImmediate || (!settings.Disabled && settings.Disabled != t.isMutedLocked())
-	t.settings = utils.CloneProto(settings)
+	t.settings = proto.CloneOf(settings)
 	t.logger.Debugw("saving subscriber track settings", "settings", logger.Proto(t.settings))
 	t.settingsLock.Unlock()
 
@@ -408,6 +426,8 @@ func (t *SubscribedTrack) OnStatsUpdate(stat *livekit.AnalyticsStat) {
 	if cs, ok := telemetry.CondenseStat(stat); ok {
 		ti := t.params.WrappedReceiver.TrackInfo()
 		t.reporter.Tx(func(tx roomobs.TrackTx) {
+			tx.ParticipantSession().ReportKindCode(roomobs.ParticipantKindCode(t.params.Subscriber.Kind()))
+			tx.ParticipantSession().ReportKindDetailsCodes(roomobs.ParticipantKindDetailsCodes(t.params.Subscriber.KindDetails()))
 			tx.ReportName(ti.Name)
 			tx.ReportKind(roomobs.TrackKindSub)
 			tx.ReportType(roomobs.TrackTypeFromProto(ti.Type))
@@ -472,10 +492,15 @@ func (t *SubscribedTrack) OnDownTrackClose(isExpectedToResume bool) {
 		}
 	}
 
-	go func() {
-		if t.params.OnDownTrackClosed != nil {
-			t.params.OnDownTrackClosed(t.params.Subscriber.ID())
-		}
-		t.Close(isExpectedToResume)
-	}()
+	if t.params.OnDownTrackClosed != nil {
+		t.params.OnDownTrackClosed(t.params.Subscriber.ID())
+	}
+	t.Close(isExpectedToResume)
+}
+
+func (t *SubscribedTrack) OnStreamStarted(elapsed time.Duration) {
+	t.params.TelemetryListener.OnTrackSubscribeStreamStarted(t.params.Subscriber.ID(), t.params.MediaTrack.ToProto(), elapsed)
+	if onSubscribeStreamStarted := t.onSubscribeStreamStarted.Load(); onSubscribeStreamStarted != nil {
+		onSubscribeStreamStarted.(func(time.Duration))(elapsed)
+	}
 }

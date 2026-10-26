@@ -21,7 +21,7 @@ import (
 
 	"github.com/dennwc/iters"
 	"github.com/twitchtv/twirp"
-	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -61,6 +61,17 @@ func NewSIPService(
 		store:       store,
 		roomService: rs,
 	}
+}
+
+// Returns a new UnlikelyLogger, populated with values from the request context
+// (e.g. service, method, etc.).
+func unlikelyLoggerFromCtx(ctx context.Context) logger.UnlikelyLogger {
+	var logFields []any
+	logCtx, ok := ctx.Value(twirpLoggerKey{}).(*twirpLogger)
+	if ok {
+		logFields = logCtx.fields
+	}
+	return logger.GetLogger().WithUnlikelyValues(logFields...)
 }
 
 func (s *SIPService) CreateSIPTrunk(ctx context.Context, req *livekit.CreateSIPTrunkRequest) (*livekit.SIPTrunkInfo, error) {
@@ -116,7 +127,7 @@ func (s *SIPService) CreateSIPInboundTrunk(ctx context.Context, req *livekit.Cre
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
-	if err := req.Validate(); err != nil {
+	if err := req.ValidateResult().LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
 		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
 
@@ -155,7 +166,7 @@ func (s *SIPService) CreateSIPOutboundTrunk(ctx context.Context, req *livekit.Cr
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
-	if err := req.Validate(); err != nil {
+	if err := req.ValidateResult().LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
 		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
 
@@ -180,7 +191,7 @@ func (s *SIPService) UpdateSIPInboundTrunk(ctx context.Context, req *livekit.Upd
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
-	if err := req.Validate(); err != nil {
+	if err := req.ValidateResult().LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
 		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
 
@@ -201,8 +212,9 @@ func (s *SIPService) UpdateSIPInboundTrunk(ctx context.Context, req *livekit.Upd
 	default:
 		return nil, errors.New("missing or unsupported action")
 	case livekit.UpdateSIPInboundTrunkRequestAction:
-		info, err = a.Apply(info)
-		if err != nil {
+		var result livekit.ValidationResult
+		info, result = a.ApplyResult(info)
+		if err := result.LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
 			return nil, err
 		}
 	}
@@ -235,7 +247,7 @@ func (s *SIPService) UpdateSIPOutboundTrunk(ctx context.Context, req *livekit.Up
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
-	if err := req.Validate(); err != nil {
+	if err := req.ValidateResult().LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
 		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
 
@@ -255,8 +267,9 @@ func (s *SIPService) UpdateSIPOutboundTrunk(ctx context.Context, req *livekit.Up
 	default:
 		return nil, errors.New("missing or unsupported action")
 	case livekit.UpdateSIPOutboundTrunkRequestAction:
-		info, err = a.Apply(info)
-		if err != nil {
+		var result livekit.ValidationResult
+		info, result = a.ApplyResult(info)
+		if err := result.LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
 			return nil, err
 		}
 	}
@@ -421,6 +434,7 @@ func (s *SIPService) CreateSIPDispatchRule(ctx context.Context, req *livekit.Cre
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
+	req.DispatchRule.Upgrade()
 	if err := req.Validate(); err != nil {
 		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
@@ -583,7 +597,7 @@ func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.Crea
 	ireq, err := s.CreateSIPParticipantRequest(ctx, req, "", "", "", "")
 	if err != nil {
 		unlikelyLogger.Errorw("cannot create sip participant request", err)
-		return nil, err
+		return nil, wrapSIPContextError(err)
 	}
 	unlikelyLogger = unlikelyLogger.WithValues(
 		"callID", ireq.SipCallId,
@@ -612,7 +626,7 @@ func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.Crea
 	resp, err := s.psrpcClient.CreateSIPParticipant(ctx, "", ireq, psrpc.WithRequestTimeout(timeout))
 	if err != nil {
 		unlikelyLogger.Errorw("cannot create sip participant", err)
-		return nil, err
+		return nil, wrapSIPContextError(err)
 	}
 	return &livekit.SIPParticipantInfo{
 		ParticipantId:       resp.ParticipantId,
@@ -629,18 +643,17 @@ func (s *SIPService) CreateSIPParticipantRequest(ctx context.Context, req *livek
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
-	if err := req.Validate(); err != nil {
-		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
-	}
+	req.Upgrade()
 	callID := sip.NewCallID()
 	log := logger.GetLogger().WithUnlikelyValues(
 		"callID", callID,
 		"room", req.RoomName,
 		"sipTrunk", req.SipTrunkId,
 		"toUser", req.SipCallTo,
+		"projectID", projectID,
 	)
-	if projectID != "" {
-		log = log.WithValues("projectID", projectID)
+	if err := req.ValidateResult().LogUnlikelySoftErrors(log); err != nil {
+		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
 
 	var trunk *livekit.SIPOutboundTrunkInfo
@@ -655,27 +668,31 @@ func (s *SIPService) CreateSIPParticipantRequest(ctx context.Context, req *livek
 			return nil, err
 		}
 	}
-	return rpc.NewCreateSIPParticipantRequest(projectID, callID, host, wsUrl, token, req, trunk)
+	if trunk != nil && trunk.FromHost != "" {
+		host = trunk.FromHost
+	} else if t := req.Trunk; t != nil && t.FromHost != "" {
+		host = t.FromHost
+	}
+	internalReq, result := rpc.NewCreateSIPParticipantRequestResult(projectID, callID, host, wsUrl, token, req, trunk)
+	if err := result.LogUnlikelySoftErrors(log); err != nil {
+		return nil, err
+	}
+	return internalReq, nil
 }
 
-func (s *SIPService) TransferSIPParticipant(ctx context.Context, req *livekit.TransferSIPParticipantRequest) (*emptypb.Empty, error) {
-	log := logger.GetLogger().WithUnlikelyValues(
-		"room", req.RoomName,
-		"participant", req.ParticipantIdentity,
-		"transferTo", req.TransferTo,
-		"playDialtone", req.PlayDialtone,
-	)
+func (s *SIPService) TransferSIPParticipant(ctx context.Context, req *livekit.TransferSIPParticipantRequest) (*livekit.TransferSIPParticipantResponse, error) {
 	AppendLogFields(ctx,
 		"room", req.RoomName,
 		"participant", req.ParticipantIdentity,
 		"transferTo", req.TransferTo,
 		"playDialtone", req.PlayDialtone,
 	)
+	log := unlikelyLoggerFromCtx(ctx)
 
-	ireq, err := s.transferSIPParticipantRequest(ctx, req)
+	ireq, err := s.transferSIPParticipantRequest(ctx, req, log)
 	if err != nil {
 		log.Errorw("cannot create transfer sip participant request", err)
-		return nil, err
+		return nil, wrapSIPContextError(err)
 	}
 
 	// by default we set the timeout to be 30 seconds.
@@ -699,16 +716,26 @@ func (s *SIPService) TransferSIPParticipant(ctx context.Context, req *livekit.Tr
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
-	_, err = s.psrpcClient.TransferSIPParticipant(ctx, ireq.SipCallId, ireq, psrpc.WithRequestTimeout(timeout))
+
+	// Send the resolved timeout so the SIP node uses our deadline, not its
+	// own default (which could outlive us).
+	ireq.RingingTimeout = durationpb.New(timeout)
+
+	iresp, err := s.psrpcClient.TransferSIPParticipant(ctx, ireq.SipCallId, ireq, psrpc.WithRequestTimeout(timeout))
 	if err != nil {
 		log.Errorw("cannot transfer sip participant", err)
-		return nil, err
+		return nil, wrapSIPContextError(err)
 	}
 
-	return &emptypb.Empty{}, nil
+	return &livekit.TransferSIPParticipantResponse{
+		TransferId: iresp.GetTransferId(),
+		Status:     iresp.GetStatus(),
+		Reason:     iresp.GetReason(),
+		SipStatus:  iresp.GetSipStatus(),
+	}, nil
 }
 
-func (s *SIPService) transferSIPParticipantRequest(ctx context.Context, req *livekit.TransferSIPParticipantRequest) (*rpc.InternalTransferSIPParticipantRequest, error) {
+func (s *SIPService) transferSIPParticipantRequest(ctx context.Context, req *livekit.TransferSIPParticipantRequest, log logger.UnlikelyLogger) (*rpc.InternalTransferSIPParticipantRequest, error) {
 	if req.RoomName == "" {
 		return nil, psrpc.NewErrorf(psrpc.InvalidArgument, "Missing room name")
 	}
@@ -723,7 +750,8 @@ func (s *SIPService) transferSIPParticipantRequest(ctx context.Context, req *liv
 	if err := EnsureAdminPermission(ctx, livekit.RoomName(req.RoomName)); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	if err := req.Validate(); err != nil {
+
+	if err := req.ValidateResult().LogUnlikelySoftErrors(log); err != nil {
 		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
 
@@ -748,4 +776,25 @@ func (s *SIPService) transferSIPParticipantRequest(ctx context.Context, req *liv
 		Headers:        req.Headers,
 		RingingTimeout: req.RingingTimeout,
 	}, nil
+}
+
+// wrapSIPContextError converts raw context.DeadlineExceeded / context.Canceled
+// into psrpc-coded errors so they aren't surfaced as @code:unknown / HTTP 500
+// at the Twirp boundary. psrpc errors and any error that already carries a
+// gRPC status are passed through unchanged.
+func wrapSIPContextError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var psErr psrpc.Error
+	if errors.As(err, &psErr) {
+		return err
+	}
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return psrpc.NewError(psrpc.DeadlineExceeded, err)
+	case errors.Is(err, context.Canceled):
+		return psrpc.NewError(psrpc.Canceled, err)
+	}
+	return err
 }

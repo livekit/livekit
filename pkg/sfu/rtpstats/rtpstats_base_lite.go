@@ -319,9 +319,9 @@ func (r *rtpStatsBaseLite) deltaInfoLite(
 	snapshotLiteID uint32,
 	extStartSN uint64,
 	extHighestSN uint64,
-) (deltaInfoLite *RTPDeltaInfoLite, err error, loggingFields []any) {
-	then, now := r.getAndResetSnapshotLite(snapshotLiteID, extStartSN, extHighestSN)
-	if now == nil || then == nil {
+) (deltaInfoLite *RTPDeltaInfoLite, loggingFields []any, err error) {
+	then, now, ok := r.getAndResetSnapshotLite(snapshotLiteID, extStartSN, extHighestSN)
+	if !ok {
 		return
 	}
 
@@ -421,7 +421,7 @@ func (r *rtpStatsBaseLite) marshalLogObject(e zapcore.ObjectEncoder, packetsExpe
 		if sb.Len() > 0 {
 			sb.WriteString(", ")
 		}
-		sb.WriteString(fmt.Sprintf("%d:%d", burst+1, count))
+		fmt.Fprintf(&sb, "%d:%d", burst+1, count)
 	}
 	if sb.Len() > 0 {
 		e.AddString("gapHistogram", "["+sb.String()+"]")
@@ -493,9 +493,9 @@ func (r *rtpStatsBaseLite) toProto(packetsExpected, packetsSeenMinusPadding, pac
 	return p
 }
 
-func (r *rtpStatsBaseLite) getAndResetSnapshotLite(snapshotLiteID uint32, extStartSN uint64, extHighestSN uint64) (*snapshotLite, *snapshotLite) {
+func (r *rtpStatsBaseLite) getAndResetSnapshotLite(snapshotLiteID uint32, extStartSN uint64, extHighestSN uint64) (snapshotLite, snapshotLite, bool) {
 	if !r.initialized {
-		return nil, nil
+		return snapshotLite{}, snapshotLite{}, false
 	}
 
 	idx := snapshotLiteID - cFirstSnapshotID
@@ -508,7 +508,7 @@ func (r *rtpStatsBaseLite) getAndResetSnapshotLite(snapshotLiteID uint32, extSta
 	// snapshot now
 	now := r.getSnapshotLite(mono.UnixNano(), extHighestSN+1)
 	r.snapshotLites[idx] = now
-	return &then, &now
+	return then, now, true
 }
 
 func (r *rtpStatsBaseLite) updateGapHistogram(gap int) {
@@ -548,6 +548,10 @@ func initSnapshotLite(startTime int64, extStartSN uint64) snapshotLite {
 
 func getPacketsExpected(extStartSN, extHighestSN uint64) uint64 {
 	return extHighestSN - extStartSN + 1
+}
+
+func shouldLog(count int) bool {
+	return count < 20 || count%200 == 0
 }
 
 // ----------------------------------

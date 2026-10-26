@@ -2,6 +2,7 @@
 package typesfakes
 
 import (
+	"io"
 	"sync"
 	"time"
 
@@ -18,6 +19,20 @@ type FakeWebsocketClient struct {
 	}
 	closeReturnsOnCall map[int]struct {
 		result1 error
+	}
+	NextReaderStub        func() (int, io.Reader, error)
+	nextReaderMutex       sync.RWMutex
+	nextReaderArgsForCall []struct {
+	}
+	nextReaderReturns struct {
+		result1 int
+		result2 io.Reader
+		result3 error
+	}
+	nextReaderReturnsOnCall map[int]struct {
+		result1 int
+		result2 io.Reader
+		result3 error
 	}
 	ReadMessageStub        func() (int, []byte, error)
 	readMessageMutex       sync.RWMutex
@@ -124,6 +139,65 @@ func (fake *FakeWebsocketClient) CloseReturnsOnCall(i int, result1 error) {
 	fake.closeReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
+}
+
+func (fake *FakeWebsocketClient) NextReader() (int, io.Reader, error) {
+	fake.nextReaderMutex.Lock()
+	ret, specificReturn := fake.nextReaderReturnsOnCall[len(fake.nextReaderArgsForCall)]
+	fake.nextReaderArgsForCall = append(fake.nextReaderArgsForCall, struct {
+	}{})
+	stub := fake.NextReaderStub
+	fakeReturns := fake.nextReaderReturns
+	fake.recordInvocation("NextReader", []interface{}{})
+	fake.nextReaderMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1, ret.result2, ret.result3
+	}
+	return fakeReturns.result1, fakeReturns.result2, fakeReturns.result3
+}
+
+func (fake *FakeWebsocketClient) NextReaderCallCount() int {
+	fake.nextReaderMutex.RLock()
+	defer fake.nextReaderMutex.RUnlock()
+	return len(fake.nextReaderArgsForCall)
+}
+
+func (fake *FakeWebsocketClient) NextReaderCalls(stub func() (int, io.Reader, error)) {
+	fake.nextReaderMutex.Lock()
+	defer fake.nextReaderMutex.Unlock()
+	fake.NextReaderStub = stub
+}
+
+func (fake *FakeWebsocketClient) NextReaderReturns(result1 int, result2 io.Reader, result3 error) {
+	fake.nextReaderMutex.Lock()
+	defer fake.nextReaderMutex.Unlock()
+	fake.NextReaderStub = nil
+	fake.nextReaderReturns = struct {
+		result1 int
+		result2 io.Reader
+		result3 error
+	}{result1, result2, result3}
+}
+
+func (fake *FakeWebsocketClient) NextReaderReturnsOnCall(i int, result1 int, result2 io.Reader, result3 error) {
+	fake.nextReaderMutex.Lock()
+	defer fake.nextReaderMutex.Unlock()
+	fake.NextReaderStub = nil
+	if fake.nextReaderReturnsOnCall == nil {
+		fake.nextReaderReturnsOnCall = make(map[int]struct {
+			result1 int
+			result2 io.Reader
+			result3 error
+		})
+	}
+	fake.nextReaderReturnsOnCall[i] = struct {
+		result1 int
+		result2 io.Reader
+		result3 error
+	}{result1, result2, result3}
 }
 
 func (fake *FakeWebsocketClient) ReadMessage() (int, []byte, error) {

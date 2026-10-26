@@ -19,6 +19,7 @@ import (
 	"github.com/pion/webrtc/v4"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
@@ -37,6 +38,8 @@ type WebRTCConfig struct {
 	Receiver      ReceiverConfig
 	Publisher     DirectionConfig
 	Subscriber    DirectionConfig
+
+	flexFEC config.FlexFECConfig
 }
 
 type ReceiverConfig struct {
@@ -57,10 +60,18 @@ type RTCPFeedbackConfig struct {
 type DirectionConfig struct {
 	RTPHeaderExtension RTPHeaderExtensionConfig
 	RTCPFeedback       RTCPFeedbackConfig
+	FlexFEC            FlexFECDirectionConfig
+	RTXBudget          sfu.RTXBudgetConfig
+}
+
+// FlexFECDirectionConfig enables flexfec-03 for a transport direction.
+type FlexFECDirectionConfig struct {
+	Enabled bool
 }
 
 func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 	rtcConf := conf.RTC
+	flexFEC := rtcConf.FlexFEC
 
 	webRTCConfig, err := rtcconfig.NewWebRTCConfig(&rtcConf.RTCConfig, conf.Development)
 	if err != nil {
@@ -69,6 +80,10 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 
 	// we don't want to use active TCP on a server, clients should be dialing
 	webRTCConfig.SettingEngine.DisableActiveTCP(true)
+
+	if rtcConf.UseICELite {
+		_ = webRTCConfig.SettingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleServer)
+	}
 
 	if rtcConf.PacketBufferSize == 0 {
 		rtcConf.PacketBufferSize = 500
@@ -80,23 +95,29 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 		rtcConf.PacketBufferSizeAudio = rtcConf.PacketBufferSize
 	}
 
+	subscriberConfig := getSubscriberConfig(rtcConf.CongestionControl.UseSendSideBWEInterceptor || rtcConf.CongestionControl.UseSendSideBWE)
+	subscriberConfig.RTXBudget = rtcConf.RTXBudget
+
 	return &WebRTCConfig{
 		WebRTCConfig: *webRTCConfig,
 		Receiver: ReceiverConfig{
 			PacketBufferSizeVideo: rtcConf.PacketBufferSizeVideo,
 			PacketBufferSizeAudio: rtcConf.PacketBufferSizeAudio,
 		},
-		Publisher:  getPublisherConfig(false),
-		Subscriber: getSubscriberConfig(rtcConf.CongestionControl.UseSendSideBWEInterceptor || rtcConf.CongestionControl.UseSendSideBWE),
+		Publisher:  getPublisherConfig(false, flexFEC),
+		Subscriber: subscriberConfig,
+		flexFEC:    flexFEC,
 	}, nil
 }
 
 func (c *WebRTCConfig) UpdatePublisherConfig(consolidated bool) {
-	c.Publisher = getPublisherConfig(consolidated)
+	c.Publisher = getPublisherConfig(consolidated, c.flexFEC)
 }
 
 func (c *WebRTCConfig) UpdateSubscriberConfig(ccConf config.CongestionControlConfig) {
+	rtxBudget := c.Subscriber.RTXBudget
 	c.Subscriber = getSubscriberConfig(ccConf.UseSendSideBWEInterceptor || ccConf.UseSendSideBWE)
+	c.Subscriber.RTXBudget = rtxBudget
 }
 
 func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {
@@ -104,9 +125,13 @@ func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {
 	c.SettingEngine.BufferFactory = factory.GetOrNew
 }
 
-func getPublisherConfig(consolidated bool) DirectionConfig {
+func getPublisherConfig(consolidated bool, flexFEC config.FlexFECConfig) DirectionConfig {
+	publisherFlexFEC := FlexFECDirectionConfig{
+		Enabled: flexFEC.UpstreamEnabled,
+	}
 	if consolidated {
 		return DirectionConfig{
+			FlexFEC: publisherFlexFEC,
 			RTPHeaderExtension: RTPHeaderExtensionConfig{
 				Audio: []string{
 					sdp.SDESMidURI,
@@ -141,6 +166,7 @@ func getPublisherConfig(consolidated bool) DirectionConfig {
 	}
 
 	return DirectionConfig{
+		FlexFEC: publisherFlexFEC,
 		RTPHeaderExtension: RTPHeaderExtensionConfig{
 			Audio: []string{
 				sdp.SDESMidURI,

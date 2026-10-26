@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
@@ -120,8 +121,8 @@ func (s *SignalServer) Start() error {
 	return s.server.RegisterAllNodeTopics(s.nodeID)
 }
 
-func (r *SignalServer) Stop() {
-	r.server.Kill()
+func (s *SignalServer) Stop() {
+	s.server.Kill()
 }
 
 type signalService struct {
@@ -131,9 +132,17 @@ type signalService struct {
 }
 
 func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]) (err error) {
-	req, ok := <-stream.Channel()
-	if !ok {
-		return nil
+	var req *rpc.RelaySignalRequest
+	var ok bool
+	select {
+	case req, ok = <-stream.Channel():
+		if !ok {
+			return nil
+		}
+	case <-stream.Context().Done():
+		return stream.Context().Err()
+	case <-time.After(r.config.RetryTimeout):
+		return errors.New("timeout waiting for start session")
 	}
 
 	ss := req.StartSession

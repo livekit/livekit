@@ -16,15 +16,17 @@ package rtc
 
 import (
 	"errors"
+	"slices"
 	"sync"
 
 	"github.com/frostbyte73/core"
-	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
+	"github.com/livekit/protocol/datatrack"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 )
 
 var (
@@ -37,16 +39,26 @@ type DataTrackParams struct {
 	Logger              logger.Logger
 	ParticipantID       func() livekit.ParticipantID
 	ParticipantIdentity livekit.ParticipantIdentity
+	BytesTrackStats     *BytesTrackStats
+}
+
+type subscribedDataTrack struct {
+	subscriber    types.LocalParticipant
+	dataDownTrack types.DataDownTrack
 }
 
 type DataTrack struct {
 	params DataTrackParams
 
+	logger logger.Logger
+
 	lock             sync.Mutex
 	dti              *livekit.DataTrackInfo
-	subscribedTracks map[livekit.ParticipantID]types.DataDownTrack
+	subscribedTracks map[livekit.ParticipantID]subscribedDataTrack
 
 	downTrackSpreader *sfuutils.DownTrackSpreader[types.DataTrackSender]
+
+	stats *dataTrackStats
 
 	closed core.Fuse
 }
@@ -55,19 +67,26 @@ func NewDataTrack(params DataTrackParams, dti *livekit.DataTrackInfo) *DataTrack
 	d := &DataTrack{
 		params:           params,
 		dti:              dti,
-		subscribedTracks: make(map[livekit.ParticipantID]types.DataDownTrack),
-		downTrackSpreader: sfuutils.NewDownTrackSpreader[types.DataTrackSender](sfuutils.DownTrackSpreaderParams{
-			Threshold: 20,
-			Logger:    params.Logger,
-		}),
+		subscribedTracks: make(map[livekit.ParticipantID]subscribedDataTrack),
 	}
-	d.params.Logger.Infow("created data track", "name", d.Name())
+	d.logger = params.Logger.WithValues("name", d.Name(), "handle", dti.PubHandle)
+	d.downTrackSpreader = sfuutils.NewDownTrackSpreader[types.DataTrackSender](sfuutils.DownTrackSpreaderParams{
+		Threshold: 20,
+		Logger:    d.logger,
+	})
+	d.stats = newDataTrackStats(dataTrackStatsParams{Logger: d.logger})
+	d.logger.Infow("created data track", "dataTrackInfo", logger.Proto(d.dti))
 	return d
 }
 
 func (d *DataTrack) Close() {
-	d.params.Logger.Infow("closing data track", "name", d.Name())
+	d.logger.Infow("closing data track")
 	d.closed.Break()
+
+	d.stats.Close()
+	if d.params.BytesTrackStats != nil {
+		d.params.BytesTrackStats.Stop()
+	}
 }
 
 func (d *DataTrack) PublisherID() livekit.ParticipantID {
@@ -79,7 +98,7 @@ func (d *DataTrack) PublisherIdentity() livekit.ParticipantIdentity {
 }
 
 func (d *DataTrack) ToProto() *livekit.DataTrackInfo {
-	return utils.CloneProto(d.dti)
+	return proto.CloneOf(d.dti)
 }
 
 func (d *DataTrack) PubHandle() uint16 {
@@ -102,29 +121,43 @@ func (d *DataTrack) AddSubscriber(sub types.LocalParticipant) (types.DataDownTra
 		return nil, errAlreadySubscribed
 	}
 
+	bytesStats := NewBytesTrackStats(
+		sub.GetCountry(),
+		d.ID(),
+		sub.ID(),
+		sub.Kind(),
+		sub.KindDetails(),
+		sub.GetTelemetryListener,
+		sub.GetReporter(),
+	)
 	dataDownTrack, err := NewDataDownTrack(DataDownTrackParams{
 		Logger:           sub.GetLogger().WithValues("trackID", d.ID()),
 		SubscriberID:     sub.ID(),
 		PublishDataTrack: d,
 		Handle:           sub.GetNextSubscribedDataTrackHandle(),
 		Transport:        sub.GetDataTrackTransport(),
+		BytesTrackStats:  bytesStats,
 	})
 	if err != nil {
+		bytesStats.Stop()
 		return nil, err
 	}
 
-	d.subscribedTracks[sub.ID()] = dataDownTrack
+	d.subscribedTracks[sub.ID()] = subscribedDataTrack{
+		subscriber:    sub,
+		dataDownTrack: dataDownTrack,
+	}
 	return dataDownTrack, nil
 }
 
 func (d *DataTrack) RemoveSubscriber(subID livekit.ParticipantID) {
 	d.lock.Lock()
-	dataDownTrack, ok := d.subscribedTracks[subID]
+	subscribedTrack, ok := d.subscribedTracks[subID]
 	delete(d.subscribedTracks, subID)
 	d.lock.Unlock()
 
 	if ok {
-		dataDownTrack.Close()
+		subscribedTrack.dataDownTrack.Close()
 	}
 }
 
@@ -136,26 +169,59 @@ func (d *DataTrack) IsSubscriber(subID livekit.ParticipantID) bool {
 	return ok
 }
 
+func (d *DataTrack) RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity {
+	var revokedSubscriberIdentities []livekit.ParticipantIdentity
+
+	d.lock.Lock()
+	disallowed := make(map[livekit.ParticipantID]livekit.ParticipantIdentity)
+	for subID, subscribedTrack := range d.subscribedTracks {
+		if IsParticipantExemptFromTrackPermissionsRestrictions(subscribedTrack.subscriber) {
+			continue
+		}
+
+		if !slices.Contains(allowedSubscriberIdentities, subscribedTrack.subscriber.Identity()) {
+			disallowed[subID] = subscribedTrack.subscriber.Identity()
+		}
+	}
+	d.lock.Unlock()
+
+	for subID, subIdentity := range disallowed {
+		d.logger.Infow("revoking data track subscription",
+			"subscriber", subIdentity,
+			"subscriberID", subID,
+		)
+		d.RemoveSubscriber(subID)
+		revokedSubscriberIdentities = append(revokedSubscriberIdentities, subIdentity)
+	}
+
+	return revokedSubscriberIdentities
+}
+
 func (d *DataTrack) AddDataDownTrack(dts types.DataTrackSender) error {
 	if d.closed.IsBroken() {
 		return errReceiverClosed
 	}
 
 	if d.downTrackSpreader.HasDownTrack(dts.SubscriberID()) {
-		d.params.Logger.Infow("subscriberID already exists, replacing data downtrack", "subscriberID", dts.SubscriberID())
+		d.logger.Infow("subscriberID already exists, replacing data downtrack", "subscriberID", dts.SubscriberID())
 	}
 
 	d.downTrackSpreader.Store(dts)
-	d.params.Logger.Infow("data downtrack added", "subscriberID", dts.SubscriberID())
+	d.logger.Infow("data downtrack added", "subscriberID", dts.SubscriberID())
 	return nil
 }
 
 func (d *DataTrack) DeleteDataDownTrack(subscriberID livekit.ParticipantID) {
 	d.downTrackSpreader.Free(subscriberID)
-	d.params.Logger.Infow("data downtrack deleted", "subscriberID", subscriberID)
+	d.logger.Infow("data downtrack deleted", "subscriberID", subscriberID)
 }
 
 func (d *DataTrack) HandlePacket(data []byte, packet *datatrack.Packet, arrivalTime int64) {
+	d.stats.Update(packet, arrivalTime, len(data))
+	if d.params.BytesTrackStats != nil {
+		d.params.BytesTrackStats.AddBytes(uint64(len(data)), false)
+	}
+
 	d.downTrackSpreader.Broadcast(func(dts types.DataTrackSender) {
 		dts.WritePacket(data, packet, arrivalTime)
 	})

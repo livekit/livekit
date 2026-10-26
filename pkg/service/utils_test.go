@@ -15,7 +15,11 @@
 package service_test
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -73,5 +77,81 @@ func TestIsValidDomain(t *testing.T) {
 	for key, result := range list {
 		service.IsValidDomain(key)
 		require.Equal(t, service.IsValidDomain(key), result)
+	}
+}
+
+func compress(t *testing.T, payload []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gw, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	require.NoError(t, err)
+	_, err = gw.Write(payload)
+	require.NoError(t, err)
+	require.NoError(t, gw.Close())
+	return buf.Bytes()
+}
+
+func TestDecompressGzip(t *testing.T) {
+	t.Run("small payload", func(t *testing.T) {
+		out, err := service.DecompressGzip(compress(t, []byte("hello world")))
+		require.NoError(t, err)
+		require.Equal(t, []byte("hello world"), out)
+	})
+
+	t.Run("payload exactly at cap", func(t *testing.T) {
+		raw := make([]byte, http.DefaultMaxHeaderBytes)
+		out, err := service.DecompressGzip(compress(t, raw))
+		require.NoError(t, err)
+		require.Len(t, out, http.DefaultMaxHeaderBytes)
+	})
+
+	t.Run("payload one byte over capd", func(t *testing.T) {
+		raw := make([]byte, http.DefaultMaxHeaderBytes+1)
+		_, err := service.DecompressGzip(compress(t, raw))
+		require.ErrorIs(t, err, service.ErrGzipTooLarge)
+	})
+
+	t.Run("gzip decompression bomb", func(t *testing.T) {
+		// 100 MB of zeros
+		raw := make([]byte, 100<<20)
+		compressed := compress(t, raw)
+		require.Less(t, len(compressed), 1<<20,
+			"sanity: bomb input should compress dramatically")
+
+		_, err := service.DecompressGzip(compressed)
+		require.ErrorIs(t, err, service.ErrGzipTooLarge)
+	})
+
+	t.Run("malformed gzip compression", func(t *testing.T) {
+		_, err := service.DecompressGzip([]byte("not gzip data"))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "cannot read decompressed")
+	})
+}
+
+// URL.Path and URL.RawPath must stay in step: once they disagree,
+// EscapedPath() re-encodes from Path and every escape is lost.
+func TestRemoveDoubleSlashes(t *testing.T) {
+	cases := []struct {
+		name   string
+		target string
+		want   string
+	}{
+		{"doubled slash is trimmed", "//agents/a/d/x", "/agents/a/d/x"},
+		{"single slash untouched", "/agents/a/d/x", "/agents/a/d/x"},
+		{"doubled slash keeps the encoded tail", "//agents/a/d/f%2Fg", "/agents/a/d/f%2Fg"},
+		{"encoded name survives", "//agents/LODHA%20Vayam/d/x", "/agents/LODHA%20Vayam/d/x"},
+		{"leading encoded slash is not doubled", "/%2Fagents/a/d/x", "/%2Fagents/a/d/x"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, c.target, nil)
+			var got string
+			service.RemoveDoubleSlashes(httptest.NewRecorder(), r, func(_ http.ResponseWriter, r *http.Request) {
+				got = r.URL.EscapedPath()
+			})
+			require.Equal(t, c.want, got)
+		})
 	}
 }

@@ -18,11 +18,14 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/pion/transport/v4/vnet"
 	"github.com/redis/go-redis/v9"
+	"github.com/stretchr/testify/require"
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
@@ -33,9 +36,12 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/service"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/pkg/testutils"
+	"github.com/livekit/livekit-server/pkg/testutils/vnettest"
 	testclient "github.com/livekit/livekit-server/test/client"
 )
 
@@ -57,14 +63,22 @@ const (
 var roomClient livekit.RoomService
 
 func init() {
-	config.InitLoggerFromConfig(&config.DefaultConfig.Logging)
+	// The logger retains this config and locks it on every component level
+	// resolution, so it must not be DefaultConfig: NewConfig marshals that
+	// global from the goroutines these tests spin up.
+	loggingConf := config.LoggingConfig{PionLevel: config.DefaultConfig.Logging.PionLevel}
+	config.InitLoggerFromConfig(&loggingConf)
 
 	prometheus.Init("test", livekit.NodeType_SERVER)
 }
 
 func setupSingleNodeTest(name string) (*service.LivekitServer, func()) {
+	return setupSingleNodeTestWithConfig(name, nil)
+}
+
+func setupSingleNodeTestWithConfig(name string, configUpdater func(*config.Config)) (*service.LivekitServer, func()) {
 	logger.Infow("----------------STARTING TEST----------------", "test", name)
-	s := createSingleNodeServer(nil)
+	s := createSingleNodeServer(configUpdater)
 	go func() {
 		if err := s.Start(); err != nil {
 			logger.Errorw("server returned error", err)
@@ -80,9 +94,13 @@ func setupSingleNodeTest(name string) (*service.LivekitServer, func()) {
 }
 
 func setupMultiNodeTest(name string) (*service.LivekitServer, *service.LivekitServer, func()) {
+	return setupMultiNodeTestWithConfig(name, nil)
+}
+
+func setupMultiNodeTestWithConfig(name string, configUpdater func(*config.Config)) (*service.LivekitServer, *service.LivekitServer, func()) {
 	logger.Infow("----------------STARTING TEST----------------", "test", name)
-	s1 := createMultiNodeServer(guid.New(nodeID1), defaultServerPort)
-	s2 := createMultiNodeServer(guid.New(nodeID2), secondServerPort)
+	s1 := createMultiNodeServer(guid.New(nodeID1), defaultServerPort, configUpdater)
+	s2 := createMultiNodeServer(guid.New(nodeID2), secondServerPort, configUpdater)
 	go s1.Start()
 	go s2.Start()
 
@@ -132,14 +150,30 @@ func waitUntilConnected(t *testing.T, clients ...*testclient.RTCClient) {
 	wg := sync.WaitGroup{}
 	for i := range clients {
 		c := clients[i]
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			err := c.WaitUntilConnected()
+		wg.Go(func() {
+			err := c.WaitUntilConnected(5 * time.Second)
 			if err != nil {
 				t.Error(err)
 			}
-		}()
+		})
+	}
+	wg.Wait()
+	if t.Failed() {
+		t.FailNow()
+	}
+}
+
+func ensureNotConnected(t *testing.T, clients ...*testclient.RTCClient) {
+	logger.Infow("checking if clients connect")
+	wg := sync.WaitGroup{}
+	for i := range clients {
+		c := clients[i]
+		wg.Go(func() {
+			err := c.WaitUntilConnected(5 * time.Second)
+			if err == nil {
+				t.Error(fmt.Errorf("expected client to not connect: %s", c.ID()))
+			}
+		})
 	}
 	wg.Wait()
 	if t.Failed() {
@@ -174,7 +208,7 @@ func createSingleNodeServer(configUpdater func(*config.Config)) *service.Livekit
 	return s
 }
 
-func createMultiNodeServer(nodeID string, port uint32) *service.LivekitServer {
+func createMultiNodeServer(nodeID string, port uint32, configUpdater func(*config.Config)) *service.LivekitServer {
 	var err error
 	conf, err := config.NewConfig("", true, nil, nil)
 	if err != nil {
@@ -186,6 +220,9 @@ func createMultiNodeServer(nodeID string, port uint32) *service.LivekitServer {
 	conf.Redis.Address = "localhost:6379"
 	conf.Keys = map[string]string{testApiKey: testApiSecret}
 	conf.EnableDataTracks = true
+	if configUpdater != nil {
+		configUpdater(conf)
+	}
 
 	currentNode, err := routing.NewLocalNode(conf)
 	if err != nil {
@@ -358,4 +395,68 @@ func stopClients(clients ...*testclient.RTCClient) {
 	for _, c := range clients {
 		c.Stop()
 	}
+}
+
+// -----------------------------------------------------------------------------
+// vnet media harness
+//
+// Setup specific to driving a real server transport over a virtual network. The
+// pion side lives in pkg/testutils/vnettest, shared with the pkg/sfu media tests.
+// -----------------------------------------------------------------------------
+
+// newVNetWebRTCConfig builds the server side WebRTCConfig on net. The direction
+// configs come from the production NewWebRTCConfig so the negotiated extensions and
+// feedback stay in step with it; the setting engine is replaced so no real socket or
+// ICE mux is bound.
+func newVNetWebRTCConfig(t *testing.T, net *vnet.Net, bufferFactory *buffer.Factory) *rtc.WebRTCConfig {
+	t.Helper()
+
+	conf, err := config.NewConfig("", true, nil, nil)
+	require.NoError(t, err)
+
+	// an ephemeral port range instead of the dev mode single port, which would bind a mux
+	conf.RTC.TCPPort = 0
+	conf.RTC.UDPPort = rtcconfig.PortRange{}
+	conf.RTC.ICEPortRangeStart = 50000
+	conf.RTC.ICEPortRangeEnd = 60000
+
+	rtcConf, err := rtc.NewWebRTCConfig(conf)
+	require.NoError(t, err)
+	require.Nil(t, rtcConf.UDPMux, "test config must not bind a udp mux")
+
+	rtcConf.SettingEngine = vnettest.NewSettingEngine(net)
+	rtcConf.SetBufferFactory(bufferFactory)
+
+	return rtcConf
+}
+
+// stripDeclaredSSRCs removes the a=ssrc lines pion puts in its offer. Browsers doing
+// rid based simulcast do not declare per-layer SSRCs, which is why a repair SSRC has to
+// be learned at all; leaving them in would let the receiver resolve everything from SDP.
+func stripDeclaredSSRCs(offer string) string {
+	lines := strings.Split(offer, "\r\n")
+	filtered := lines[:0]
+	for _, line := range lines {
+		if strings.HasPrefix(line, "a=ssrc") {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	return strings.Join(filtered, "\r\n")
+}
+
+// sendUntil calls send every 20ms until done reports true or the timeout expires,
+// returning the final state of done.
+func sendUntil(t *testing.T, timeout time.Duration, done func() bool, send func()) bool {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if done() {
+			return true
+		}
+		send()
+		time.Sleep(20 * time.Millisecond)
+	}
+	return done()
 }

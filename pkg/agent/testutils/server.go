@@ -4,16 +4,18 @@ import (
 	"context"
 	"errors"
 	"io"
+	"maps"
 	"math"
 	"math/rand/v2"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/frostbyte73/core"
 	"github.com/gammazero/deque"
-	"golang.org/x/exp/maps"
 
 	"github.com/livekit/livekit-server/pkg/agent"
+	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
@@ -28,7 +30,7 @@ import (
 
 type AgentService interface {
 	HandleConnection(context.Context, agent.SignalConn, agent.WorkerRegistration)
-	DrainConnections(time.Duration)
+	DrainConnections(time.Duration, bool)
 }
 
 type TestServer struct {
@@ -39,11 +41,18 @@ type TestServer struct {
 
 func NewTestServer(bus psrpc.MessageBus) *TestServer {
 	localNode, _ := routing.NewLocalNode(nil)
-	return NewTestServerWithService(must.Get(service.NewAgentService(
-		&config.Config{Region: "test"},
+	return NewTestServerWithService(must.Get(service.NewAgentHandler(
+		&config.Config{
+			Region: "test",
+			Agents: agent.Config{
+				TargetLoad: agent.DefaultTargetLoad,
+			},
+		},
 		localNode,
 		bus,
 		auth.NewSimpleKeyProvider("test", "verysecretsecret"),
+		endpoint.NewRegistry(),
+		service.NewEndpointScopes(),
 	)))
 }
 
@@ -134,7 +143,7 @@ func (h *TestServer) SimulateAgentWorker(opts ...SimulatedWorkerOption) *AgentWo
 }
 
 func (h *TestServer) Close() {
-	h.DrainConnections(1)
+	h.DrainConnections(1, false)
 }
 
 var _ agent.SignalConn = (*AgentWorker)(nil)
@@ -204,6 +213,10 @@ func (w *AgentWorker) Close() error {
 	defer w.mu.Unlock()
 	w.fuse.Break()
 	return nil
+}
+
+func (w *AgentWorker) CloseWithReason(_ string) error {
+	return w.Close()
 }
 
 // Closed returns a channel that is closed when the connection is closed by the server
@@ -418,7 +431,7 @@ func (w *AgentWorker) SimulateRoomJob(roomName string) {
 func (w *AgentWorker) Jobs() []*AgentJob {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return maps.Values(w.jobs)
+	return slices.Collect(maps.Values(w.jobs))
 }
 
 type stableJobLoad struct {

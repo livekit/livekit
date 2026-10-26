@@ -18,16 +18,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"sync"
 	"time"
 
+	"go.uber.org/multierr"
 	"google.golang.org/protobuf/proto"
 
-	pagent "github.com/livekit/protocol/agent"
+	"github.com/livekit/livekit-server/pkg/agent/endpoint"
+	protoagent "github.com/livekit/protocol/agent"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/psrpc"
 )
@@ -59,11 +61,14 @@ type SignalConn interface {
 	ReadWorkerMessage() (*livekit.WorkerMessage, int, error)
 	SetReadDeadline(time.Time) error
 	Close() error
+	CloseWithReason(reason string) error
 }
 
 func JobStatusIsEnded(s livekit.JobStatus) bool {
 	return s == livekit.JobStatus_JS_SUCCESS || s == livekit.JobStatus_JS_FAILED
 }
+
+type AssignmentHook func(next func(*livekit.JobAssignment) error) func(*livekit.JobAssignment) error
 
 type WorkerSignalHandler interface {
 	HandleRegister(*livekit.RegisterWorkerRequest) error
@@ -149,6 +154,19 @@ type WorkerRegistration struct {
 	JobType     livekit.JobType
 	Permissions *livekit.ParticipantPermission
 	ClientIP    string
+	Deployment  string
+
+	// agent HTTP endpoints data plane
+	Endpoints        []*livekit.AgentHttp_AgentEndpoint
+	InstanceID       string
+	EndpointSettings *livekit.AgentHttp_AgentEndpointSettings
+
+	// KindDetails, when set by the server, are stamped onto the participant
+	// join token minted for every job assigned to this worker (e.g. marking
+	// hosted/cloud agents so they can be distinguished from self-hosted ones in
+	// observability). This is server-controlled and never populated from the
+	// worker's register request.
+	KindDetails []livekit.ParticipantInfo_KindDetail
 }
 
 func MakeWorkerRegistration() WorkerRegistration {
@@ -160,21 +178,52 @@ func MakeWorkerRegistration() WorkerRegistration {
 
 var _ WorkerSignalHandler = (*WorkerRegisterer)(nil)
 
+// WorkerRegisterHandler takes a turn during a worker's registration: it reads the
+// request, validates the part it owns, and fills in its part of the response and
+// the registration. Returning an error fails the registration.
+type WorkerRegisterHandler func(req *livekit.RegisterWorkerRequest, res *livekit.RegisterWorkerResponse, reg *WorkerRegistration) error
+
+// EndpointRegisterHandler owns a worker's endpoint declaration: it validates the
+// declaration and negotiates the data-plane settings. A registration declaring no
+// endpoints passes through untouched.
+func EndpointRegisterHandler(req *livekit.RegisterWorkerRequest, res *livekit.RegisterWorkerResponse, reg *WorkerRegistration) error {
+	if len(req.GetEndpoints()) == 0 {
+		return nil
+	}
+	// endpoints are addressed at /agents/{agent_name}/{deployment}/..., with the
+	// name percent-encoded into that segment
+	if req.GetAgentName() == "" {
+		return errors.New("agent HTTP endpoints require an agent name")
+	}
+	if endpoint.IsReservedAgentName(req.GetAgentName()) {
+		return fmt.Errorf("agent name %q is reserved and cannot serve HTTP endpoints", req.GetAgentName())
+	}
+	settings, err := endpoint.NegotiateSettings(req)
+	if err != nil {
+		return err
+	}
+	res.EndpointSettings = settings
+	reg.EndpointSettings = settings
+	return nil
+}
+
 type WorkerRegisterer struct {
 	WorkerPingHandler
 	serverInfo *livekit.ServerInfo
 	deadline   time.Time
+	handlers   []WorkerRegisterHandler
 
 	registration WorkerRegistration
 	registered   bool
 }
 
-func NewWorkerRegisterer(conn SignalConn, serverInfo *livekit.ServerInfo, base WorkerRegistration) *WorkerRegisterer {
+func NewWorkerRegisterer(conn SignalConn, serverInfo *livekit.ServerInfo, base WorkerRegistration, handlers ...WorkerRegisterHandler) *WorkerRegisterer {
 	return &WorkerRegisterer{
 		WorkerPingHandler: WorkerPingHandler{conn: conn},
 		serverInfo:        serverInfo,
 		registration:      base,
 		deadline:          time.Now().Add(RegisterTimeout),
+		handlers:          handlers,
 	}
 }
 
@@ -195,6 +244,10 @@ func (h *WorkerRegisterer) HandleRegister(req *livekit.RegisterWorkerRequest) er
 		return ErrUnknownJobType
 	}
 
+	if err := protoagent.ValidateDeployment(req.GetDeployment()); err != nil {
+		return err
+	}
+
 	permissions := req.AllowedPermissions
 	if permissions == nil {
 		permissions = &livekit.ParticipantPermission{
@@ -210,15 +263,23 @@ func (h *WorkerRegisterer) HandleRegister(req *livekit.RegisterWorkerRequest) er
 	h.registration.Namespace = req.GetNamespace()
 	h.registration.JobType = req.GetType()
 	h.registration.Permissions = permissions
+	h.registration.Deployment = req.GetDeployment()
+	h.registration.Endpoints = req.GetEndpoints()
+	h.registration.InstanceID = req.GetInstanceId()
+
+	res := &livekit.RegisterWorkerResponse{
+		WorkerId:   h.registration.ID,
+		ServerInfo: h.serverInfo,
+	}
+	for _, handle := range h.handlers {
+		if err := handle(req, res, &h.registration); err != nil {
+			return err
+		}
+	}
 	h.registered = true
 
 	_, err := h.conn.WriteServerMessage(&livekit.ServerMessage{
-		Message: &livekit.ServerMessage_Register{
-			Register: &livekit.RegisterWorkerResponse{
-				WorkerId:   h.registration.ID,
-				ServerInfo: h.serverInfo,
-			},
-		},
+		Message: &livekit.ServerMessage_Register{Register: res},
 	})
 	return err
 }
@@ -237,9 +298,11 @@ type Worker struct {
 	cancel context.CancelFunc
 	closed chan struct{}
 
-	mu     sync.Mutex
-	load   float32
-	status livekit.WorkerStatus
+	mu        sync.Mutex
+	load      float32
+	status    livekit.WorkerStatus
+	statusSeq uint64
+	draining  bool
 
 	runningJobs  map[livekit.JobID]*livekit.Job
 	availability map[livekit.JobID]chan *livekit.AvailabilityResponse
@@ -262,6 +325,9 @@ func NewWorker(
 		logger: logger.WithValues(
 			"workerID", registration.ID,
 			"agentName", registration.AgentName,
+			"deployment", registration.Deployment,
+			"agentID", registration.AgentID,
+			"version", registration.Version,
 			"jobType", registration.JobType.String(),
 		),
 
@@ -274,10 +340,8 @@ func NewWorker(
 	}
 }
 
-func (w *Worker) sendRequest(req *livekit.ServerMessage) {
-	if _, err := w.conn.WriteServerMessage(req); err != nil {
-		w.logger.Warnw("error writing to websocket", err)
-	}
+func (w *Worker) APIKey() string {
+	return w.apiKey
 }
 
 func (w *Worker) Status() livekit.WorkerStatus {
@@ -299,11 +363,7 @@ func (w *Worker) Logger() logger.Logger {
 func (w *Worker) RunningJobs() map[livekit.JobID]*livekit.Job {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	jobs := make(map[livekit.JobID]*livekit.Job, len(w.runningJobs))
-	for k, v := range w.runningJobs {
-		jobs[k] = v
-	}
-	return jobs
+	return maps.Clone(w.runningJobs)
 }
 
 func (w *Worker) RunningJobCount() int {
@@ -319,12 +379,12 @@ func (w *Worker) GetJobState(jobID livekit.JobID) (*livekit.JobState, error) {
 	if !ok {
 		return nil, ErrJobNotFound
 	}
-	return utils.CloneProto(j.State), nil
+	return proto.CloneOf(j.State), nil
 }
 
-func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) (*livekit.JobState, error) {
+func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook AssignmentHook) (*livekit.JobState, error) {
 	availCh := make(chan *livekit.AvailabilityResponse, 1)
-	job = utils.CloneProto(job)
+	job = proto.CloneOf(job)
 	jobID := livekit.JobID(job.Id)
 
 	w.mu.Lock()
@@ -352,9 +412,11 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) (*livekit.JobS
 	job.State.StartedAt = now.UnixNano()
 	job.State.Status = livekit.JobStatus_JS_RUNNING
 
-	w.sendRequest(&livekit.ServerMessage{Message: &livekit.ServerMessage_Availability{
+	if _, err := w.conn.WriteServerMessage(&livekit.ServerMessage{Message: &livekit.ServerMessage_Availability{
 		Availability: &livekit.AvailabilityRequest{Job: job},
-	}})
+	}}); err != nil {
+		return nil, err
+	}
 
 	timeout := time.NewTimer(AssignJobTimeout)
 	defer timeout.Stop()
@@ -379,7 +441,7 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) (*livekit.JobS
 		}
 		attributes[AgentNameAttributeKey] = w.AgentName
 
-		token, err := pagent.BuildAgentToken(
+		token, err := protoagent.BuildAgentToken(
 			w.apiKey,
 			w.apiSecret,
 			job.Room.Name,
@@ -388,22 +450,35 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) (*livekit.JobS
 			res.ParticipantMetadata,
 			attributes,
 			w.Permissions,
+			w.KindDetails...,
 		)
 		if err != nil {
 			w.logger.Errorw("failed to build agent token", err)
 			return nil, err
 		}
 
-		// In OSS, Url is nil, and the used API Key is the same as the one used to connect the worker
-		w.sendRequest(&livekit.ServerMessage{Message: &livekit.ServerMessage_Assignment{
-			Assignment: &livekit.JobAssignment{Job: job, Url: nil, Token: token},
-		}})
+		send := func(a *livekit.JobAssignment) error {
+			_, err := w.conn.WriteServerMessage(&livekit.ServerMessage{
+				Message: &livekit.ServerMessage_Assignment{Assignment: a},
+			})
+			return err
+		}
+		if hook != nil {
+			send = hook(send)
+		}
+		state := proto.CloneOf(job.State)
 
-		state := utils.CloneProto(job.State)
-
+		// must be in runningJobs before the assignment is sent; stored as a copy because send reads job without w.mu.
 		w.mu.Lock()
-		w.runningJobs[jobID] = job
+		w.runningJobs[jobID] = proto.CloneOf(job)
 		w.mu.Unlock()
+
+		if err := send(&livekit.JobAssignment{Job: job, Token: token}); err != nil {
+			w.mu.Lock()
+			delete(w.runningJobs, jobID)
+			w.mu.Unlock()
+			return nil, err
+		}
 
 		// TODO sweep jobs that are never started. We can't do this until all SDKs actually update the the JOB state
 
@@ -426,7 +501,7 @@ func (w *Worker) TerminateJob(jobID livekit.JobID, reason rpc.JobTerminateReason
 		return nil, ErrJobNotFound
 	}
 
-	w.sendRequest(&livekit.ServerMessage{Message: &livekit.ServerMessage_Termination{
+	_, writeErr := w.conn.WriteServerMessage(&livekit.ServerMessage{Message: &livekit.ServerMessage_Termination{
 		Termination: &livekit.JobTermination{
 			JobId: string(jobID),
 		},
@@ -439,11 +514,12 @@ func (w *Worker) TerminateJob(jobID livekit.JobID, reason rpc.JobTerminateReason
 		errorStr = "agent worker left the room"
 	}
 
-	return w.UpdateJobStatus(&livekit.UpdateJobStatus{
+	state, updateErr := w.UpdateJobStatus(&livekit.UpdateJobStatus{
 		JobId:  string(jobID),
 		Status: status,
 		Error:  errorStr,
 	})
+	return state, multierr.Combine(writeErr, updateErr)
 }
 
 func (w *Worker) UpdateMetadata(metadata string) {
@@ -549,7 +625,7 @@ func (w *Worker) HandleSimulateJob(simulate *livekit.SimulateJobRequest) error {
 	}
 
 	go func() {
-		_, err := w.AssignJob(w.ctx, job)
+		_, err := w.AssignJob(w.ctx, job, nil)
 		if err != nil {
 			w.logger.Errorw("unable to simulate job", err, "jobID", job.Id)
 		}
@@ -562,13 +638,28 @@ func (w *Worker) HandleUpdateWorker(update *livekit.UpdateWorkerStatus) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
+	// status updates may interleave across connections; never regress newer state
+	if seq := update.GetSeq(); seq != 0 {
+		if seq <= w.statusSeq {
+			return nil
+		}
+		w.statusSeq = seq
+	}
+
 	if status := update.Status; status != nil && w.status != *status {
 		w.status = *status
 		w.Logger().Debugw("worker status changed", "status", w.status)
 	}
 	w.load = update.GetLoad()
+	w.draining = update.GetDraining()
 
 	return nil
+}
+
+func (w *Worker) Draining() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.draining
 }
 
 func (w *Worker) HandleMigrateJob(req *livekit.MigrateJobRequest) error {

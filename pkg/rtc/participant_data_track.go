@@ -15,7 +15,10 @@
 package rtc
 
 import (
-	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
+	"google.golang.org/protobuf/proto"
+
+	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/protocol/datatrack"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
@@ -29,7 +32,7 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 			Reason:  livekit.RequestResponse_NOT_ALLOWED,
 			Message: "does not have permission to publish data",
 			Request: &livekit.RequestResponse_PublishDataTrack{
-				PublishDataTrack: utils.CloneProto(req),
+				PublishDataTrack: proto.CloneOf(req),
 			},
 		})
 		return
@@ -41,7 +44,7 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 			Reason:  livekit.RequestResponse_INVALID_HANDLE,
 			Message: "handle should be > 0 AND < 65536",
 			Request: &livekit.RequestResponse_PublishDataTrack{
-				PublishDataTrack: utils.CloneProto(req),
+				PublishDataTrack: proto.CloneOf(req),
 			},
 		})
 		return
@@ -53,7 +56,20 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 			Reason:  livekit.RequestResponse_INVALID_NAME,
 			Message: "name should not be empty and should not exceed 256 characters",
 			Request: &livekit.RequestResponse_PublishDataTrack{
-				PublishDataTrack: utils.CloneProto(req),
+				PublishDataTrack: proto.CloneOf(req),
+			},
+		})
+		return
+	}
+
+	if !p.params.LimitConfig.CheckDataTrackFrameEncoding(req.FrameEncoding) ||
+		!p.params.LimitConfig.CheckDataTrackSchemaID(req.Schema) {
+		p.pubLogger.Warnw("invalid encoding identifier", nil, "req", logger.Proto(req))
+		p.sendRequestResponse(&livekit.RequestResponse{
+			Reason:  livekit.RequestResponse_INVALID_REQUEST,
+			Message: "encoding identifier is empty or exceeds the maximum length",
+			Request: &livekit.RequestResponse_PublishDataTrack{
+				PublishDataTrack: proto.CloneOf(req),
 			},
 		})
 		return
@@ -81,7 +97,7 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 				Reason:  reason,
 				Message: message,
 				Request: &livekit.RequestResponse_PublishDataTrack{
-					PublishDataTrack: utils.CloneProto(req),
+					PublishDataTrack: proto.CloneOf(req),
 				},
 			})
 			return
@@ -94,11 +110,22 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 		Name:       req.Name,
 		Encryption: req.Encryption,
 	}
+	dti.FrameEncoding = proto.CloneOf(req.GetFrameEncoding())
+	dti.Schema = proto.CloneOf(req.GetSchema())
 	dt := NewDataTrack(
 		DataTrackParams{
 			Logger:              p.params.Logger.WithValues("trackID", dti.Sid),
 			ParticipantID:       p.ID,
 			ParticipantIdentity: p.params.Identity,
+			BytesTrackStats: NewBytesTrackStats(
+				p.params.Country,
+				livekit.TrackID(dti.Sid),
+				p.ID(),
+				p.Kind(),
+				p.KindDetails(),
+				p.GetTelemetryListener,
+				p.params.Reporter,
+			),
 		},
 		dti,
 	)
@@ -118,7 +145,7 @@ func (p *ParticipantImpl) HandleUnpublishDataTrackRequest(req *livekit.Unpublish
 		p.sendRequestResponse(&livekit.RequestResponse{
 			Reason: livekit.RequestResponse_NOT_FOUND,
 			Request: &livekit.RequestResponse_UnpublishDataTrack{
-				UnpublishDataTrack: utils.CloneProto(req),
+				UnpublishDataTrack: proto.CloneOf(req),
 			},
 		})
 		return
@@ -145,6 +172,33 @@ func (p *ParticipantImpl) onReceivedDataTrackMessage(data []byte, arrivalTime in
 	p.UpDataTrackManager.HandleReceivedDataTrackMessage(data, &packet, arrivalTime)
 
 	p.listener().OnDataTrackMessage(p, data, &packet)
+}
+
+// wraps the promoted UpTrackManager.UpdateSubscriptionPermission to also revoke
+// data track subscriptions that are no longer permitted
+func (p *ParticipantImpl) UpdateSubscriptionPermission(
+	subscriptionPermission *livekit.SubscriptionPermission,
+	timedVersion utils.TimedVersion,
+	resolverBySid func(participantID livekit.ParticipantID) types.LocalParticipant,
+) error {
+	if err := p.UpTrackManager.UpdateSubscriptionPermission(subscriptionPermission, timedVersion, resolverBySid); err != nil {
+		return err
+	}
+
+	p.maybeRevokeDataTrackSubscriptions()
+	return nil
+}
+
+func (p *ParticipantImpl) maybeRevokeDataTrackSubscriptions() {
+	for _, dt := range p.UpDataTrackManager.GetPublishedDataTracks() {
+		allowed := p.UpTrackManager.GetAllowedSubscribers(dt.ID())
+		if allowed == nil {
+			// no restrictions
+			continue
+		}
+
+		dt.RevokeDisallowedSubscribers(allowed)
+	}
 }
 
 func (p *ParticipantImpl) GetNextSubscribedDataTrackHandle() uint16 {

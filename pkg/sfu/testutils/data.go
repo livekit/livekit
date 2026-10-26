@@ -21,6 +21,8 @@ import (
 	"github.com/pion/webrtc/v4"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
+	"github.com/livekit/mediatransportutil/pkg/codec"
 )
 
 // -----------------------------------------------------------
@@ -53,9 +55,9 @@ func GetTestExtPacket(params *TestExtPacketParams) (*buffer.ExtPacket, error) {
 			SequenceNumber: params.SequenceNumber,
 			Timestamp:      params.Timestamp,
 			SSRC:           params.SSRC,
+			PaddingSize:    params.PaddingSize,
 		},
-		Payload:     make([]byte, params.PayloadSize),
-		PaddingSize: params.PaddingSize,
+		Payload: make([]byte, params.PayloadSize),
 	}
 
 	raw, err := packet.Marshal()
@@ -69,7 +71,7 @@ func GetTestExtPacket(params *TestExtPacketParams) (*buffer.ExtPacket, error) {
 		ExtTimestamp:      uint64(params.TSCycles<<32) + uint64(params.Timestamp),
 		Arrival:           params.ArrivalTime.UnixNano(),
 		Packet:            &packet,
-		IsKeyFrame:          params.IsKeyFrame,
+		IsKeyFrame:        params.IsKeyFrame,
 		RawPacket:         raw,
 		IsOutOfOrder:      params.IsOutOfOrder,
 	}
@@ -79,18 +81,80 @@ func GetTestExtPacket(params *TestExtPacketParams) (*buffer.ExtPacket, error) {
 
 // --------------------------------------
 
-func GetTestExtPacketVP8(params *TestExtPacketParams, vp8 *buffer.VP8) (*buffer.ExtPacket, error) {
+func GetTestExtPacketVP8(params *TestExtPacketParams, vp8 *codec.VP8) (*buffer.ExtPacket, error) {
 	ep, err := GetTestExtPacket(params)
 	if err != nil {
 		return nil, err
 	}
 
 	ep.IsKeyFrame = vp8.IsKeyFrame
-	ep.Payload = *vp8
+	vp8Copy := *vp8 // keep the packet independent of later changes to vp8
+	ep.VP8 = &vp8Copy
 	if ep.DependencyDescriptor == nil {
 		ep.Temporal = int32(vp8.TID)
 	}
 	return ep, nil
+}
+
+// --------------------------------------
+
+type TestDDParams struct {
+	FirstPacketInFrame bool
+	ExtFrameNum        uint64
+	TemporalID         int
+	// decode target indications as one character per decode target: S, R, D or -
+	DTIs          string
+	FrameDiffs    []int
+	DecodeTargets []buffer.DependencyDescriptorDecodeTarget
+}
+
+// GetTestExtPacketVP8DD returns a VP8 packet with a dependency descriptor and the
+// minimized VP8 payload descriptor that libwebrtc sends with it: no TID, no Y bit and
+// no picture ID.
+func GetTestExtPacketVP8DD(params *TestExtPacketParams, ddParams *TestDDParams) (*buffer.ExtPacket, error) {
+	ep, err := GetTestExtPacketVP8(params, &codec.VP8{S: ddParams.FirstPacketInFrame, IsKeyFrame: params.IsKeyFrame})
+	if err != nil {
+		return nil, err
+	}
+
+	dtis := make([]dd.DecodeTargetIndication, 0, len(ddParams.DTIs))
+	for _, c := range ddParams.DTIs {
+		switch c {
+		case 'S':
+			dtis = append(dtis, dd.DecodeTargetSwitch)
+		case 'R':
+			dtis = append(dtis, dd.DecodeTargetRequired)
+		case 'D':
+			dtis = append(dtis, dd.DecodeTargetDiscardable)
+		default:
+			dtis = append(dtis, dd.DecodeTargetNotPresent)
+		}
+	}
+	ep.Temporal = int32(ddParams.TemporalID)
+	ep.DependencyDescriptor = &buffer.ExtDependencyDescriptor{
+		Descriptor: &dd.DependencyDescriptor{
+			FirstPacketInFrame: ddParams.FirstPacketInFrame,
+			LastPacketInFrame:  params.Marker,
+			FrameDependencies: &dd.FrameDependencyTemplate{
+				TemporalId:              ddParams.TemporalID,
+				DecodeTargetIndications: dtis,
+				FrameDiffs:              ddParams.FrameDiffs,
+			},
+		},
+		DecodeTargets: ddParams.DecodeTargets,
+		ExtFrameNum:   ddParams.ExtFrameNum,
+		// all decode targets active, as the parser reports after a structure
+		ActiveDecodeTargetsMask: 1<<len(ddParams.DecodeTargets) - 1,
+	}
+	return ep, nil
+}
+
+// TestVP8DecodeTargets are the decode targets of libwebrtc's three layer VP8 structure,
+// sorted from high to low.
+var TestVP8DecodeTargets = []buffer.DependencyDescriptorDecodeTarget{
+	{Target: 2, Layer: buffer.VideoLayer{Temporal: 2}},
+	{Target: 1, Layer: buffer.VideoLayer{Temporal: 1}},
+	{Target: 0, Layer: buffer.VideoLayer{Temporal: 0}},
 }
 
 // --------------------------------------

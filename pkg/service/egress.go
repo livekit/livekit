@@ -72,6 +72,33 @@ func NewEgressLauncher(client rpc.EgressClient, io IOClient, store ServiceStore)
 	}
 }
 
+func (s *EgressService) StartEgress(ctx context.Context, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
+	sourceType, outputType := egress.GetTypes(&livekit.EgressInfo_Egress{Egress: req})
+	fields := []any{
+		"room", req.RoomName,
+		"sourceType", sourceType,
+		"outputType", outputType,
+	}
+	defer func() {
+		AppendLogFields(ctx, fields...)
+	}()
+
+	egressID, idFromCtx := EgressID(ctx)
+	ei, err := s.startEgress(ctx, &rpc.StartEgressRequest{
+		EgressId: egressID,
+		Request: &rpc.StartEgressRequest_Egress{
+			Egress: req,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !idFromCtx {
+		fields = append(fields, "egressID", ei.EgressId)
+	}
+	return ei, err
+}
+
 func (s *EgressService) StartRoomCompositeEgress(ctx context.Context, req *livekit.RoomCompositeEgressRequest) (*livekit.EgressInfo, error) {
 	fields := []any{
 		"room", req.RoomName,
@@ -230,6 +257,8 @@ func (s *egressLauncher) StartEgress(ctx context.Context, req *rpc.StartEgressRe
 			roomName = v.TrackComposite.RoomName
 		case *rpc.StartEgressRequest_Track:
 			roomName = v.Track.RoomName
+		case *rpc.StartEgressRequest_Egress:
+			roomName = v.Egress.RoomName
 		}
 
 		if roomName != "" {
@@ -290,8 +319,16 @@ func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLay
 	return info, nil
 }
 
+func redactedStreamUrls(urls []string) []string {
+	redacted := make([]string, len(urls))
+	for i, u := range urls {
+		redacted[i], _ = utils.RedactStreamKey(u)
+	}
+	return redacted
+}
+
 func (s *EgressService) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRequest) (*livekit.EgressInfo, error) {
-	AppendLogFields(ctx, "egressID", req.EgressId, "addUrls", req.AddOutputUrls, "removeUrls", req.RemoveOutputUrls)
+	AppendLogFields(ctx, "egressID", req.EgressId, "addUrls", redactedStreamUrls(req.AddOutputUrls), "removeUrls", redactedStreamUrls(req.RemoveOutputUrls))
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
@@ -344,11 +381,7 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 		return nil, twirpAuthError(err)
 	}
 
-	if s.client == nil {
-		return nil, ErrEgressNotConnected
-	}
-
-	info, err = s.client.StopEgress(ctx, req.EgressId, req)
+	info, err = s.launcher.StopEgress(ctx, req)
 	if err != nil {
 		var loadErr error
 		info, loadErr = s.io.GetEgress(ctx, &rpc.GetEgressRequest{EgressId: req.EgressId})
@@ -367,4 +400,11 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 	}
 
 	return info, nil
+}
+
+func (s *egressLauncher) StopEgress(ctx context.Context, req *livekit.StopEgressRequest) (*livekit.EgressInfo, error) {
+	if s.client == nil {
+		return nil, ErrEgressNotConnected
+	}
+	return s.client.StopEgress(ctx, req.EgressId, req)
 }

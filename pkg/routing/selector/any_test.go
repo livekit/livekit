@@ -59,7 +59,7 @@ func TestAnySelector_SelectNode_TwoChoice(t *testing.T) {
 				createTestNode("node4", 0.9, 6, 12, livekit.NodeState_SERVING),
 			},
 			wantErr:     "",
-			expected:    "",      // Not determinstic selection, so no specific expected node
+			expected:    "",      // Not deterministic selection, so no specific expected node
 			notExpected: "node4", // Node with highest load should not be selected
 		},
 		{
@@ -72,7 +72,7 @@ func TestAnySelector_SelectNode_TwoChoice(t *testing.T) {
 				createTestNode("node3", 0.6, 12, 20, livekit.NodeState_SERVING),
 			},
 			wantErr:     "",
-			expected:    "",      // Not determinstic selection, so no specific expected node
+			expected:    "",      // Not deterministic selection, so no specific expected node
 			notExpected: "node3", // Node with highest room count should not be selected
 		},
 		{
@@ -85,7 +85,7 @@ func TestAnySelector_SelectNode_TwoChoice(t *testing.T) {
 				createTestNode("node3", 0.6, 4, 30, livekit.NodeState_SERVING),
 			},
 			wantErr:     "",
-			expected:    "",      // Not determinstic selection, so no specific expected node
+			expected:    "",      // Not deterministic selection, so no specific expected node
 			notExpected: "node3", // Node with highest clients should not be selected
 		},
 		{

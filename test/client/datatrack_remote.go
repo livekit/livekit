@@ -2,7 +2,7 @@ package client
 
 import (
 	"github.com/frostbyte73/core"
-	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
+	"github.com/livekit/protocol/datatrack"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"go.uber.org/atomic"
@@ -66,10 +66,8 @@ func (d *DataTrackRemote) PacketReceived(packet *datatrack.Packet) {
 		return
 	}
 
-	valid := true
-	if len(packet.Payload) == 0 {
-		valid = false
-	}
+	valid := len(packet.Payload) != 0
+
 	for i := range packet.Payload {
 		if packet.Payload[i] != byte(255-i) {
 			valid = false
