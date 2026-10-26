@@ -306,30 +306,40 @@ func TestForwardStats_Flush(t *testing.T) {
 }
 
 func TestForwardSample_Pack(t *testing.T) {
-	transit, delay := unpackForwardSample(packForwardSample(250_000, 7_168))
+	transit, processing := unpackForwardSample(packForwardSample(250_000, 4_096))
 	require.Equal(t, int64(250_000), transit)
-	require.Equal(t, int64(7_168), delay)
+	require.Equal(t, int64(4_096), processing)
 
-	// scheduling delay keeps 256 ns resolution
-	_, delay = unpackForwardSample(packForwardSample(250_000, 7_300))
-	require.Equal(t, int64(7_168), delay)
+	// processing per subscriber keeps 16 ns resolution
+	_, processing = unpackForwardSample(packForwardSample(250_000, 4_100))
+	require.Equal(t, int64(4_096), processing)
 
-	// no scheduling delay, and a zero delay is a sample, not "none"
-	_, delay = unpackForwardSample(packForwardSample(1_000, -1))
-	require.Equal(t, int64(-1), delay)
-	_, delay = unpackForwardSample(packForwardSample(1_000, 0))
-	require.Equal(t, int64(0), delay)
+	// no processing sample, and a zero one is a sample, not "none"
+	_, processing = unpackForwardSample(packForwardSample(1_000, -1))
+	require.Equal(t, int64(-1), processing)
+	_, processing = unpackForwardSample(packForwardSample(1_000, 0))
+	require.Equal(t, int64(0), processing)
 
-	// a long stall keeps its full transit; the delay saturates and never reads as "none"
-	transit, delay = unpackForwardSample(packForwardSample(10*int64(time.Second), 10*int64(time.Second)))
+	// a long stall keeps its full transit; processing saturates and never reads as "none"
+	transit, processing = unpackForwardSample(packForwardSample(10*int64(time.Second), 10*int64(time.Second)))
 	require.Equal(t, 10*int64(time.Second), transit)
-	require.Equal(t, int64((forwardNoSchedulingDelay-1)<<forwardSchedulingDelayShift), delay)
+	require.Equal(t, int64((forwardNoProcessing-1)<<forwardProcessingShift), processing)
 	transit, _ = unpackForwardSample(packForwardSample(math.MaxInt64, -1))
 	require.Equal(t, int64(forwardMaxTransitNs), transit)
 
 	// a negative transit (clock skew) clamps to zero
 	transit, _ = unpackForwardSample(packForwardSample(-5, -1))
 	require.Equal(t, int64(0), transit)
+}
+
+func TestForwardSummary_Mean(t *testing.T) {
+	var a, b forwardSummary
+	a.addSample(1_000)
+	a.addSample(3_000)
+	b.addSample(8_000)
+	require.Equal(t, 2*time.Microsecond, a.mean())
+	require.Equal(t, 4*time.Microsecond, a.merge(b).mean())
+	require.Equal(t, time.Duration(0), forwardSummary{}.mean())
 }
 
 func TestSaturatingNs(t *testing.T) {
@@ -339,22 +349,22 @@ func TestSaturatingNs(t *testing.T) {
 	require.Equal(t, uint32(0), saturatingNs(-time.Second))
 }
 
-func TestForwardStats_SchedulingDelay(t *testing.T) {
+func TestForwardStats_ProcessingPerSubscriber(t *testing.T) {
 	initPrometheus(t)
 
-	s := &ForwardStats{ring: make([]forwardIntervalSummary, 2)}
+	s := &ForwardStats{ring: make([]forwardIntervalSummary, 1)}
 
-	// a burst: only the first packet found the forwarder idle
-	s.UpdateWithSchedulingDelay(0, 300_000, 4_096)
-	for i := 0; i < 9; i++ {
-		s.Update(0, 300_000)
-	}
+	// dequeued 100us after arrival, fan-out to 50 subscribers done 300us after arrival
+	s.UpdateForwarded(0, 100_000, 300_000, 50)
+	// relay forwarding and a packet written to no one carry no processing sample
+	s.Update(0, 300_000)
+	s.UpdateForwarded(0, 100_000, 300_000, 0)
 	s.flush()
 
 	summ := s.ring[0]
-	require.Equal(t, int64(10), summ.transit.count)
-	require.Equal(t, int64(1), summ.scheduling.count)
-	require.Equal(t, 4096*time.Nanosecond, summ.scheduling.percentile(forwardLatencyPercentile))
+	require.Equal(t, int64(3), summ.transit.count)
+	require.Equal(t, int64(1), summ.processingPerSubscriber.count)
+	require.Equal(t, 4*time.Microsecond, summ.processingPerSubscriber.mean())
 	require.Equal(t, 300*time.Microsecond, s.GetStats(0))
 
 	require.NotPanics(t, s.report)
