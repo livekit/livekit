@@ -450,9 +450,29 @@ func ValidateConnectRequest(
 		}
 	}
 
+	if code, err := checkGrantLimits(limitConfig, claims); err != nil {
+		return res, code, err
+	}
+
 	res.grants = claims
 	res.tokenExpiresAt = GetTokenExpiresAt(r.Context())
 	return res, http.StatusOK, nil
+}
+
+// checkGrantLimits validates the token's name, metadata and attributes against the configured
+// limits. It is the common guard for every join path; StartSession keeps its own copy as the
+// backstop for paths (WHIP) that do not reach here.
+func checkGrantLimits(limitConfig config.LimitConfig, grants *auth.ClaimGrants) (int, error) {
+	if !limitConfig.CheckParticipantNameLength(grants.Name) {
+		return http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrNameExceedsLimits, limitConfig.MaxParticipantNameLength)
+	}
+	if !limitConfig.CheckMetadataSize(grants.Metadata) {
+		return http.StatusBadRequest, fmt.Errorf("%w: max size %d", ErrMetadataExceedsLimits, limitConfig.MaxMetadataSize)
+	}
+	if !limitConfig.CheckAttributesSize(grants.Attributes) {
+		return http.StatusBadRequest, fmt.Errorf("%w: max size %d", ErrAttributeExceedsLimits, limitConfig.MaxAttributesSize)
+	}
+	return http.StatusOK, nil
 }
 
 func IsRTCPath(path string) bool {

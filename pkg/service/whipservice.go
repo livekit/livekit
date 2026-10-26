@@ -142,6 +142,10 @@ func (s *WHIPService) validateCreate(w http.ResponseWriter, r *http.Request) (*c
 		return nil, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrParticipantIdentityExceedsLimits, s.config.Limit.MaxParticipantIdentityLength)
 	}
 
+	if code, err := checkGrantLimits(s.config.Limit, claims); err != nil {
+		return nil, code, err
+	}
+
 	var clientInfo struct {
 		ClientIP                        string              `json:"clientIp"`
 		SubscribedParticipantTrackNames map[string][]string `json:"subscribedParticipantTrackNames"`
