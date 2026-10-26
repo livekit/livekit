@@ -419,7 +419,7 @@ func ValidateConnectRequest(
 	}
 
 	// after the publish suffix, so the identity checked is the one StartSession sees
-	if err := checkConnectLimits(limitConfig, claims.Identity, res.roomName, claims); err != nil {
+	if err := CheckConnectLimits(limitConfig, claims.Identity, res.roomName, claims); err != nil {
 		return res, http.StatusBadRequest, err
 	}
 
@@ -454,10 +454,11 @@ func ValidateConnectRequest(
 	return res, http.StatusOK, nil
 }
 
-// checkConnectLimits checks a join's identity, room name, participant name, metadata and
+// CheckConnectLimits checks a join's identity, room name, participant name, metadata and
 // attributes against the configured limits. Every join path runs it: the signal connection,
 // WHIP, and StartSession on the RTC node, which does not trust the caller's validation.
-func checkConnectLimits(limitConfig config.LimitConfig, identity string, roomName livekit.RoomName, grants *auth.ClaimGrants) error {
+// It is exported for servers that embed this package and run their own join paths.
+func CheckConnectLimits(limitConfig config.LimitConfig, identity string, roomName livekit.RoomName, grants *auth.ClaimGrants) error {
 	if !limitConfig.CheckParticipantIdentityLength(identity) {
 		return fmt.Errorf("%w: max length %d", ErrParticipantIdentityExceedsLimits, limitConfig.MaxParticipantIdentityLength)
 	}

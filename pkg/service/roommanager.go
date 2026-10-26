@@ -297,7 +297,7 @@ func (r *RoomManager) StartSession(
 	sessionStartTime := time.Now()
 
 	if pi.Identity != "" && pi.Grants != nil {
-		if err := checkConnectLimits(r.config.Limit, string(pi.Identity), livekit.RoomName(pi.CreateRoom.GetName()), pi.Grants); err != nil {
+		if err := CheckConnectLimits(r.config.Limit, string(pi.Identity), livekit.RoomName(pi.CreateRoom.GetName()), pi.Grants); err != nil {
 			return err
 		}
 	}
