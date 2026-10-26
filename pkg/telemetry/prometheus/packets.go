@@ -51,30 +51,32 @@ var (
 	participantRTCCanceled     atomic.Uint64
 	participantRTCActive       atomic.Uint64
 	forwardLatency             atomic.Uint32
+	forwardSchedulingDelay     atomic.Uint32
 
-	promPacketLabels          = []string{"direction", "transmission", "country"}
-	promPacketTotal           *prometheus.CounterVec
-	promPacketBytes           *prometheus.CounterVec
-	promFECLabels             = []string{"direction", "type"}
-	promFECPacketTotal        *prometheus.CounterVec
-	promFECPacketBytes        *prometheus.CounterVec
-	promRTCPLabels            = []string{"direction", "country"}
-	promStreamLabels          = []string{"direction", "source", "type", "country"}
-	promNackTotal             *prometheus.CounterVec
-	promRTXCappedTotal        *prometheus.CounterVec
-	promKeyFrameTotal         *prometheus.CounterVec
-	promPliTotal              *prometheus.CounterVec
-	promFirTotal              *prometheus.CounterVec
-	promPacketLossTotal       *prometheus.CounterVec
-	promPacketLoss            *prometheus.HistogramVec
-	promPacketOutOfOrderTotal *prometheus.CounterVec
-	promPacketOutOfOrder      *prometheus.HistogramVec
-	promJitter                *prometheus.HistogramVec
-	promRTT                   *prometheus.HistogramVec
-	promParticipantJoin       *prometheus.CounterVec
-	promConnections           *prometheus.GaugeVec
-	promForwardLatency        prometheus.Gauge
-	promForwardLatencyHist    prometheus.Histogram
+	promPacketLabels           = []string{"direction", "transmission", "country"}
+	promPacketTotal            *prometheus.CounterVec
+	promPacketBytes            *prometheus.CounterVec
+	promFECLabels              = []string{"direction", "type"}
+	promFECPacketTotal         *prometheus.CounterVec
+	promFECPacketBytes         *prometheus.CounterVec
+	promRTCPLabels             = []string{"direction", "country"}
+	promStreamLabels           = []string{"direction", "source", "type", "country"}
+	promNackTotal              *prometheus.CounterVec
+	promRTXCappedTotal         *prometheus.CounterVec
+	promKeyFrameTotal          *prometheus.CounterVec
+	promPliTotal               *prometheus.CounterVec
+	promFirTotal               *prometheus.CounterVec
+	promPacketLossTotal        *prometheus.CounterVec
+	promPacketLoss             *prometheus.HistogramVec
+	promPacketOutOfOrderTotal  *prometheus.CounterVec
+	promPacketOutOfOrder       *prometheus.HistogramVec
+	promJitter                 *prometheus.HistogramVec
+	promRTT                    *prometheus.HistogramVec
+	promParticipantJoin        *prometheus.CounterVec
+	promConnections            *prometheus.GaugeVec
+	promForwardLatency         prometheus.Gauge
+	promForwardSchedulingDelay prometheus.Gauge
+	promForwardLatencyHist     prometheus.Histogram
 )
 
 func initPacketStats(nodeID string, nodeType livekit.NodeType) {
@@ -193,6 +195,13 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "latency",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	})
+	promForwardSchedulingDelay = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "forward",
+		Name:        "scheduling_delay",
+		Help:        "p90 time from arrival to dequeue, in ns, for packets that found their forwarder idle.",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+	})
 	promForwardLatencyHist = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "forward_latency",
@@ -231,6 +240,7 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promParticipantJoin)
 	prometheus.MustRegister(promConnections)
 	prometheus.MustRegister(promForwardLatency)
+	prometheus.MustRegister(promForwardSchedulingDelay)
 	prometheus.MustRegister(promForwardLatencyHist)
 }
 
@@ -441,4 +451,9 @@ func RecordForwardLatencySample(forwardLatency int64) {
 func RecordForwardLatency(p90 uint32) {
 	forwardLatency.Store(p90)
 	promForwardLatency.Set(float64(p90))
+}
+
+func RecordForwardSchedulingDelay(p90 uint32) {
+	forwardSchedulingDelay.Store(p90)
+	promForwardSchedulingDelay.Set(float64(p90))
 }

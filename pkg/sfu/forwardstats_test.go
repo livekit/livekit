@@ -1,6 +1,7 @@
 package sfu
 
 import (
+	"math"
 	"sync"
 	"testing"
 	"time"
@@ -263,7 +264,7 @@ func TestForwardSampleBuffer_Concurrent(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestForwardStats_Update(t *testing.T) {
-	s := &ForwardStats{ring: make([]forwardSummary, 1)}
+	s := &ForwardStats{ring: make([]forwardIntervalSummary, 1)}
 
 	// below threshold
 	transit, isHigh := s.Update(1000, 1000+int64(5*time.Millisecond))
@@ -283,7 +284,7 @@ func TestForwardStats_Update(t *testing.T) {
 func TestForwardStats_Flush(t *testing.T) {
 	initPrometheus(t)
 
-	s := &ForwardStats{ring: make([]forwardSummary, 4)}
+	s := &ForwardStats{ring: make([]forwardIntervalSummary, 4)}
 
 	for i := 0; i < 10; i++ {
 		s.Update(0, int64((i+1)*1000)) // 1us..10us
@@ -292,7 +293,7 @@ func TestForwardStats_Flush(t *testing.T) {
 	s.flush()
 
 	require.Equal(t, 1, s.ringLen)
-	summ := s.ring[0]
+	summ := s.ring[0].transit
 	require.Equal(t, int64(10), summ.count)
 	require.Equal(t, int64(1000), summ.minNs)
 	require.Equal(t, int64(10000), summ.maxNs)
@@ -301,14 +302,69 @@ func TestForwardStats_Flush(t *testing.T) {
 	// a subsequent flush with no new samples appends an empty summary
 	s.flush()
 	require.Equal(t, 2, s.ringLen)
-	require.Equal(t, int64(0), s.ring[1].count)
+	require.Equal(t, int64(0), s.ring[1].transit.count)
+}
+
+func TestForwardSample_Pack(t *testing.T) {
+	transit, delay := unpackForwardSample(packForwardSample(250_000, 7_168))
+	require.Equal(t, int64(250_000), transit)
+	require.Equal(t, int64(7_168), delay)
+
+	// scheduling delay keeps 256 ns resolution
+	_, delay = unpackForwardSample(packForwardSample(250_000, 7_300))
+	require.Equal(t, int64(7_168), delay)
+
+	// no scheduling delay, and a zero delay is a sample, not "none"
+	_, delay = unpackForwardSample(packForwardSample(1_000, -1))
+	require.Equal(t, int64(-1), delay)
+	_, delay = unpackForwardSample(packForwardSample(1_000, 0))
+	require.Equal(t, int64(0), delay)
+
+	// a long stall keeps its full transit; the delay saturates and never reads as "none"
+	transit, delay = unpackForwardSample(packForwardSample(10*int64(time.Second), 10*int64(time.Second)))
+	require.Equal(t, 10*int64(time.Second), transit)
+	require.Equal(t, int64((forwardNoSchedulingDelay-1)<<forwardSchedulingDelayShift), delay)
+	transit, _ = unpackForwardSample(packForwardSample(math.MaxInt64, -1))
+	require.Equal(t, int64(forwardMaxTransitNs), transit)
+
+	// a negative transit (clock skew) clamps to zero
+	transit, _ = unpackForwardSample(packForwardSample(-5, -1))
+	require.Equal(t, int64(0), transit)
+}
+
+func TestSaturatingNs(t *testing.T) {
+	require.Equal(t, uint32(1_000_000), saturatingNs(time.Millisecond))
+	// a 5s p90 saturates instead of wrapping to ~705ms
+	require.Equal(t, uint32(math.MaxUint32), saturatingNs(5*time.Second))
+	require.Equal(t, uint32(0), saturatingNs(-time.Second))
+}
+
+func TestForwardStats_SchedulingDelay(t *testing.T) {
+	initPrometheus(t)
+
+	s := &ForwardStats{ring: make([]forwardIntervalSummary, 2)}
+
+	// a burst: only the first packet found the forwarder idle
+	s.UpdateWithSchedulingDelay(0, 300_000, 4_096)
+	for i := 0; i < 9; i++ {
+		s.Update(0, 300_000)
+	}
+	s.flush()
+
+	summ := s.ring[0]
+	require.Equal(t, int64(10), summ.transit.count)
+	require.Equal(t, int64(1), summ.scheduling.count)
+	require.Equal(t, 4096*time.Nanosecond, summ.scheduling.percentile(forwardLatencyPercentile))
+	require.Equal(t, 300*time.Microsecond, s.GetStats(0))
+
+	require.NotPanics(t, s.report)
 }
 
 func TestForwardStats_ReportWindow(t *testing.T) {
 	initPrometheus(t)
 
 	// window of 3 summary buckets
-	s := &ForwardStats{ring: make([]forwardSummary, 3)}
+	s := &ForwardStats{ring: make([]forwardIntervalSummary, 3)}
 
 	s.Update(0, 1000)
 	s.flush()
@@ -318,7 +374,7 @@ func TestForwardStats_ReportWindow(t *testing.T) {
 	// report merges the whole window without panicking and reflects both samples
 	var w forwardSummary
 	for i := 0; i < s.ringLen; i++ {
-		w = w.merge(s.ring[i])
+		w = w.merge(s.ring[i].transit)
 	}
 	require.Equal(t, int64(2), w.count)
 	require.Equal(t, int64(1000), w.minNs)
@@ -331,7 +387,7 @@ func TestForwardStats_GetStats(t *testing.T) {
 	initPrometheus(t)
 
 	// 5 buckets, each covering one 100ms summary interval.
-	s := &ForwardStats{ring: make([]forwardSummary, 5), summaryInterval: 100 * time.Millisecond}
+	s := &ForwardStats{ring: make([]forwardIntervalSummary, 5), summaryInterval: 100 * time.Millisecond}
 
 	// fold five 100ms buckets, one sample each, descending 5ms..1ms so trailing
 	// windows have distinct maxima.
@@ -395,7 +451,7 @@ func benchArrival(base, i int64) int64 {
 }
 
 func BenchmarkForwardStatsUpdate(b *testing.B) {
-	s := &ForwardStats{ring: make([]forwardSummary, 1)}
+	s := &ForwardStats{ring: make([]forwardIntervalSummary, 1)}
 
 	var gid atomic.Int64
 	b.RunParallel(func(pb *testing.PB) {
