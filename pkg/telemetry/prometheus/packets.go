@@ -38,46 +38,46 @@ const (
 )
 
 var (
-	bytesIn                        atomic.Uint64
-	bytesOut                       atomic.Uint64
-	packetsIn                      atomic.Uint64
-	packetsOut                     atomic.Uint64
-	nackTotal                      atomic.Uint64
-	retransmitBytes                atomic.Uint64
-	retransmitPackets              atomic.Uint64
-	participantSignalConnected     atomic.Uint64
-	participantRTCConnected        atomic.Uint64
-	participantRTCInit             atomic.Uint64
-	participantRTCCanceled         atomic.Uint64
-	participantRTCActive           atomic.Uint64
-	forwardLatency                 atomic.Uint32
-	forwardProcessingPerSubscriber atomic.Uint32
+	bytesIn                    atomic.Uint64
+	bytesOut                   atomic.Uint64
+	packetsIn                  atomic.Uint64
+	packetsOut                 atomic.Uint64
+	nackTotal                  atomic.Uint64
+	retransmitBytes            atomic.Uint64
+	retransmitPackets          atomic.Uint64
+	participantSignalConnected atomic.Uint64
+	participantRTCConnected    atomic.Uint64
+	participantRTCInit         atomic.Uint64
+	participantRTCCanceled     atomic.Uint64
+	participantRTCActive       atomic.Uint64
+	forwardLatency             atomic.Uint32
+	forwardProcessingPerWrite  atomic.Uint32
 
-	promPacketLabels                       = []string{"direction", "transmission", "country"}
-	promPacketTotal                        *prometheus.CounterVec
-	promPacketBytes                        *prometheus.CounterVec
-	promFECLabels                          = []string{"direction", "type"}
-	promFECPacketTotal                     *prometheus.CounterVec
-	promFECPacketBytes                     *prometheus.CounterVec
-	promRTCPLabels                         = []string{"direction", "country"}
-	promStreamLabels                       = []string{"direction", "source", "type", "country"}
-	promNackTotal                          *prometheus.CounterVec
-	promRTXCappedTotal                     *prometheus.CounterVec
-	promKeyFrameTotal                      *prometheus.CounterVec
-	promPliTotal                           *prometheus.CounterVec
-	promFirTotal                           *prometheus.CounterVec
-	promPacketLossTotal                    *prometheus.CounterVec
-	promPacketLoss                         *prometheus.HistogramVec
-	promPacketOutOfOrderTotal              *prometheus.CounterVec
-	promPacketOutOfOrder                   *prometheus.HistogramVec
-	promJitter                             *prometheus.HistogramVec
-	promRTT                                *prometheus.HistogramVec
-	promParticipantJoin                    *prometheus.CounterVec
-	promConnections                        *prometheus.GaugeVec
-	promForwardLatency                     prometheus.Gauge
-	promForwardProcessingPerSubscriber     prometheus.Gauge
-	promForwardProcessingPerSubscriberHist prometheus.Histogram
-	promForwardLatencyHist                 prometheus.Histogram
+	promPacketLabels                  = []string{"direction", "transmission", "country"}
+	promPacketTotal                   *prometheus.CounterVec
+	promPacketBytes                   *prometheus.CounterVec
+	promFECLabels                     = []string{"direction", "type"}
+	promFECPacketTotal                *prometheus.CounterVec
+	promFECPacketBytes                *prometheus.CounterVec
+	promRTCPLabels                    = []string{"direction", "country"}
+	promStreamLabels                  = []string{"direction", "source", "type", "country"}
+	promNackTotal                     *prometheus.CounterVec
+	promRTXCappedTotal                *prometheus.CounterVec
+	promKeyFrameTotal                 *prometheus.CounterVec
+	promPliTotal                      *prometheus.CounterVec
+	promFirTotal                      *prometheus.CounterVec
+	promPacketLossTotal               *prometheus.CounterVec
+	promPacketLoss                    *prometheus.HistogramVec
+	promPacketOutOfOrderTotal         *prometheus.CounterVec
+	promPacketOutOfOrder              *prometheus.HistogramVec
+	promJitter                        *prometheus.HistogramVec
+	promRTT                           *prometheus.HistogramVec
+	promParticipantJoin               *prometheus.CounterVec
+	promConnections                   *prometheus.GaugeVec
+	promForwardLatency                prometheus.Gauge
+	promForwardProcessingPerWrite     prometheus.Gauge
+	promForwardProcessingPerWriteHist prometheus.Histogram
+	promForwardLatencyHist            prometheus.Histogram
 )
 
 func initPacketStats(nodeID string, nodeType livekit.NodeType) {
@@ -196,16 +196,16 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "latency",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	})
-	promForwardProcessingPerSubscriber = prometheus.NewGauge(prometheus.GaugeOpts{
+	promForwardProcessingPerWrite = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "forward",
-		Name:        "processing_per_subscriber",
+		Name:        "processing_per_write",
 		Help:        "Mean forwarding work per write to a subscriber, in ns: (end of fan-out - dequeue) / writes.",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	})
-	promForwardProcessingPerSubscriberHist = prometheus.NewHistogram(prometheus.HistogramOpts{
+	promForwardProcessingPerWriteHist = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,
-		Subsystem:   "forward_processing_per_subscriber",
+		Subsystem:   "forward_processing_per_write",
 		Name:        "ns",
 		Help:        "Forwarding work per write to a subscriber of each forwarded packet, in ns: (end of fan-out - dequeue) / writes.",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
@@ -253,8 +253,8 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promParticipantJoin)
 	prometheus.MustRegister(promConnections)
 	prometheus.MustRegister(promForwardLatency)
-	prometheus.MustRegister(promForwardProcessingPerSubscriber)
-	prometheus.MustRegister(promForwardProcessingPerSubscriberHist)
+	prometheus.MustRegister(promForwardProcessingPerWrite)
+	prometheus.MustRegister(promForwardProcessingPerWriteHist)
 	prometheus.MustRegister(promForwardLatencyHist)
 }
 
@@ -467,11 +467,11 @@ func RecordForwardLatency(p90 uint32) {
 	promForwardLatency.Set(float64(p90))
 }
 
-func RecordForwardProcessingPerSubscriber(mean uint32) {
-	forwardProcessingPerSubscriber.Store(mean)
-	promForwardProcessingPerSubscriber.Set(float64(mean))
+func RecordForwardProcessingPerWrite(mean uint32) {
+	forwardProcessingPerWrite.Store(mean)
+	promForwardProcessingPerWrite.Set(float64(mean))
 }
 
-func RecordForwardProcessingPerSubscriberSample(processingNs int64) {
-	promForwardProcessingPerSubscriberHist.Observe(float64(processingNs))
+func RecordForwardProcessingPerWriteSample(processingNs int64) {
+	promForwardProcessingPerWriteHist.Observe(float64(processingNs))
 }

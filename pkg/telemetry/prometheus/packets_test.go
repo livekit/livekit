@@ -46,18 +46,18 @@ func counterValue(t *testing.T, counter promclient.Counter) float64 {
 	return metric.GetCounter().GetValue()
 }
 
-func TestForwardProcessingPerSubscriberMetrics(t *testing.T) {
+func TestForwardProcessingPerWriteMetrics(t *testing.T) {
 	require.NoError(t, Init("test", livekit.NodeType_SERVER))
 
-	countBefore, sumBefore := histogramValue(t, promForwardProcessingPerSubscriberHist)
-	RecordForwardProcessingPerSubscriberSample(3_500)
-	RecordForwardProcessingPerSubscriberSample(4_500)
-	count, sum := histogramValue(t, promForwardProcessingPerSubscriberHist)
+	countBefore, sumBefore := histogramValue(t, promForwardProcessingPerWriteHist)
+	RecordForwardProcessingPerWriteSample(3_500)
+	RecordForwardProcessingPerWriteSample(4_500)
+	count, sum := histogramValue(t, promForwardProcessingPerWriteHist)
 	require.Equal(t, countBefore+2, count)
 	require.Equal(t, sumBefore+8_000, sum)
 
-	RecordForwardProcessingPerSubscriber(4_000)
-	require.Equal(t, uint32(4_000), forwardProcessingPerSubscriber.Load())
+	RecordForwardProcessingPerWrite(4_000)
+	require.Equal(t, uint32(4_000), forwardProcessingPerWrite.Load())
 }
 
 func histogramValue(t *testing.T, histogram promclient.Histogram) (uint64, float64) {

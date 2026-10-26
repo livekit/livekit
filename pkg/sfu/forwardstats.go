@@ -364,7 +364,7 @@ func (s *ForwardStats) flush() {
 		prometheus.RecordForwardLatencySample(transitNs)
 		summ.transit.addSample(transitNs)
 		if processingPerSubscriberNs >= 0 {
-			prometheus.RecordForwardProcessingPerSubscriberSample(processingPerSubscriberNs)
+			prometheus.RecordForwardProcessingPerWriteSample(processingPerSubscriberNs)
 			summ.processingPerSubscriber.addSample(processingPerSubscriberNs)
 		}
 	})
@@ -434,7 +434,7 @@ func (s *ForwardStats) report() {
 	}
 
 	prometheus.RecordForwardLatency(saturatingNs(p90))
-	prometheus.RecordForwardProcessingPerSubscriber(saturatingNs(ws.processingPerSubscriber.mean()))
+	prometheus.RecordForwardProcessingPerWrite(saturatingNs(ws.processingPerSubscriber.mean()))
 }
 
 // saturatingNs converts to uint32 nanoseconds, saturating at ~4.29s instead of wrapping.
