@@ -95,6 +95,44 @@ func TestMultiNodeDeleteRoomOfNodeThatLeft(t *testing.T) {
 	}
 }
 
+// a node that is serving but whose stats look stale, e.g. while its keepalive is delayed, keeps its room
+func TestMultiNodeDeleteRoomOnNodeWithStaleStats(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, s2, finish := setupMultiNodeTest("TestMultiNodeDeleteRoomOnNodeWithStaleStats")
+	defer finish()
+
+	_, err := roomClient.CreateRoom(contextWithToken(createRoomToken()), &livekit.CreateRoomRequest{
+		Name:   testRoom,
+		NodeId: s2.Node().Id,
+	})
+	require.NoError(t, err)
+	c1 := createRTCClient("c1", defaultServerPort, testRTCServicePaths[0], nil)
+	waitUntilConnected(t, c1)
+	defer stopClients(c1)
+
+	node := s2.Node()
+	node.Stats.UpdatedAt = time.Now().Add(-time.Minute).Unix()
+	data, err := proto.Marshal(node)
+	require.NoError(t, err)
+	require.NoError(t, redisClient().HSet(context.Background(), routing.NodesKey, node.Id, data).Err())
+
+	_, err = roomClient.DeleteRoom(contextWithToken(createRoomToken()), &livekit.DeleteRoomRequest{
+		Room: testRoom,
+	})
+	require.NoError(t, err)
+
+	testutils.WithTimeout(t, func() string {
+		if s2.RoomManager().GetRoom(context.Background(), testRoom) != nil {
+			return "room still open on its node"
+		}
+		return ""
+	})
+}
+
 // update room metadata when it's empty
 func TestMultiNodeUpdateRoomMetadata(t *testing.T) {
 	if testing.Short() {
