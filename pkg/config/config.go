@@ -971,91 +971,10 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 				DefaultText: defaultText,
 				Hidden:      hidden,
 			}
-		// flags below match the width of the config field, so a value that does not fit
-		// is rejected, as in the YAML config, instead of wrapping around
-		case reflect.Int:
-			flag = &cli.IntFlag{
-				Name:        name,
-				Sources:     cli.EnvVars(envVar),
-				Usage:       generatedCLIFlagUsage,
-				DefaultText: defaultText,
-				Hidden:      hidden,
-			}
-		case reflect.Int32:
-			flag = &cli.Int32Flag{
-				Name:        name,
-				Sources:     cli.EnvVars(envVar),
-				Usage:       generatedCLIFlagUsage,
-				DefaultText: defaultText,
-				Hidden:      hidden,
-			}
-		case reflect.Int64:
-			if valueType == reflect.TypeOf(time.Duration(0)) {
-				// parse values like "30s", as the YAML config does
-				flag = &cli.DurationFlag{
-					Name:        name,
-					Sources:     cli.EnvVars(envVar),
-					Usage:       generatedCLIFlagUsage,
-					DefaultText: defaultText,
-					Hidden:      hidden,
-				}
-			} else {
-				flag = &cli.Int64Flag{
-					Name:        name,
-					Sources:     cli.EnvVars(envVar),
-					Usage:       generatedCLIFlagUsage,
-					DefaultText: defaultText,
-					Hidden:      hidden,
-				}
-			}
-		case reflect.Uint8:
-			flag = &cli.Uint8Flag{
-				Name:        name,
-				Sources:     cli.EnvVars(envVar),
-				Usage:       generatedCLIFlagUsage,
-				DefaultText: defaultText,
-				Hidden:      hidden,
-			}
-		case reflect.Uint16:
-			flag = &cli.Uint16Flag{
-				Name:        name,
-				Sources:     cli.EnvVars(envVar),
-				Usage:       generatedCLIFlagUsage,
-				DefaultText: defaultText,
-				Hidden:      hidden,
-			}
-		case reflect.Uint32:
-			flag = &cli.Uint32Flag{
-				Name:        name,
-				Sources:     cli.EnvVars(envVar),
-				Usage:       generatedCLIFlagUsage,
-				DefaultText: defaultText,
-				Hidden:      hidden,
-			}
-		case reflect.Uint64:
-			flag = &cli.Uint64Flag{
-				Name:        name,
-				Sources:     cli.EnvVars(envVar),
-				Usage:       generatedCLIFlagUsage,
-				DefaultText: defaultText,
-				Hidden:      hidden,
-			}
-		case reflect.Float32:
-			flag = &cli.Float32Flag{
-				Name:        name,
-				Sources:     cli.EnvVars(envVar),
-				Usage:       generatedCLIFlagUsage,
-				DefaultText: defaultText,
-				Hidden:      hidden,
-			}
-		case reflect.Float64:
-			flag = &cli.Float64Flag{
-				Name:        name,
-				Sources:     cli.EnvVars(envVar),
-				Usage:       generatedCLIFlagUsage,
-				DefaultText: defaultText,
-				Hidden:      hidden,
-			}
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+			reflect.Float32, reflect.Float64:
+			flag = numericCLIFlag(valueType, name, envVar, defaultText, hidden)
 		case reflect.Slice:
 			// TODO
 			continue
@@ -1073,6 +992,120 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 	}
 
 	return flags, nil
+}
+
+// numericCLIFlag returns a flag whose width matches the config field, so a value that
+// does not fit is rejected, as in the YAML config, instead of wrapping around.
+func numericCLIFlag(valueType reflect.Type, name, envVar, defaultText string, hidden bool) cli.Flag {
+	switch valueType.Kind() {
+	case reflect.Int:
+		return &cli.IntFlag{
+			Name:        name,
+			Sources:     cli.EnvVars(envVar),
+			Usage:       generatedCLIFlagUsage,
+			DefaultText: defaultText,
+			Hidden:      hidden,
+		}
+	case reflect.Int8:
+		return &cli.Int8Flag{
+			Name:        name,
+			Sources:     cli.EnvVars(envVar),
+			Usage:       generatedCLIFlagUsage,
+			DefaultText: defaultText,
+			Hidden:      hidden,
+		}
+	case reflect.Int16:
+		return &cli.Int16Flag{
+			Name:        name,
+			Sources:     cli.EnvVars(envVar),
+			Usage:       generatedCLIFlagUsage,
+			DefaultText: defaultText,
+			Hidden:      hidden,
+		}
+	case reflect.Int32:
+		return &cli.Int32Flag{
+			Name:        name,
+			Sources:     cli.EnvVars(envVar),
+			Usage:       generatedCLIFlagUsage,
+			DefaultText: defaultText,
+			Hidden:      hidden,
+		}
+	case reflect.Int64:
+		if valueType == reflect.TypeOf(time.Duration(0)) {
+			// parse values like "30s", as the YAML config does
+			return &cli.DurationFlag{
+				Name:        name,
+				Sources:     cli.EnvVars(envVar),
+				Usage:       generatedCLIFlagUsage,
+				DefaultText: defaultText,
+				Hidden:      hidden,
+			}
+		}
+		return &cli.Int64Flag{
+			Name:        name,
+			Sources:     cli.EnvVars(envVar),
+			Usage:       generatedCLIFlagUsage,
+			DefaultText: defaultText,
+			Hidden:      hidden,
+		}
+	case reflect.Uint:
+		return &cli.UintFlag{
+			Name:        name,
+			Sources:     cli.EnvVars(envVar),
+			Usage:       generatedCLIFlagUsage,
+			DefaultText: defaultText,
+			Hidden:      hidden,
+		}
+	case reflect.Uint8:
+		return &cli.Uint8Flag{
+			Name:        name,
+			Sources:     cli.EnvVars(envVar),
+			Usage:       generatedCLIFlagUsage,
+			DefaultText: defaultText,
+			Hidden:      hidden,
+		}
+	case reflect.Uint16:
+		return &cli.Uint16Flag{
+			Name:        name,
+			Sources:     cli.EnvVars(envVar),
+			Usage:       generatedCLIFlagUsage,
+			DefaultText: defaultText,
+			Hidden:      hidden,
+		}
+	case reflect.Uint32:
+		return &cli.Uint32Flag{
+			Name:        name,
+			Sources:     cli.EnvVars(envVar),
+			Usage:       generatedCLIFlagUsage,
+			DefaultText: defaultText,
+			Hidden:      hidden,
+		}
+	case reflect.Uint64:
+		return &cli.Uint64Flag{
+			Name:        name,
+			Sources:     cli.EnvVars(envVar),
+			Usage:       generatedCLIFlagUsage,
+			DefaultText: defaultText,
+			Hidden:      hidden,
+		}
+	case reflect.Float32:
+		return &cli.Float32Flag{
+			Name:        name,
+			Sources:     cli.EnvVars(envVar),
+			Usage:       generatedCLIFlagUsage,
+			DefaultText: defaultText,
+			Hidden:      hidden,
+		}
+	case reflect.Float64:
+		return &cli.Float64Flag{
+			Name:        name,
+			Sources:     cli.EnvVars(envVar),
+			Usage:       generatedCLIFlagUsage,
+			DefaultText: defaultText,
+			Hidden:      hidden,
+		}
+	}
+	return nil
 }
 
 func cliDefaultText(value reflect.Value) string {

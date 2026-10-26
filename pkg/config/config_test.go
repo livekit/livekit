@@ -18,6 +18,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -197,6 +198,54 @@ func TestGeneratedNarrowNumericFlags(t *testing.T) {
 			t.Setenv(env, value)
 			_, err := runWithGeneratedFlags(t)
 			require.ErrorContains(t, err, env)
+		})
+	}
+}
+
+// numericCLIFlag also covers kinds that no config field uses yet (int8, int16, uint),
+// so check every numeric kind directly rather than through the Config struct.
+func TestNumericCLIFlagWidths(t *testing.T) {
+	cases := []struct {
+		name     string
+		typ      reflect.Type
+		inRange  string
+		want     any
+		tooLarge string
+	}{
+		{"int8", reflect.TypeOf(int8(0)), "-128", int8(-128), "128"},
+		{"int16", reflect.TypeOf(int16(0)), "32767", int16(32767), "32768"},
+		{"int32", reflect.TypeOf(int32(0)), "-2147483648", int32(-2147483648), "2147483648"},
+		{"uint", reflect.TypeOf(uint(0)), "42", uint(42), "-1"},
+		{"uint8", reflect.TypeOf(uint8(0)), "255", uint8(255), "256"},
+		{"uint16", reflect.TypeOf(uint16(0)), "65535", uint16(65535), "65536"},
+		{"uint32", reflect.TypeOf(uint32(0)), "4294967295", uint32(4294967295), "4294967296"},
+		{"float32", reflect.TypeOf(float32(0)), "0.5", float32(0.5), "1e39"},
+	}
+
+	run := func(t *testing.T, typ reflect.Type, value string) (any, error) {
+		const env = "LIVEKIT_TEST_NUMERIC_FLAG"
+		t.Setenv(env, value)
+		var got any
+		c := &cli.Command{
+			Name:  "test",
+			Flags: []cli.Flag{numericCLIFlag(typ, "test.numeric_flag", env, "", true)},
+			Action: func(_ context.Context, c *cli.Command) error {
+				got = c.Value("test.numeric_flag")
+				return nil
+			},
+		}
+		err := c.Run(context.Background(), []string{"test"})
+		return got, err
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := run(t, tc.typ, tc.inRange)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+
+			_, err = run(t, tc.typ, tc.tooLarge)
+			require.ErrorContains(t, err, "LIVEKIT_TEST_NUMERIC_FLAG")
 		})
 	}
 }
