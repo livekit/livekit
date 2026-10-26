@@ -20,8 +20,8 @@ require (
 	github.com/jellydator/ttlcache/v3 v3.4.1
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
-	github.com/livekit/mediatransportutil v0.0.0-20261014192331-dd8e31a0adc0
-	github.com/livekit/protocol v1.53.1-0.20261023175527-46332a036e25
+	github.com/livekit/mediatransportutil v0.0.0-20261020100523-e0b22b120fb1
+	github.com/livekit/protocol v1.53.1-0.20261023205916-b20af9b45249
 	github.com/livekit/psrpc v0.8.2
 	github.com/mackerelio/go-osstat v0.2.8
 	github.com/magefile/mage v1.17.2
@@ -31,15 +31,15 @@ require (
 	github.com/ory/dockertest/v4 v4.0.0
 	github.com/pion/datachannel v1.6.3
 	github.com/pion/dtls/v3 v3.1.9
-	github.com/pion/ice/v4 v4.4.0
+	github.com/pion/ice/v4 v4.4.4
 	github.com/pion/interceptor v0.1.49
 	github.com/pion/rtcp v1.2.19
 	github.com/pion/rtp v1.10.5
 	github.com/pion/sctp v1.12.0
 	github.com/pion/sdp/v3 v3.0.20
 	github.com/pion/transport/v4 v4.1.1
-	github.com/pion/turn/v5 v5.0.13
-	github.com/pion/webrtc/v4 v4.2.18
+	github.com/pion/turn/v5 v5.1.2
+	github.com/pion/webrtc/v4 v4.2.22
 	github.com/pires/go-proxyproto v0.15.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.24.1
@@ -88,6 +88,7 @@ require (
 	github.com/olekukonko/errors v1.3.0 // indirect
 	github.com/olekukonko/ll v0.1.8 // indirect
 	github.com/petermattis/goid v0.0.0-20260918085751-abfca077860b // indirect
+	github.com/pion/stun/v4 v4.0.1 // indirect
 	github.com/pion/transport/v5 v5.1.1 // indirect
 	github.com/puzpuzpuz/xsync/v4 v4.5.0 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
@@ -140,7 +141,7 @@ require (
 	github.com/pion/logging v0.2.4
 	github.com/pion/mdns/v2 v2.2.2 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
-	github.com/pion/srtp/v3 v3.0.13 // indirect
+	github.com/pion/srtp/v3 v3.1.0 // indirect
 	github.com/pion/stun/v3 v3.1.7
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_model v0.6.3
@@ -169,6 +170,6 @@ tool (
 
 replace github.com/pion/webrtc/v4 => github.com/livekit/webrtc-pion/v4 v4.2.18-warp.7
 
-replace github.com/pion/dtls/v3 => github.com/livekit/dtls/v3 v3.1.5-warp.3
+replace github.com/pion/dtls/v3 => github.com/livekit/dtls/v3 v3.1.15
 
 replace github.com/pion/ice/v4 => github.com/livekit/ice/v4 v4.4.0-warp.3
