@@ -135,7 +135,7 @@ func (s *WHIPService) validateCreate(w http.ResponseWriter, r *http.Request) (*c
 		return nil, http.StatusBadRequest, ErrIdentityEmpty
 	}
 
-	if err := checkConnectLimits(s.config.Limit, claims.Identity, roomName, claims); err != nil {
+	if err := CheckConnectLimits(s.config.Limit, claims.Identity, roomName, claims); err != nil {
 		return nil, http.StatusBadRequest, err
 	}
 
