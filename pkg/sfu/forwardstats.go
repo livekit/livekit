@@ -1,6 +1,7 @@
 package sfu
 
 import (
+	"math"
 	"math/bits"
 	"sync"
 	"time"
@@ -415,6 +416,11 @@ func (s *ForwardStats) report() {
 		)
 	}
 
-	prometheus.RecordForwardLatency(uint32(p90.Nanoseconds()))
-	prometheus.RecordForwardSchedulingDelay(uint32(ws.scheduling.percentile(forwardLatencyPercentile).Nanoseconds()))
+	prometheus.RecordForwardLatency(saturatingNs(p90))
+	prometheus.RecordForwardSchedulingDelay(saturatingNs(ws.scheduling.percentile(forwardLatencyPercentile)))
+}
+
+// saturatingNs converts to uint32 nanoseconds, saturating at ~4.29s instead of wrapping.
+func saturatingNs(d time.Duration) uint32 {
+	return uint32(min(max(d.Nanoseconds(), 0), math.MaxUint32))
 }

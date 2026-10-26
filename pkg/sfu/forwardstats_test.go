@@ -332,6 +332,13 @@ func TestForwardSample_Pack(t *testing.T) {
 	require.Equal(t, int64(0), transit)
 }
 
+func TestSaturatingNs(t *testing.T) {
+	require.Equal(t, uint32(1_000_000), saturatingNs(time.Millisecond))
+	// a 5s p90 saturates instead of wrapping to ~705ms
+	require.Equal(t, uint32(math.MaxUint32), saturatingNs(5*time.Second))
+	require.Equal(t, uint32(0), saturatingNs(-time.Second))
+}
+
 func TestForwardStats_SchedulingDelay(t *testing.T) {
 	initPrometheus(t)
 
