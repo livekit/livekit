@@ -24,22 +24,23 @@ const (
 	defaultKevlarAuthHandlerTimeout         = 2 * time.Second
 	defaultKevlarAuthHandlerTokenAttribute  = "at"
 	defaultKevlarAuthHandlerTenantAttribute = "tenant"
+	// userIdentityPrefix matches room-management LiveKit identity: user-{accountId}.
+	userIdentityPrefix = "user-"
 )
 
 var (
 	ErrKevlarAuthHandlerMissingToken  = errors.New("missing kevlar access token for kevlar_auth_handler")
 	ErrKevlarAuthHandlerMissingTenant = errors.New("missing tenant for kevlar_auth_handler")
 	ErrKevlarAuthHandlerRejected      = errors.New("kevlar_auth_handler rejected connection")
-	ErrKevlarAuthHandlerIdentity      = errors.New("kevlar_auth_handler accountId does not match participant identity")
+	ErrKevlarAuthHandlerIdentity      = errors.New("kevlar_auth_handler identity is not user-{accountId}")
 )
 
 // KevlarAuthHandler validates a Kevlar AT via icap-gateway before RTC join.
 type KevlarAuthHandler struct {
-	url                 string
-	tokenAttribute      string
-	tenantAttribute     string
-	requireAccountMatch bool
-	httpClient          *http.Client
+	url             string
+	tokenAttribute  string
+	tenantAttribute string
+	httpClient      *http.Client
 }
 
 func NewKevlarAuthHandler(cfg config.KevlarAuthHandlerConfig) *KevlarAuthHandler {
@@ -59,11 +60,10 @@ func NewKevlarAuthHandler(cfg config.KevlarAuthHandlerConfig) *KevlarAuthHandler
 		tenantAttr = defaultKevlarAuthHandlerTenantAttribute
 	}
 	return &KevlarAuthHandler{
-		url:                 cfg.URL,
-		tokenAttribute:      tokenAttr,
-		tenantAttribute:     tenantAttr,
-		requireAccountMatch: cfg.RequireAccountMatch,
-		httpClient:          &http.Client{Timeout: timeout},
+		url:             cfg.URL,
+		tokenAttribute:  tokenAttr,
+		tenantAttribute: tenantAttr,
+		httpClient:      &http.Client{Timeout: timeout},
 	}
 }
 
@@ -123,7 +123,8 @@ func (h *KevlarAuthHandler) ValidateConnect(
 		delete(tokenAttributes, h.tokenAttribute)
 	}
 
-	if h.requireAccountMatch && claimsIdentity != "" && claimsIdentity != accountID {
+	// LiveKit identity from room-management is always user-{accountId}.
+	if claimsIdentity != userIdentityPrefix+accountID {
 		return ErrKevlarAuthHandlerIdentity
 	}
 	return nil

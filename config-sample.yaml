@@ -285,7 +285,7 @@ keys:
 #   timeout: 2s
 #   token_attribute: at
 #   tenant_attribute: tenant
-#   require_account_match: false
+# Identity must be user-{accountId} from gateway validate response.
 
 # Signal Relay
 # since v1.4.0, a more reliable, psrpc based signal relay is available

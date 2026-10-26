@@ -138,8 +138,6 @@ type KevlarAuthHandlerConfig struct {
 	// TenantAttribute is the participant attribute key for tenant (default "tenant").
 	// Value is forwarded to icap-gateway as header x-tenant-id.
 	TenantAttribute string `yaml:"tenant_attribute,omitempty"`
-	// RequireAccountMatch rejects the join when gateway accountId != participant identity.
-	RequireAccountMatch bool `yaml:"require_account_match,omitempty"`
 }
 
 // WebTransportConfig is the node's HTTP/3 listener. QUIC has no plaintext mode,
