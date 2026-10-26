@@ -382,12 +382,18 @@ func (w *Worker) GetJobState(jobID livekit.JobID) (*livekit.JobState, error) {
 	return proto.CloneOf(j.State), nil
 }
 
-// AttachJob tracks a job the worker already runs as if it had been assigned
-// to it, so its status updates and termination are handled.
+// AttachJob tracks a job the worker already runs as if AssignJob had assigned
+// it here, so the worker handles its status updates and termination. Like
+// AssignJob, it does not route the job to the worker: that is the caller's.
 func (w *Worker) AttachJob(job *livekit.Job) {
+	job = proto.CloneOf(job)
+	if job.State == nil {
+		job.State = &livekit.JobState{}
+	}
+
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.runningJobs[livekit.JobID(job.Id)] = proto.CloneOf(job)
+	w.runningJobs[livekit.JobID(job.Id)] = job
 }
 
 func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook AssignmentHook) (*livekit.JobState, error) {

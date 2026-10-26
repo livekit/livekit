@@ -13,6 +13,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/agent/endpoint/wire"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 )
 
 type nopSignalConn struct{}
@@ -91,6 +92,16 @@ func TestAttachJob(t *testing.T) {
 	require.Equal(t, int64(1), state.StartedAt)
 
 	state, err = w.UpdateJobStatus(&livekit.UpdateJobStatus{JobId: job.Id, Status: livekit.JobStatus_JS_SUCCESS})
+	require.NoError(t, err)
+	require.Equal(t, livekit.JobStatus_JS_SUCCESS, state.Status)
+	require.Zero(t, w.RunningJobCount())
+}
+
+func TestAttachJobWithoutState(t *testing.T) {
+	w := agent.NewWorker(agent.MakeWorkerRegistration(), "key", "secret", nopSignalConn{}, logger.GetLogger())
+	w.AttachJob(&livekit.Job{Id: "AJ_stateless"})
+
+	state, err := w.TerminateJob("AJ_stateless", rpc.JobTerminateReason_TERMINATION_REQUESTED)
 	require.NoError(t, err)
 	require.Equal(t, livekit.JobStatus_JS_SUCCESS, state.Status)
 	require.Zero(t, w.RunningJobCount())
