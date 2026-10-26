@@ -65,6 +65,9 @@ func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit
 		return nil, psrpc.NewError(psrpc.InvalidArgument, err)
 	}
 
+	if !ag.limitConf.CheckRoomNameLength(req.Room) {
+		return nil, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, ag.limitConf.MaxRoomNameLength)
+	}
 	if !ag.limitConf.CheckMetadataSize(req.Metadata) {
 		return nil, ErrMetadataExceedsLimits
 	}

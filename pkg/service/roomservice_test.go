@@ -170,6 +170,27 @@ func TestAgentDispatchMetadataLimits(t *testing.T) {
 		})
 		require.ErrorIs(t, err, service.ErrAttributeExceedsLimits)
 	})
+
+	t.Run("room name exceeds limits", func(t *testing.T) {
+		allocator := &servicefakes.FakeRoomAllocator{}
+		allocator.AutoCreateEnabledReturns(true)
+		router := &routingfakes.FakeRouter{}
+		svc := service.NewAgentDispatchService(
+			config.LimitConfig{MaxRoomNameLength: 5},
+			&rpcfakes.FakeTypedAgentDispatchInternalClient{},
+			rpc.NewTopicFormatter(),
+			allocator,
+			router,
+		)
+		ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{
+			Video: &auth.VideoGrant{Room: "abcdefg", RoomAdmin: true},
+		}, "")
+		_, err := svc.CreateDispatch(ctx, &livekit.CreateAgentDispatchRequest{
+			Room: "abcdefg",
+		})
+		require.ErrorIs(t, err, service.ErrRoomNameExceedsLimits)
+		require.Zero(t, router.CreateRoomCallCount())
+	})
 }
 
 func newTestAgentDispatchService(limitConf config.LimitConfig) *service.AgentDispatchService {
