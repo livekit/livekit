@@ -1,7 +1,6 @@
 package sfu
 
 import (
-	"math"
 	"math/bits"
 	"sync"
 	"time"
@@ -101,25 +100,30 @@ func (b *forwardSampleBuffer) takeDropped() uint64 {
 	return b.dropped.Swap(0)
 }
 
-// A sample packs transit (high 32 bits) and scheduling delay (low 32 bits), both in
-// nanoseconds, into one slot so the second value costs no extra atomic. Each half
-// saturates at ~4.29s.
-const forwardNoSchedulingDelay = math.MaxUint32
+// A sample packs transit (high 40 bits, in ns, up to ~18 minutes) and scheduling delay
+// (low 24 bits, in 256 ns units, up to ~4.29s) into one slot, so the second value costs
+// no extra atomic.
+const (
+	forwardSchedulingDelayBits  = 24
+	forwardSchedulingDelayShift = 8 // 256 ns units
+	forwardNoSchedulingDelay    = 1<<forwardSchedulingDelayBits - 1
+	forwardMaxTransitNs         = 1<<(64-forwardSchedulingDelayBits) - 1
+)
 
 // packForwardSample packs a sample, a negative schedulingDelayNs meaning none.
 func packForwardSample(transitNs, schedulingDelayNs int64) int64 {
 	delay := uint64(forwardNoSchedulingDelay)
 	if schedulingDelayNs >= 0 {
-		delay = uint64(min(schedulingDelayNs, forwardNoSchedulingDelay-1))
+		delay = min(uint64(schedulingDelayNs)>>forwardSchedulingDelayShift, forwardNoSchedulingDelay-1)
 	}
-	return int64(uint64(min(max(transitNs, 0), math.MaxUint32))<<32 | delay)
+	return int64(uint64(min(max(transitNs, 0), forwardMaxTransitNs))<<forwardSchedulingDelayBits | delay)
 }
 
 // unpackForwardSample returns the transit and scheduling delay, -1 when there is none.
 func unpackForwardSample(sample int64) (transitNs, schedulingDelayNs int64) {
-	transitNs = int64(uint64(sample) >> 32)
-	if delay := uint32(sample); delay != forwardNoSchedulingDelay {
-		return transitNs, int64(delay)
+	transitNs = int64(uint64(sample) >> forwardSchedulingDelayBits)
+	if delay := uint64(sample) & forwardNoSchedulingDelay; delay != forwardNoSchedulingDelay {
+		return transitNs, int64(delay << forwardSchedulingDelayShift)
 	}
 	return transitNs, -1
 }

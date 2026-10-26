@@ -306,9 +306,13 @@ func TestForwardStats_Flush(t *testing.T) {
 }
 
 func TestForwardSample_Pack(t *testing.T) {
-	transit, delay := unpackForwardSample(packForwardSample(250_000, 7_000))
+	transit, delay := unpackForwardSample(packForwardSample(250_000, 7_168))
 	require.Equal(t, int64(250_000), transit)
-	require.Equal(t, int64(7_000), delay)
+	require.Equal(t, int64(7_168), delay)
+
+	// scheduling delay keeps 256 ns resolution
+	_, delay = unpackForwardSample(packForwardSample(250_000, 7_300))
+	require.Equal(t, int64(7_168), delay)
 
 	// no scheduling delay, and a zero delay is a sample, not "none"
 	_, delay = unpackForwardSample(packForwardSample(1_000, -1))
@@ -316,10 +320,12 @@ func TestForwardSample_Pack(t *testing.T) {
 	_, delay = unpackForwardSample(packForwardSample(1_000, 0))
 	require.Equal(t, int64(0), delay)
 
-	// both halves saturate, and a saturated delay never reads as "none"
+	// a long stall keeps its full transit; the delay saturates and never reads as "none"
 	transit, delay = unpackForwardSample(packForwardSample(10*int64(time.Second), 10*int64(time.Second)))
-	require.Equal(t, int64(math.MaxUint32), transit)
-	require.Equal(t, int64(forwardNoSchedulingDelay-1), delay)
+	require.Equal(t, 10*int64(time.Second), transit)
+	require.Equal(t, int64((forwardNoSchedulingDelay-1)<<forwardSchedulingDelayShift), delay)
+	transit, _ = unpackForwardSample(packForwardSample(math.MaxInt64, -1))
+	require.Equal(t, int64(forwardMaxTransitNs), transit)
 
 	// a negative transit (clock skew) clamps to zero
 	transit, _ = unpackForwardSample(packForwardSample(-5, -1))
@@ -332,7 +338,7 @@ func TestForwardStats_SchedulingDelay(t *testing.T) {
 	s := &ForwardStats{ring: make([]forwardIntervalSummary, 2)}
 
 	// a burst: only the first packet found the forwarder idle
-	s.UpdateWithSchedulingDelay(0, 300_000, 4_000)
+	s.UpdateWithSchedulingDelay(0, 300_000, 4_096)
 	for i := 0; i < 9; i++ {
 		s.Update(0, 300_000)
 	}
@@ -341,7 +347,7 @@ func TestForwardStats_SchedulingDelay(t *testing.T) {
 	summ := s.ring[0]
 	require.Equal(t, int64(10), summ.transit.count)
 	require.Equal(t, int64(1), summ.scheduling.count)
-	require.Equal(t, 4*time.Microsecond, summ.scheduling.percentile(forwardLatencyPercentile))
+	require.Equal(t, 4096*time.Nanosecond, summ.scheduling.percentile(forwardLatencyPercentile))
 	require.Equal(t, 300*time.Microsecond, s.GetStats(0))
 
 	require.NotPanics(t, s.report)
