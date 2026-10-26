@@ -45,3 +45,25 @@ func counterValue(t *testing.T, counter promclient.Counter) float64 {
 	require.NoError(t, counter.Write(metric))
 	return metric.GetCounter().GetValue()
 }
+
+func TestForwardProcessingPerWriteMetrics(t *testing.T) {
+	require.NoError(t, Init("test", livekit.NodeType_SERVER))
+
+	countBefore, sumBefore := histogramValue(t, promForwardProcessingPerWriteHist)
+	RecordForwardProcessingPerWriteSample(3_500)
+	RecordForwardProcessingPerWriteSample(4_500)
+	count, sum := histogramValue(t, promForwardProcessingPerWriteHist)
+	require.Equal(t, countBefore+2, count)
+	require.Equal(t, sumBefore+8_000, sum)
+
+	RecordForwardProcessingPerWrite(4_000)
+	require.Equal(t, uint32(4_000), forwardProcessingPerWrite.Load())
+}
+
+func histogramValue(t *testing.T, histogram promclient.Histogram) (uint64, float64) {
+	t.Helper()
+
+	metric := &dto.Metric{}
+	require.NoError(t, histogram.Write(metric))
+	return metric.GetHistogram().GetSampleCount(), metric.GetHistogram().GetSampleSum()
+}

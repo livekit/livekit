@@ -978,13 +978,7 @@ func (r *ReceiverBase) forwardRTP(
 		// serially, inflating the measured transit for the tail of the burst. That
 		// reflects loss recovery rather than steady-state forwarding health.
 		if writeCount > 0 && r.forwardStats != nil && !extPkt.IsBuffered && !extPkt.IsOutOfOrder {
-			// a packet that found the forwarder waiting measures only its wake-up; a queued
-			// one also waited behind earlier packets, so it carries no scheduling delay
-			schedulingDelay := int64(-1)
-			if extPkt.ReaderWasWaiting {
-				schedulingDelay = dequeuedAt - extPkt.Arrival
-			}
-			if latency, isHigh := r.forwardStats.UpdateWithSchedulingDelay(extPkt.Arrival, mono.UnixNano(), schedulingDelay); isHigh {
+			if latency, isHigh := r.forwardStats.UpdateForwarded(extPkt.Arrival, dequeuedAt, mono.UnixNano(), writeCount); isHigh {
 				r.params.Logger.Debugw(
 					"high forwarding latency",
 					"latency", time.Duration(latency),

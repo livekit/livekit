@@ -132,23 +132,20 @@ func TestReceiverBaseAddDownTrackReturnsClosedWhenCloseWinsRace(t *testing.T) {
 	require.Empty(t, receiver.GetDownTracks())
 }
 
-// burstBuffer serves one packet per flag from ReadExtended, then io.EOF. A flag says
-// whether the packet found the reader waiting.
+// burstBuffer serves count packets from ReadExtended, then io.EOF.
 type burstBuffer struct {
 	buffer.BufferProvider
-	readerWasWaiting []bool
+	count int
 }
 
 func (b *burstBuffer) ReadExtended([]byte) (*buffer.ExtPacket, error) {
-	if len(b.readerWasWaiting) == 0 {
+	if b.count == 0 {
 		return nil, io.EOF
 	}
-	readerWasWaiting := b.readerWasWaiting[0]
-	b.readerWasWaiting = b.readerWasWaiting[1:]
+	b.count--
 	return &buffer.ExtPacket{
-		Arrival:          mono.UnixNano(),
-		Packet:           &rtp.Packet{Header: rtp.Header{PayloadType: 111}},
-		ReaderWasWaiting: readerWasWaiting,
+		Arrival: mono.UnixNano(),
+		Packet:  &rtp.Packet{Header: rtp.Header{PayloadType: 111}},
 	}, nil
 }
 
@@ -162,7 +159,7 @@ func (s *writeTestSender) WriteRTP(*buffer.ExtPacket, int32) int32 {
 
 func (s *writeTestSender) Close() {}
 
-func TestReceiverBaseSchedulingDelayOnlyWhenIdle(t *testing.T) {
+func TestReceiverBaseRecordsProcessingPerSubscriber(t *testing.T) {
 	receiver := NewReceiverBase(
 		ReceiverBaseParams{
 			TrackID:  "track",
@@ -191,8 +188,7 @@ func TestReceiverBaseSchedulingDelayOnlyWhenIdle(t *testing.T) {
 	receiver.SetForwardStats(fs)
 	require.NoError(t, receiver.AddDownTrack(&writeTestSender{receiverCloseTestSender{subscriberID: "subscriber"}}))
 
-	// a burst of five where only the first found the forwarder waiting, then one more that did
-	buff := &burstBuffer{readerWasWaiting: []bool{true, false, false, false, false, true}}
+	buff := &burstBuffer{count: 6}
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -201,8 +197,8 @@ func TestReceiverBaseSchedulingDelayOnlyWhenIdle(t *testing.T) {
 	fs.flush()
 	summ := fs.ring[0]
 	require.Equal(t, int64(6), summ.transit.count)
-	// the burst's later packets queued behind earlier ones, so they carry no scheduling delay
-	require.Equal(t, int64(2), summ.scheduling.count)
+	// every packet written to a subscriber carries its processing per subscriber
+	require.Equal(t, int64(6), summ.processingPerSubscriber.count)
 }
 
 func BenchmarkWriteRTP(b *testing.B) {

@@ -101,30 +101,30 @@ func (b *forwardSampleBuffer) takeDropped() uint64 {
 	return b.dropped.Swap(0)
 }
 
-// A sample packs transit (high 40 bits, in ns, up to ~18 minutes) and scheduling delay
-// (low 24 bits, in 256 ns units, up to ~4.29s) into one slot, so the second value costs
-// no extra atomic.
+// A sample packs transit (high 40 bits, in ns, up to ~18 minutes) and processing per
+// subscriber written (low 24 bits, in 16 ns units, up to ~268 ms) into one slot, so the
+// second value costs no extra atomic.
 const (
-	forwardSchedulingDelayBits  = 24
-	forwardSchedulingDelayShift = 8 // 256 ns units
-	forwardNoSchedulingDelay    = 1<<forwardSchedulingDelayBits - 1
-	forwardMaxTransitNs         = 1<<(64-forwardSchedulingDelayBits) - 1
+	forwardProcessingBits  = 24
+	forwardProcessingShift = 4 // 16 ns units
+	forwardNoProcessing    = 1<<forwardProcessingBits - 1
+	forwardMaxTransitNs    = 1<<(64-forwardProcessingBits) - 1
 )
 
-// packForwardSample packs a sample, a negative schedulingDelayNs meaning none.
-func packForwardSample(transitNs, schedulingDelayNs int64) int64 {
-	delay := uint64(forwardNoSchedulingDelay)
-	if schedulingDelayNs >= 0 {
-		delay = min(uint64(schedulingDelayNs)>>forwardSchedulingDelayShift, forwardNoSchedulingDelay-1)
+// packForwardSample packs a sample, a negative processingPerSubscriberNs meaning none.
+func packForwardSample(transitNs, processingPerSubscriberNs int64) int64 {
+	processing := uint64(forwardNoProcessing)
+	if processingPerSubscriberNs >= 0 {
+		processing = min(uint64(processingPerSubscriberNs)>>forwardProcessingShift, forwardNoProcessing-1)
 	}
-	return int64(uint64(min(max(transitNs, 0), forwardMaxTransitNs))<<forwardSchedulingDelayBits | delay)
+	return int64(uint64(min(max(transitNs, 0), forwardMaxTransitNs))<<forwardProcessingBits | processing)
 }
 
-// unpackForwardSample returns the transit and scheduling delay, -1 when there is none.
-func unpackForwardSample(sample int64) (transitNs, schedulingDelayNs int64) {
-	transitNs = int64(uint64(sample) >> forwardSchedulingDelayBits)
-	if delay := uint64(sample) & forwardNoSchedulingDelay; delay != forwardNoSchedulingDelay {
-		return transitNs, int64(delay << forwardSchedulingDelayShift)
+// unpackForwardSample returns the transit and processing per subscriber, -1 when there is none.
+func unpackForwardSample(sample int64) (transitNs, processingPerSubscriberNs int64) {
+	transitNs = int64(uint64(sample) >> forwardProcessingBits)
+	if processing := uint64(sample) & forwardNoProcessing; processing != forwardNoProcessing {
+		return transitNs, int64(processing << forwardProcessingShift)
 	}
 	return transitNs, -1
 }
@@ -181,6 +181,7 @@ type forwardSummary struct {
 	count   int64
 	minNs   int64
 	maxNs   int64
+	sumNs   int64
 	buckets [forwardHistBuckets]bucketStat
 }
 
@@ -208,6 +209,7 @@ func (s *forwardSummary) addSample(transitNs int64) {
 		s.maxNs = max(s.maxNs, transitNs)
 	}
 	s.count++
+	s.sumNs += transitNs
 	s.buckets[forwardBucket(transitNs)].add(transitNs)
 }
 
@@ -221,6 +223,7 @@ func (s forwardSummary) merge(o forwardSummary) forwardSummary {
 	s.count += o.count
 	s.minNs = min(s.minNs, o.minNs)
 	s.maxNs = max(s.maxNs, o.maxNs)
+	s.sumNs += o.sumNs
 	for i := range s.buckets {
 		s.buckets[i].mergeIn(o.buckets[i])
 	}
@@ -250,16 +253,23 @@ func (s forwardSummary) percentile(p float64) time.Duration {
 	return time.Duration(s.maxNs)
 }
 
-// forwardIntervalSummary holds one summary interval's transit and scheduling delay.
+func (s forwardSummary) mean() time.Duration {
+	if s.count == 0 {
+		return 0
+	}
+	return time.Duration(s.sumNs / s.count)
+}
+
+// forwardIntervalSummary holds one summary interval's transit and processing per subscriber.
 type forwardIntervalSummary struct {
-	transit    forwardSummary
-	scheduling forwardSummary
+	transit                 forwardSummary
+	processingPerSubscriber forwardSummary
 }
 
 func (s forwardIntervalSummary) merge(o forwardIntervalSummary) forwardIntervalSummary {
 	return forwardIntervalSummary{
-		transit:    s.transit.merge(o.transit),
-		scheduling: s.scheduling.merge(o.scheduling),
+		transit:                 s.transit.merge(o.transit),
+		processingPerSubscriber: s.processingPerSubscriber.merge(o.processingPerSubscriber),
 	}
 }
 
@@ -301,14 +311,20 @@ func NewForwardStats(summaryInterval, reportInterval, reportWindow time.Duration
 // and returns the transit and whether it exceeds the high-latency threshold.
 // The sample is aggregated and emitted by the background worker.
 func (s *ForwardStats) Update(arrival, left int64) (int64, bool) {
-	return s.UpdateWithSchedulingDelay(arrival, left, -1)
+	transit := left - arrival
+	s.samples.push(arrival, packForwardSample(transit, -1))
+	return transit, time.Duration(transit) > cHighForwardingLatency
 }
 
-// UpdateWithSchedulingDelay is Update that also records a scheduling delay when it is
-// not negative.
-func (s *ForwardStats) UpdateWithSchedulingDelay(arrival, left, schedulingDelay int64) (int64, bool) {
+// UpdateForwarded is Update for a packet the receiver dequeued and wrote writeCount
+// times. It also records the processing (dequeue to end of fan-out) per write.
+func (s *ForwardStats) UpdateForwarded(arrival, dequeuedAt, left int64, writeCount int32) (int64, bool) {
 	transit := left - arrival
-	s.samples.push(arrival, packForwardSample(transit, schedulingDelay))
+	processingPerSubscriber := int64(-1)
+	if writeCount > 0 {
+		processingPerSubscriber = (left - dequeuedAt) / int64(writeCount)
+	}
+	s.samples.push(arrival, packForwardSample(transit, processingPerSubscriber))
 	return transit, time.Duration(transit) > cHighForwardingLatency
 }
 
@@ -339,16 +355,17 @@ func (s *ForwardStats) run() {
 }
 
 // flush drains the buffered samples, observes each into the Prometheus
-// histogram, and folds the interval summary into the window ring used for the
-// latency gauge.
+// histograms, and folds the interval summary into the window ring used for the
+// gauges.
 func (s *ForwardStats) flush() {
 	var summ forwardIntervalSummary
 	s.samples.drain(func(sample int64) {
-		transitNs, schedulingDelayNs := unpackForwardSample(sample)
+		transitNs, processingPerSubscriberNs := unpackForwardSample(sample)
 		prometheus.RecordForwardLatencySample(transitNs)
 		summ.transit.addSample(transitNs)
-		if schedulingDelayNs >= 0 {
-			summ.scheduling.addSample(schedulingDelayNs)
+		if processingPerSubscriberNs >= 0 {
+			prometheus.RecordForwardProcessingPerWriteSample(processingPerSubscriberNs)
+			summ.processingPerSubscriber.addSample(processingPerSubscriberNs)
 		}
 	})
 
@@ -417,7 +434,7 @@ func (s *ForwardStats) report() {
 	}
 
 	prometheus.RecordForwardLatency(saturatingNs(p90))
-	prometheus.RecordForwardSchedulingDelay(saturatingNs(ws.scheduling.percentile(forwardLatencyPercentile)))
+	prometheus.RecordForwardProcessingPerWrite(saturatingNs(ws.processingPerSubscriber.mean()))
 }
 
 // saturatingNs converts to uint32 nanoseconds, saturating at ~4.29s instead of wrapping.

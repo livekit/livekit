@@ -51,32 +51,33 @@ var (
 	participantRTCCanceled     atomic.Uint64
 	participantRTCActive       atomic.Uint64
 	forwardLatency             atomic.Uint32
-	forwardSchedulingDelay     atomic.Uint32
+	forwardProcessingPerWrite  atomic.Uint32
 
-	promPacketLabels           = []string{"direction", "transmission", "country"}
-	promPacketTotal            *prometheus.CounterVec
-	promPacketBytes            *prometheus.CounterVec
-	promFECLabels              = []string{"direction", "type"}
-	promFECPacketTotal         *prometheus.CounterVec
-	promFECPacketBytes         *prometheus.CounterVec
-	promRTCPLabels             = []string{"direction", "country"}
-	promStreamLabels           = []string{"direction", "source", "type", "country"}
-	promNackTotal              *prometheus.CounterVec
-	promRTXCappedTotal         *prometheus.CounterVec
-	promKeyFrameTotal          *prometheus.CounterVec
-	promPliTotal               *prometheus.CounterVec
-	promFirTotal               *prometheus.CounterVec
-	promPacketLossTotal        *prometheus.CounterVec
-	promPacketLoss             *prometheus.HistogramVec
-	promPacketOutOfOrderTotal  *prometheus.CounterVec
-	promPacketOutOfOrder       *prometheus.HistogramVec
-	promJitter                 *prometheus.HistogramVec
-	promRTT                    *prometheus.HistogramVec
-	promParticipantJoin        *prometheus.CounterVec
-	promConnections            *prometheus.GaugeVec
-	promForwardLatency         prometheus.Gauge
-	promForwardSchedulingDelay prometheus.Gauge
-	promForwardLatencyHist     prometheus.Histogram
+	promPacketLabels                  = []string{"direction", "transmission", "country"}
+	promPacketTotal                   *prometheus.CounterVec
+	promPacketBytes                   *prometheus.CounterVec
+	promFECLabels                     = []string{"direction", "type"}
+	promFECPacketTotal                *prometheus.CounterVec
+	promFECPacketBytes                *prometheus.CounterVec
+	promRTCPLabels                    = []string{"direction", "country"}
+	promStreamLabels                  = []string{"direction", "source", "type", "country"}
+	promNackTotal                     *prometheus.CounterVec
+	promRTXCappedTotal                *prometheus.CounterVec
+	promKeyFrameTotal                 *prometheus.CounterVec
+	promPliTotal                      *prometheus.CounterVec
+	promFirTotal                      *prometheus.CounterVec
+	promPacketLossTotal               *prometheus.CounterVec
+	promPacketLoss                    *prometheus.HistogramVec
+	promPacketOutOfOrderTotal         *prometheus.CounterVec
+	promPacketOutOfOrder              *prometheus.HistogramVec
+	promJitter                        *prometheus.HistogramVec
+	promRTT                           *prometheus.HistogramVec
+	promParticipantJoin               *prometheus.CounterVec
+	promConnections                   *prometheus.GaugeVec
+	promForwardLatency                prometheus.Gauge
+	promForwardProcessingPerWrite     prometheus.Gauge
+	promForwardProcessingPerWriteHist prometheus.Histogram
+	promForwardLatencyHist            prometheus.Histogram
 )
 
 func initPacketStats(nodeID string, nodeType livekit.NodeType) {
@@ -195,12 +196,24 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "latency",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	})
-	promForwardSchedulingDelay = prometheus.NewGauge(prometheus.GaugeOpts{
+	promForwardProcessingPerWrite = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "forward",
-		Name:        "scheduling_delay",
-		Help:        "p90 time from arrival to dequeue, in ns, for packets that found their forwarder idle.",
+		Name:        "processing_per_write",
+		Help:        "Mean forwarding work per write to a subscriber, in ns: (end of fan-out - dequeue) / writes.",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+	})
+	promForwardProcessingPerWriteHist = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "forward_processing_per_write",
+		Name:        "ns",
+		Help:        "Forwarding work per write to a subscriber of each forwarded packet, in ns: (end of fan-out - dequeue) / writes.",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+		// fine below 20us, where this sits, so quantiles resolve to about a microsecond
+		Buckets: []float64{
+			500, 1000, 2000, 3000, 4000, 5000, 6000, 8000, 10000,
+			12000, 15000, 20000, 30000, 50000, 100000, 250000, 1000000,
+		},
 	})
 	promForwardLatencyHist = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,
@@ -240,7 +253,8 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promParticipantJoin)
 	prometheus.MustRegister(promConnections)
 	prometheus.MustRegister(promForwardLatency)
-	prometheus.MustRegister(promForwardSchedulingDelay)
+	prometheus.MustRegister(promForwardProcessingPerWrite)
+	prometheus.MustRegister(promForwardProcessingPerWriteHist)
 	prometheus.MustRegister(promForwardLatencyHist)
 }
 
@@ -453,7 +467,11 @@ func RecordForwardLatency(p90 uint32) {
 	promForwardLatency.Set(float64(p90))
 }
 
-func RecordForwardSchedulingDelay(p90 uint32) {
-	forwardSchedulingDelay.Store(p90)
-	promForwardSchedulingDelay.Set(float64(p90))
+func RecordForwardProcessingPerWrite(mean uint32) {
+	forwardProcessingPerWrite.Store(mean)
+	promForwardProcessingPerWrite.Set(float64(mean))
+}
+
+func RecordForwardProcessingPerWriteSample(processingNs int64) {
+	promForwardProcessingPerWriteHist.Observe(float64(processingNs))
 }
