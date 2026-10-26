@@ -316,8 +316,8 @@ func (s *ForwardStats) Update(arrival, left int64) (int64, bool) {
 	return transit, time.Duration(transit) > cHighForwardingLatency
 }
 
-// UpdateForwarded is Update for a packet the receiver dequeued and wrote to writeCount
-// subscribers. It also records the processing (dequeue to end of fan-out) per subscriber.
+// UpdateForwarded is Update for a packet the receiver dequeued and wrote writeCount
+// times. It also records the processing (dequeue to end of fan-out) per write.
 func (s *ForwardStats) UpdateForwarded(arrival, dequeuedAt, left int64, writeCount int32) (int64, bool) {
 	transit := left - arrival
 	processingPerSubscriber := int64(-1)

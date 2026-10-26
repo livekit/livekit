@@ -200,14 +200,14 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Namespace:   livekitNamespace,
 		Subsystem:   "forward",
 		Name:        "processing_per_subscriber",
-		Help:        "Mean forwarding work per subscriber, in ns: (end of fan-out - dequeue) / subscribers written.",
+		Help:        "Mean forwarding work per write to a subscriber, in ns: (end of fan-out - dequeue) / writes.",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	})
 	promForwardProcessingPerSubscriberHist = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "forward_processing_per_subscriber",
 		Name:        "ns",
-		Help:        "Forwarding work per subscriber of each forwarded packet, in ns: (end of fan-out - dequeue) / subscribers written.",
+		Help:        "Forwarding work per write to a subscriber of each forwarded packet, in ns: (end of fan-out - dequeue) / writes.",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		// fine below 20us, where this sits, so quantiles resolve to about a microsecond
 		Buckets: []float64{
