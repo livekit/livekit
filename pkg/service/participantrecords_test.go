@@ -65,6 +65,21 @@ func TestParticipantRecords(t *testing.T) {
 		require.NotContains(t, store.participants, livekit.ParticipantIdentity("alice"))
 	})
 
+	t.Run("does not write back a participant that closed before disconnecting", func(t *testing.T) {
+		store := &memoryParticipantStore{participants: make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo)}
+		records := &participantRecords{roomName: "room", roomStore: store}
+		p := &typesfakes.FakeParticipant{}
+		p.ToProtoReturns(&livekit.ParticipantInfo{Sid: "PA_alice", Identity: "alice", State: livekit.ParticipantInfo_ACTIVE})
+		require.NoError(t, records.store(ctx, p))
+
+		// a close callback registered while closing runs before the participant is disconnected
+		p.IsClosedReturns(true)
+		require.NoError(t, records.delete(ctx, "alice"))
+		require.NoError(t, records.store(ctx, p))
+
+		require.NotContains(t, store.participants, livekit.ParticipantIdentity("alice"))
+	})
+
 	t.Run("stores the participant's current state", func(t *testing.T) {
 		store := &memoryParticipantStore{participants: make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo)}
 		records := &participantRecords{roomName: "room", roomStore: store}

@@ -258,8 +258,8 @@ func (p *participantRecords) store(ctx context.Context, participant types.Partic
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	// a participant is disconnected before its record is deleted
-	if participant.IsDisconnected() {
+	// a participant is closed before its record is deleted, possibly before it is disconnected
+	if participant.IsClosed() || participant.IsDisconnected() {
 		return nil
 	}
 	return p.roomStore.StoreParticipant(ctx, p.roomName, participant.ToProto())
@@ -290,7 +290,7 @@ type hostedRoom struct {
 func (h hostedRoom) ParticipantIdentities() []livekit.ParticipantIdentity {
 	var identities []livekit.ParticipantIdentity
 	for _, p := range h.GetParticipants() {
-		if !p.IsDisconnected() {
+		if !p.IsClosed() && !p.IsDisconnected() {
 			identities = append(identities, p.Identity())
 		}
 	}
