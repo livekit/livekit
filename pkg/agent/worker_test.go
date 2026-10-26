@@ -81,28 +81,37 @@ func TestHandleRegisterWithoutEndpointsIgnoresReservedNames(t *testing.T) {
 
 func TestAttachJob(t *testing.T) {
 	w := agent.NewWorker(agent.MakeWorkerRegistration(), "key", "secret", nopSignalConn{}, logger.GetLogger())
+	// the job as another worker was assigned it
 	job := &livekit.Job{
 		Id:    "AJ_attached",
-		State: &livekit.JobState{Status: livekit.JobStatus_JS_RUNNING, StartedAt: 1},
+		State: &livekit.JobState{Status: livekit.JobStatus_JS_RUNNING, StartedAt: 1, UpdatedAt: 1, WorkerId: "AW_previous"},
 	}
-	w.AttachJob(job)
+	attached := w.AttachJob(job)
+	require.Equal(t, int64(1), attached.StartedAt, "the job keeps its run")
+	require.Equal(t, w.ID, attached.WorkerId)
+	require.Greater(t, attached.UpdatedAt, int64(1))
 
 	state, err := w.GetJobState("AJ_attached")
 	require.NoError(t, err)
-	require.Equal(t, int64(1), state.StartedAt)
+	require.Equal(t, attached, state)
 
 	state, err = w.UpdateJobStatus(&livekit.UpdateJobStatus{JobId: job.Id, Status: livekit.JobStatus_JS_SUCCESS})
 	require.NoError(t, err)
 	require.Equal(t, livekit.JobStatus_JS_SUCCESS, state.Status)
+	require.Equal(t, int64(1), state.StartedAt)
 	require.Zero(t, w.RunningJobCount())
 }
 
 func TestAttachJobWithoutState(t *testing.T) {
 	w := agent.NewWorker(agent.MakeWorkerRegistration(), "key", "secret", nopSignalConn{}, logger.GetLogger())
-	w.AttachJob(&livekit.Job{Id: "AJ_stateless"})
+	attached := w.AttachJob(&livekit.Job{Id: "AJ_stateless"})
+	require.Equal(t, livekit.JobStatus_JS_RUNNING, attached.Status)
+	require.NotZero(t, attached.StartedAt)
+	require.Equal(t, w.ID, attached.WorkerId)
 
 	state, err := w.TerminateJob("AJ_stateless", rpc.JobTerminateReason_TERMINATION_REQUESTED)
 	require.NoError(t, err)
 	require.Equal(t, livekit.JobStatus_JS_SUCCESS, state.Status)
+	require.Equal(t, attached.StartedAt, state.StartedAt, "a termination is not the job's start")
 	require.Zero(t, w.RunningJobCount())
 }
