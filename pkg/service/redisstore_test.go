@@ -209,7 +209,7 @@ func TestEgressStore(t *testing.T) {
 	// update
 	info2.Status = livekit.EgressStatus_EGRESS_COMPLETE
 	info2.EndedAt = time.Now().Add(-24 * time.Hour).UnixNano()
-	require.NoError(t, rs.UpdateEgress(ctx, info))
+	require.NoError(t, rs.UpdateEgress(ctx, info2))
 
 	// list
 	list, err := rs.ListEgress(ctx, "", false)
