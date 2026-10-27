@@ -81,6 +81,28 @@ func ConnectLimitCases() []ConnectLimitCase {
 			Grant: grantWith(func(g *auth.ClaimGrants) { g.Attributes = map[string]string{"k": "abcdefg"} }),
 			Err:   ErrAttributeExceedsLimits,
 		},
+		{
+			Name:  "room config metadata exceeds",
+			Limit: config.LimitConfig{MaxMetadataSize: 5},
+			Grant: grantWith(func(g *auth.ClaimGrants) { g.RoomConfig = &auth.RoomConfiguration{Metadata: "abcdefg"} }),
+			Err:   ErrMetadataExceedsLimits,
+		},
+		{
+			Name:  "room config agent metadata exceeds",
+			Limit: config.LimitConfig{MaxMetadataSize: 5},
+			Grant: grantWith(func(g *auth.ClaimGrants) {
+				g.RoomConfig = &auth.RoomConfiguration{Agents: []*livekit.RoomAgentDispatch{{Metadata: "abcdefg"}}}
+			}),
+			Err: ErrMetadataExceedsLimits,
+		},
+		{
+			Name:  "room config agent attributes exceeds",
+			Limit: config.LimitConfig{MaxAttributesSize: 5},
+			Grant: grantWith(func(g *auth.ClaimGrants) {
+				g.RoomConfig = &auth.RoomConfiguration{Agents: []*livekit.RoomAgentDispatch{{Attributes: map[string]string{"k": "abcdefg"}}}}
+			}),
+			Err: ErrAttributeExceedsLimits,
+		},
 	}
 }
 

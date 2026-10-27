@@ -454,8 +454,8 @@ func ValidateConnectRequest(
 	return res, http.StatusOK, nil
 }
 
-// CheckConnectLimits checks a join's identity, room name, participant name, metadata and
-// attributes against the configured limits. Every join path runs it: the signal connection,
+// CheckConnectLimits checks a join's identity, room name, participant name, metadata,
+// attributes and room configuration against the configured limits. Every join path runs it: the signal connection,
 // WHIP, and StartSession on the RTC node, which does not trust the caller's validation.
 // It is exported for servers that embed this package and run their own join paths.
 func CheckConnectLimits(limitConfig config.LimitConfig, identity string, roomName livekit.RoomName, grants *auth.ClaimGrants) error {
@@ -473,6 +473,20 @@ func CheckConnectLimits(limitConfig config.LimitConfig, identity string, roomNam
 	}
 	if !limitConfig.CheckAttributesSize(grants.Attributes) {
 		return fmt.Errorf("%w: max size %d", ErrAttributeExceedsLimits, limitConfig.MaxAttributesSize)
+	}
+	// the token's room configuration creates the room, so it gets the same checks as CreateRoom
+	if roomConfig := grants.GetRoomConfiguration(); roomConfig != nil {
+		if !limitConfig.CheckMetadataSize(roomConfig.Metadata) {
+			return fmt.Errorf("%w: max size %d", ErrMetadataExceedsLimits, limitConfig.MaxMetadataSize)
+		}
+		for _, ad := range roomConfig.Agents {
+			if !limitConfig.CheckMetadataSize(ad.Metadata) {
+				return fmt.Errorf("%w: max size %d", ErrMetadataExceedsLimits, limitConfig.MaxMetadataSize)
+			}
+			if !limitConfig.CheckAttributesSize(ad.Attributes) {
+				return fmt.Errorf("%w: max size %d", ErrAttributeExceedsLimits, limitConfig.MaxAttributesSize)
+			}
+		}
 	}
 	return nil
 }
