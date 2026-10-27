@@ -181,6 +181,10 @@ var (
 		RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90000, RTCPFeedback: vnettest.VideoRTCPFeedback()},
 		PayloadType:        96,
 	}
+	h264CodecParams = webrtc.RTPCodecParameters{
+		RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264, ClockRate: 90000, SDPFmtpLine: vnettest.H264FmtpLine, RTCPFeedback: vnettest.VideoRTCPFeedback()},
+		PayloadType:        96,
+	}
 )
 
 type downTrackHarness struct {
@@ -786,6 +790,58 @@ func TestDownTrackReplaysPacketTrailerStripOnRetransmit(t *testing.T) {
 	pr := cp.rtxPackets()[0]
 	require.EqualValues(t, osn, binary.BigEndian.Uint16(pr.payload[0:2]))
 	require.Equal(t, video, pr.payload[2:], "retransmitted payload must not carry the packet trailer")
+}
+
+// TestDownTrackFixesSTAPAOnRetransmit verifies that retransmitting an H.264
+// STAP-A whose packet trailer was stripped shrinks its last NALU's size to match.
+func TestDownTrackFixesSTAPAOnRetransmit(t *testing.T) {
+	h := vnettest.NewHosts(t)
+	factory := buffer.NewFactoryOfBufferFactory(500, 500).CreateBufferFactory()
+	cp := &capturingPacer{inner: pacer.NewPassThrough(logger.GetLogger(), newNullBWE())}
+	t.Cleanup(cp.Stop)
+
+	dh := newBoundDownTrack(t, h, factory, h264CodecParams, cp, vnettest.MediaEngineConfig{Video: true, H264: true})
+	require.NotZero(t, dh.dt.SSRCRTX(), "RTX ssrc should be negotiated")
+
+	// STAP-A of an SPS and an IDR slice, the trailer ending the slice
+	sps := []byte{0x67, 0x42, 0xe0, 0x1f}
+	slice := distinctivePayload(0x65, 20)
+	trailer := lktsTrailer()
+	stapA := func(slice []byte) []byte {
+		p := []byte{0x78, 0, byte(len(sps))}
+		p = append(p, sps...)
+		p = append(p, byte(len(slice)>>8), byte(len(slice)))
+		return append(p, slice...)
+	}
+	src := &rtp.Packet{
+		Header: rtp.Header{
+			Version:        2,
+			PayloadType:    96,
+			SequenceNumber: 3000,
+			Timestamp:      270000,
+			SSRC:           0x44444444,
+		},
+		Payload: stapA(append(append([]byte{}, slice...), trailer...)),
+	}
+	raw, err := src.Marshal()
+	require.NoError(t, err)
+
+	_, err = dh.dt.RetransmitForTest(
+		uint64(src.SequenceNumber),
+		60000,
+		src.Timestamp,
+		uint64(src.Timestamp),
+		0,
+		raw,
+		uint8(len(trailer)),
+	)
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		return len(cp.rtxPackets()) >= 1
+	}, 5*time.Second, 20*time.Millisecond, "expected RTX packet to be emitted")
+
+	require.Equal(t, stapA(slice), cp.rtxPackets()[0].payload[2:])
 }
 
 // lktsTrailer builds a 15-byte LKTS packet trailer carrying a user timestamp TLV.

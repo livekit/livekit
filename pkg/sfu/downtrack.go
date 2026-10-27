@@ -1085,7 +1085,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 	trailerStripped := 0
 	if d.params.StripPacketTrailer {
 		if trailerStripped = packettrailer.StripTrailer(payload, tp.marker || tp.isEndOfLayerFrame); trailerStripped > 0 {
-			payload = payload[:len(payload)-trailerStripped]
+			payload = packettrailer.Strip(payload, trailerStripped, d.Codec())
 		}
 	}
 
@@ -2356,7 +2356,8 @@ func (d *DownTrack) retransmitPacket(epm *extPacketMeta, sourcePkt []byte, isPro
 				"payloadSize", len(payload)-rtxOffset,
 			)
 		} else {
-			payload = payload[:len(payload)-int(epm.trailerStripped)]
+			media := packettrailer.Strip(payload[rtxOffset:], int(epm.trailerStripped), d.Codec())
+			payload = payload[:rtxOffset+len(media)]
 		}
 	}
 

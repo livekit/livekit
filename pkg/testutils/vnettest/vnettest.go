@@ -39,6 +39,8 @@ const (
 	VP8PayloadType  = 96
 	RTXPayloadType  = VP8PayloadType + 1
 	OpusPayloadType = 111
+
+	H264FmtpLine = "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f"
 )
 
 // Hosts are the two ends of a started virtual network.
@@ -84,6 +86,7 @@ func NewSettingEngine(net *vnet.Net) webrtc.SettingEngine {
 // MediaEngineConfig describes what to register on a media engine.
 type MediaEngineConfig struct {
 	Video               bool // VP8 and its RTX codec; otherwise opus
+	H264                bool // with Video, H.264 instead of VP8
 	HeaderExtensions    bool // abs-send-time + transport-cc
 	SimulcastExtensions bool // mid + rid + rsid
 }
@@ -105,11 +108,15 @@ func NewMediaEngine(t *testing.T, cfg MediaEngineConfig) *webrtc.MediaEngine {
 	if cfg.Video {
 		kind = webrtc.RTPCodecTypeVideo
 
+		video := webrtc.RTPCodecCapability{
+			MimeType: webrtc.MimeTypeVP8, ClockRate: 90000, RTCPFeedback: VideoRTCPFeedback(),
+		}
+		if cfg.H264 {
+			video.MimeType, video.SDPFmtpLine = webrtc.MimeTypeH264, H264FmtpLine
+		}
 		require.NoError(t, me.RegisterCodec(webrtc.RTPCodecParameters{
-			RTPCodecCapability: webrtc.RTPCodecCapability{
-				MimeType: webrtc.MimeTypeVP8, ClockRate: 90000, RTCPFeedback: VideoRTCPFeedback(),
-			},
-			PayloadType: VP8PayloadType,
+			RTPCodecCapability: video,
+			PayloadType:        VP8PayloadType,
 		}, kind))
 		require.NoError(t, me.RegisterCodec(webrtc.RTPCodecParameters{
 			RTPCodecCapability: webrtc.RTPCodecCapability{
