@@ -21,8 +21,8 @@
 # build below already cross-compiles explicitly (CGO_ENABLED=0, GOOS=linux,
 # GOARCH=$TARGETARCH), so the toolchain never needs to be the target's arch —
 # and without this line a cross-arch build runs the whole Go compilation under
-# QEMU emulation, which is roughly an order of magnitude slower for an identical
-# binary. Only the final stage stays on $TARGETPLATFORM, where it belongs.
+# QEMU emulation, which is several times slower for an identical binary. Only
+# the final stage stays on $TARGETPLATFORM, where it belongs.
 FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine3.24@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd AS builder
 
 ARG TARGETPLATFORM
