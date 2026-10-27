@@ -37,7 +37,7 @@ require (
 	github.com/pion/rtp v1.10.5
 	github.com/pion/sctp v1.12.0
 	github.com/pion/sdp/v3 v3.0.20
-	github.com/pion/transport/v4 v4.1.2
+	github.com/pion/transport/v4 v4.1.3
 	github.com/pion/turn/v5 v5.0.13
 	github.com/pion/webrtc/v4 v4.2.18
 	github.com/pires/go-proxyproto v0.15.0
