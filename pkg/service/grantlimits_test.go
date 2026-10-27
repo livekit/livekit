@@ -157,4 +157,11 @@ func TestConnectLimits(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, code)
 	})
+
+	t.Run("room config with a nil agent", func(t *testing.T) {
+		g := baseGrant()
+		g.RoomConfig = &auth.RoomConfiguration{Agents: []*livekit.RoomAgentDispatch{nil}}
+		limit := config.LimitConfig{MaxMetadataSize: 5, MaxAttributesSize: 5}
+		require.NoError(t, CheckConnectLimits(limit, g.Identity, livekit.RoomName(g.Video.Room), g))
+	})
 }

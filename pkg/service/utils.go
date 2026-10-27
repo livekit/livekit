@@ -480,10 +480,10 @@ func CheckConnectLimits(limitConfig config.LimitConfig, identity string, roomNam
 			return fmt.Errorf("%w: max size %d", ErrMetadataExceedsLimits, limitConfig.MaxMetadataSize)
 		}
 		for _, ad := range roomConfig.Agents {
-			if !limitConfig.CheckMetadataSize(ad.Metadata) {
+			if !limitConfig.CheckMetadataSize(ad.GetMetadata()) {
 				return fmt.Errorf("%w: max size %d", ErrMetadataExceedsLimits, limitConfig.MaxMetadataSize)
 			}
-			if !limitConfig.CheckAttributesSize(ad.Attributes) {
+			if !limitConfig.CheckAttributesSize(ad.GetAttributes()) {
 				return fmt.Errorf("%w: max size %d", ErrAttributeExceedsLimits, limitConfig.MaxAttributesSize)
 			}
 		}
