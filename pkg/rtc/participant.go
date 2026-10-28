@@ -3078,6 +3078,17 @@ func (p *ParticipantImpl) clearReleasedTrackCidsLocked(req *livekit.AddTrackRequ
 }
 
 func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit.TrackInfo {
+	// spatial layer, rid and ssrcs are set by the server from SDP/RTP, never taken from the client
+	clearServerOwnedFields := func(layers []*livekit.VideoLayer) {
+		for _, layer := range layers {
+			layer.SpatialLayer, layer.Rid, layer.Ssrc, layer.RepairSsrc = 0, "", 0, 0
+		}
+	}
+	clearServerOwnedFields(req.Layers)
+	for _, codec := range req.SimulcastCodecs {
+		clearServerOwnedFields(codec.Layers)
+	}
+
 	p.pendingTracksLock.Lock()
 	if req.Sid != "" {
 		track := p.GetPublishedTrack(livekit.TrackID(req.Sid))
@@ -3215,16 +3226,22 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 					// select an alternative MIME type that's generally supported
 					mimeType = altCodec
 				}
+				serverVideoLayerMode := livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM
+				if mime.IsMimeTypeStringSVCCapable(mimeType) {
+					serverVideoLayerMode = livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM
+				} else if p.params.ClientInfo.isOBS() {
+					serverVideoLayerMode = livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM_INCOMPLETE_RTCP_SR
+				}
 				if videoLayerMode == livekit.VideoLayer_MODE_UNUSED {
-					if mime.IsMimeTypeStringSVCCapable(mimeType) {
-						videoLayerMode = livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM
-					} else {
-						if p.params.ClientInfo.isOBS() {
-							videoLayerMode = livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM_INCOMPLETE_RTCP_SR
-						} else {
-							videoLayerMode = livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM
-						}
-					}
+					videoLayerMode = serverVideoLayerMode
+				} else if videoLayerMode != serverVideoLayerMode {
+					p.pubLogger.Warnw(
+						"client video layer mode differs from server determined mode, using client mode", nil,
+						"codec", mimeType,
+						"clientVideoLayerMode", videoLayerMode,
+						"serverVideoLayerMode", serverVideoLayerMode,
+						"trackID", ti.Sid,
+					)
 				}
 
 			case livekit.TrackType_AUDIO:

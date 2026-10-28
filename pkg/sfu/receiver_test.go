@@ -132,6 +132,36 @@ func TestReceiverBaseAddDownTrackReturnsClosedWhenCloseWinsRace(t *testing.T) {
 	require.Empty(t, receiver.GetDownTracks())
 }
 
+func TestReceiverBaseSetMaxExpectedSpatialLayerClampsOutOfRange(t *testing.T) {
+	receiver := NewReceiverBase(
+		ReceiverBaseParams{
+			TrackID:  "track",
+			StreamID: "stream",
+			Kind:     webrtc.RTPCodecTypeVideo,
+			Codec: webrtc.RTPCodecParameters{
+				RTPCodecCapability: webrtc.RTPCodecCapability{
+					MimeType:  webrtc.MimeTypeVP8,
+					ClockRate: 90000,
+				},
+				PayloadType: 96,
+			},
+			Logger: logger.GetLogger(),
+		},
+		&livekit.TrackInfo{
+			Sid:    "track",
+			Type:   livekit.TrackType_VIDEO,
+			Source: livekit.TrackSource_CAMERA,
+		},
+		ReceiverCodecStateNormal,
+	)
+	defer receiver.Close("test", false)
+
+	// layers below InvalidLayerSpatial and above DefaultMaxLayerSpatial are clamped
+	require.NotPanics(t, func() { receiver.SetMaxExpectedSpatialLayer(-2) })
+	require.NotPanics(t, func() { receiver.SetMaxExpectedSpatialLayer(buffer.DefaultMaxLayerSpatial + 5) })
+	require.NotPanics(t, func() { receiver.SetMaxExpectedSpatialLayer(buffer.InvalidLayerSpatial) })
+}
+
 // burstBuffer serves count packets from ReadExtended, then io.EOF.
 type burstBuffer struct {
 	buffer.BufferProvider

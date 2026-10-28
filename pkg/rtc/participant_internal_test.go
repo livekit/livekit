@@ -735,6 +735,75 @@ func TestDisablePublishCodec(t *testing.T) {
 	require.Eventually(t, func() bool { return publishReceived.Load() }, 5*time.Second, 10*time.Millisecond)
 }
 
+func TestAddTrackIgnoresServerOwnedLayerFields(t *testing.T) {
+	participant := newParticipantForTestWithOpts("123", &participantOpts{publisher: true})
+	participant.SwapResponseSink(&routingfakes.FakeMessageSink{}, types.SignallingCloseReasonUnknown)
+
+	// client sets every server-owned layer field, on the primary and the backup codec
+	forged := func() []*livekit.VideoLayer {
+		return []*livekit.VideoLayer{{
+			Quality:      livekit.VideoQuality_HIGH,
+			Width:        1280,
+			Height:       720,
+			SpatialLayer: -2,
+			Rid:          "x",
+			Ssrc:         1234,
+			RepairSsrc:   5678,
+		}}
+	}
+	ti := participant.addPendingTrack(&livekit.AddTrackRequest{
+		Cid:    "cid",
+		Type:   livekit.TrackType_VIDEO,
+		Layers: forged(),
+		SimulcastCodecs: []*livekit.SimulcastCodec{
+			{Cid: "cid", Codec: "vp8"},
+			{Cid: "cid-backup", Codec: "h264", Layers: forged()},
+		},
+	})
+	require.NotNil(t, ti)
+	require.NotEmpty(t, ti.Codecs)
+
+	requireCleared := func(layer *livekit.VideoLayer) {
+		require.Equal(t, livekit.VideoQuality_HIGH, layer.Quality)
+		require.Equal(t, uint32(1280), layer.Width)
+		require.Zero(t, layer.SpatialLayer)
+		require.Empty(t, layer.Rid)
+		require.Zero(t, layer.Ssrc)
+		require.Zero(t, layer.RepairSsrc)
+	}
+	for _, layer := range ti.Layers {
+		requireCleared(layer)
+	}
+	for _, codec := range ti.Codecs {
+		require.NotEmpty(t, codec.Layers)
+		for _, layer := range codec.Layers {
+			requireCleared(layer)
+		}
+	}
+}
+
+func TestAddTrackVideoLayerMode(t *testing.T) {
+	participant := newParticipantForTestWithOpts("123", &participantOpts{publisher: true})
+	participant.SwapResponseSink(&routingfakes.FakeMessageSink{}, types.SignallingCloseReasonUnknown)
+
+	ti := participant.addPendingTrack(&livekit.AddTrackRequest{
+		Cid:  "cid",
+		Type: livekit.TrackType_VIDEO,
+		SimulcastCodecs: []*livekit.SimulcastCodec{
+			// client set mode differs from server determined mode, client mode is kept
+			{Cid: "cid", Codec: "vp8", VideoLayerMode: livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM},
+			// client did not set mode, server determined mode is used
+			{Cid: "cid-backup", Codec: "h264"},
+		},
+	})
+	require.NotNil(t, ti)
+	require.Len(t, ti.Codecs, 2)
+	require.True(t, mime.IsMimeTypeStringVP8(ti.Codecs[0].MimeType))
+	require.Equal(t, livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM, ti.Codecs[0].VideoLayerMode)
+	require.True(t, mime.IsMimeTypeStringH264(ti.Codecs[1].MimeType))
+	require.Equal(t, livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM, ti.Codecs[1].VideoLayerMode)
+}
+
 func TestPreferMediaCodecForPublisher(t *testing.T) {
 	testCases := []struct {
 		name                       string
