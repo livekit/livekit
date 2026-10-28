@@ -513,6 +513,12 @@ func (r *ReceiverBase) GetDownTracks() []TrackSender {
 }
 
 func (r *ReceiverBase) SetMaxExpectedSpatialLayer(layer int32) {
+	if layer < buffer.InvalidLayerSpatial {
+		layer = buffer.InvalidLayerSpatial
+	} else if layer > buffer.DefaultMaxLayerSpatial {
+		layer = buffer.DefaultMaxLayerSpatial
+	}
+
 	prevMax := r.streamTrackerManager.SetMaxExpectedSpatialLayer(layer)
 	r.params.Logger.Debugw("max expected layer change", "layer", layer, "prevMax", prevMax)
 
