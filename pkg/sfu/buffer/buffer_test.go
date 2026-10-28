@@ -814,4 +814,11 @@ func TestSendPLIThrottle(t *testing.T) {
 	require.Equal(t, int32(2), plis.Load())
 	buff.SendPLI(false)
 	require.Equal(t, int32(2), plis.Load())
+
+	// a restarted stream needs a key frame right away, the old window does not apply
+	buff.Lock()
+	buff.restartStreamLocked("test", false)
+	buff.Unlock()
+	buff.SendPLI(false)
+	require.Equal(t, int32(3), plis.Load())
 }
