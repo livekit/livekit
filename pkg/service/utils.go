@@ -163,8 +163,12 @@ func GetClientIP(r *http.Request) string {
 	if ip := r.Header.Get("CF-Connecting-IP"); ip != "" {
 		return ip
 	}
-	if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
-		return ip
+	// each proxy appends to X-Forwarded-For, so the client is the first entry
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		ip, _, _ := strings.Cut(xff, ",")
+		if ip = strings.TrimSpace(ip); ip != "" {
+			return ip
+		}
 	}
 	if ip := r.Header.Get("X-Real-IP"); ip != "" {
 		return ip
