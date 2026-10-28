@@ -226,15 +226,17 @@ func TestNumericCLIFlagWidths(t *testing.T) {
 		const env = "LIVEKIT_TEST_NUMERIC_FLAG"
 		t.Setenv(env, value)
 		var got any
+		flag, err := numericCLIFlag(typ, "test.numeric_flag", env, "", true)
+		require.NoError(t, err)
 		c := &cli.Command{
 			Name:  "test",
-			Flags: []cli.Flag{numericCLIFlag(typ, "test.numeric_flag", env, "", true)},
+			Flags: []cli.Flag{flag},
 			Action: func(_ context.Context, c *cli.Command) error {
 				got = c.Value("test.numeric_flag")
 				return nil
 			},
 		}
-		err := c.Run(context.Background(), []string{"test"})
+		err = c.Run(context.Background(), []string{"test"})
 		return got, err
 	}
 
@@ -248,6 +250,12 @@ func TestNumericCLIFlagWidths(t *testing.T) {
 			require.ErrorContains(t, err, "LIVEKIT_TEST_NUMERIC_FLAG")
 		})
 	}
+}
+
+func TestNumericCLIFlagUnsupportedKind(t *testing.T) {
+	flag, err := numericCLIFlag(reflect.TypeOf(complex64(0)), "test.complex_flag", "LIVEKIT_TEST_COMPLEX_FLAG", "", true)
+	require.Nil(t, flag)
+	require.ErrorContains(t, err, "test.complex_flag is a complex64")
 }
 
 func TestYAMLTag(t *testing.T) {

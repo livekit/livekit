@@ -974,7 +974,10 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
 			reflect.Float32, reflect.Float64:
-			flag = numericCLIFlag(valueType, name, envVar, defaultText, hidden)
+			var err error
+			if flag, err = numericCLIFlag(valueType, name, envVar, defaultText, hidden); err != nil {
+				return flags, err
+			}
 		case reflect.Slice:
 			// TODO
 			continue
@@ -996,7 +999,7 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 
 // numericCLIFlag returns a flag whose width matches the config field, so a value that
 // does not fit is rejected, as in the YAML config, instead of wrapping around.
-func numericCLIFlag(valueType reflect.Type, name, envVar, defaultText string, hidden bool) cli.Flag {
+func numericCLIFlag(valueType reflect.Type, name, envVar, defaultText string, hidden bool) (cli.Flag, error) {
 	switch valueType.Kind() {
 	case reflect.Int:
 		return &cli.IntFlag{
@@ -1005,7 +1008,7 @@ func numericCLIFlag(valueType reflect.Type, name, envVar, defaultText string, hi
 			Usage:       generatedCLIFlagUsage,
 			DefaultText: defaultText,
 			Hidden:      hidden,
-		}
+		}, nil
 	case reflect.Int8:
 		return &cli.Int8Flag{
 			Name:        name,
@@ -1013,7 +1016,7 @@ func numericCLIFlag(valueType reflect.Type, name, envVar, defaultText string, hi
 			Usage:       generatedCLIFlagUsage,
 			DefaultText: defaultText,
 			Hidden:      hidden,
-		}
+		}, nil
 	case reflect.Int16:
 		return &cli.Int16Flag{
 			Name:        name,
@@ -1021,7 +1024,7 @@ func numericCLIFlag(valueType reflect.Type, name, envVar, defaultText string, hi
 			Usage:       generatedCLIFlagUsage,
 			DefaultText: defaultText,
 			Hidden:      hidden,
-		}
+		}, nil
 	case reflect.Int32:
 		return &cli.Int32Flag{
 			Name:        name,
@@ -1029,7 +1032,7 @@ func numericCLIFlag(valueType reflect.Type, name, envVar, defaultText string, hi
 			Usage:       generatedCLIFlagUsage,
 			DefaultText: defaultText,
 			Hidden:      hidden,
-		}
+		}, nil
 	case reflect.Int64:
 		if valueType == reflect.TypeOf(time.Duration(0)) {
 			// parse values like "30s", as the YAML config does
@@ -1039,7 +1042,7 @@ func numericCLIFlag(valueType reflect.Type, name, envVar, defaultText string, hi
 				Usage:       generatedCLIFlagUsage,
 				DefaultText: defaultText,
 				Hidden:      hidden,
-			}
+			}, nil
 		}
 		return &cli.Int64Flag{
 			Name:        name,
@@ -1047,7 +1050,7 @@ func numericCLIFlag(valueType reflect.Type, name, envVar, defaultText string, hi
 			Usage:       generatedCLIFlagUsage,
 			DefaultText: defaultText,
 			Hidden:      hidden,
-		}
+		}, nil
 	case reflect.Uint:
 		return &cli.UintFlag{
 			Name:        name,
@@ -1055,7 +1058,7 @@ func numericCLIFlag(valueType reflect.Type, name, envVar, defaultText string, hi
 			Usage:       generatedCLIFlagUsage,
 			DefaultText: defaultText,
 			Hidden:      hidden,
-		}
+		}, nil
 	case reflect.Uint8:
 		return &cli.Uint8Flag{
 			Name:        name,
@@ -1063,7 +1066,7 @@ func numericCLIFlag(valueType reflect.Type, name, envVar, defaultText string, hi
 			Usage:       generatedCLIFlagUsage,
 			DefaultText: defaultText,
 			Hidden:      hidden,
-		}
+		}, nil
 	case reflect.Uint16:
 		return &cli.Uint16Flag{
 			Name:        name,
@@ -1071,7 +1074,7 @@ func numericCLIFlag(valueType reflect.Type, name, envVar, defaultText string, hi
 			Usage:       generatedCLIFlagUsage,
 			DefaultText: defaultText,
 			Hidden:      hidden,
-		}
+		}, nil
 	case reflect.Uint32:
 		return &cli.Uint32Flag{
 			Name:        name,
@@ -1079,7 +1082,7 @@ func numericCLIFlag(valueType reflect.Type, name, envVar, defaultText string, hi
 			Usage:       generatedCLIFlagUsage,
 			DefaultText: defaultText,
 			Hidden:      hidden,
-		}
+		}, nil
 	case reflect.Uint64:
 		return &cli.Uint64Flag{
 			Name:        name,
@@ -1087,7 +1090,7 @@ func numericCLIFlag(valueType reflect.Type, name, envVar, defaultText string, hi
 			Usage:       generatedCLIFlagUsage,
 			DefaultText: defaultText,
 			Hidden:      hidden,
-		}
+		}, nil
 	case reflect.Float32:
 		return &cli.Float32Flag{
 			Name:        name,
@@ -1095,7 +1098,7 @@ func numericCLIFlag(valueType reflect.Type, name, envVar, defaultText string, hi
 			Usage:       generatedCLIFlagUsage,
 			DefaultText: defaultText,
 			Hidden:      hidden,
-		}
+		}, nil
 	case reflect.Float64:
 		return &cli.Float64Flag{
 			Name:        name,
@@ -1103,9 +1106,9 @@ func numericCLIFlag(valueType reflect.Type, name, envVar, defaultText string, hi
 			Usage:       generatedCLIFlagUsage,
 			DefaultText: defaultText,
 			Hidden:      hidden,
-		}
+		}, nil
 	}
-	return nil
+	return nil, fmt.Errorf("cli flag generation unsupported for config type: %s is a %s", name, valueType.Kind().String())
 }
 
 func cliDefaultText(value reflect.Value) string {
