@@ -216,6 +216,7 @@ type ParticipantParams struct {
 	ReconnectOnDataChannelError       bool
 	VersionGenerator                  utils.TimedVersionGenerator
 	DisableDynacast                   bool
+	DisableDataTrackDynacast          bool
 	SubscriberAllowPause              bool
 	SubscriptionLimitAudio            int32
 	SubscriptionLimitVideo            int32
@@ -2994,7 +2995,7 @@ func (p *ParticipantImpl) onSubscribedAudioCodecChange(
 }
 
 func (p *ParticipantImpl) onDataTrackDemandChange(pubHandle uint32, hasSubscribers bool) error {
-	if p.params.DisableDynacast {
+	if p.params.DisableDynacast || p.params.DisableDataTrackDynacast {
 		return nil
 	}
 
