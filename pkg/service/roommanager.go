@@ -506,6 +506,7 @@ func (r *RoomManager) StartSession(
 		SubscribeEnabledCodecs:   enabledCodecs,
 		Grants:                   pi.Grants,
 		TokenExpiresAt:           pi.TokenExpiresAt,
+		APIKey:                   pi.APIKey,
 		Reconnect:                pi.Reconnect,
 		Logger:                   pLogger,
 		Reporter:                 roomobs.NewNoopParticipantSessionReporter(),
@@ -1156,7 +1157,7 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 }
 
 func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {
-	key, secret, err := r.getFirstKeyPair()
+	key, secret, err := r.getSigningKeyPair(participant.APIKey())
 	if err != nil {
 		return err
 	}
@@ -1200,6 +1201,14 @@ func (r *RoomManager) setIceConfig(roomName livekit.RoomName, participant types.
 
 func (r *RoomManager) getIceConfig(roomName livekit.RoomName, participant types.LocalParticipant) *livekit.ICEConfig {
 	return r.iceConfigCache.Get(iceConfigCacheKey{roomName, participant.Identity()})
+}
+
+// getSigningKeyPair prefers the key that signed the join token so refreshed tokens stay valid when other keys are rotated.
+func (r *RoomManager) getSigningKeyPair(apiKey string) (string, string, error) {
+	if secret := r.config.Keys[apiKey]; apiKey != "" && secret != "" {
+		return apiKey, secret, nil
+	}
+	return r.getFirstKeyPair()
 }
 
 func (r *RoomManager) getFirstKeyPair() (string, string, error) {

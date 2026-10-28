@@ -197,6 +197,7 @@ type ParticipantParams struct {
 	SimTracks                         map[uint32]interceptor.SimulcastTrackInfo
 	Grants                            *auth.ClaimGrants
 	TokenExpiresAt                    time.Time
+	APIKey                            string
 	InitialVersion                    uint32
 	ClientConf                        *livekit.ClientConfiguration
 	ClientInfo                        ClientInfo
@@ -857,6 +858,10 @@ func (p *ParticipantImpl) ClaimGrants() *auth.ClaimGrants {
 
 func (p *ParticipantImpl) TokenExpiresAt() time.Time {
 	return p.params.TokenExpiresAt
+}
+
+func (p *ParticipantImpl) APIKey() string {
+	return p.params.APIKey
 }
 
 func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermission) bool {
