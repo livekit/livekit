@@ -24,6 +24,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/datatrack"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -40,6 +41,7 @@ type DataTrackParams struct {
 	ParticipantID       func() livekit.ParticipantID
 	ParticipantIdentity livekit.ParticipantIdentity
 	BytesTrackStats     *BytesTrackStats
+	OnDemandChanged     func(hasSubscribers bool)
 }
 
 type subscribedDataTrack struct {
@@ -52,9 +54,14 @@ type DataTrack struct {
 
 	logger logger.Logger
 
-	lock             sync.Mutex
-	dti              *livekit.DataTrackInfo
-	subscribedTracks map[livekit.ParticipantID]subscribedDataTrack
+	lock                  sync.Mutex
+	dti                   *livekit.DataTrackInfo
+	subscribedTracks      map[livekit.ParticipantID]subscribedDataTrack
+	subscriberNodeEnables map[livekit.NodeID]bool
+	demandStarted         bool
+	hasSubscribers        bool
+
+	notifyOpsQueue *utils.OpsQueue
 
 	downTrackSpreader *sfuutils.DownTrackSpreader[types.DataTrackSender]
 
@@ -65,11 +72,19 @@ type DataTrack struct {
 
 func NewDataTrack(params DataTrackParams, dti *livekit.DataTrackInfo) *DataTrack {
 	d := &DataTrack{
-		params:           params,
-		dti:              dti,
-		subscribedTracks: make(map[livekit.ParticipantID]subscribedDataTrack),
+		params:                params,
+		dti:                   dti,
+		subscribedTracks:      make(map[livekit.ParticipantID]subscribedDataTrack),
+		subscriberNodeEnables: make(map[livekit.NodeID]bool),
 	}
 	d.logger = params.Logger.WithValues("name", d.Name(), "handle", dti.PubHandle)
+	d.notifyOpsQueue = utils.NewOpsQueue(utils.OpsQueueParams{
+		Name:        "data-track-demand-notify",
+		MinSize:     4,
+		FlushOnStop: true,
+		Logger:      d.logger,
+	})
+	d.notifyOpsQueue.Start()
 	d.downTrackSpreader = sfuutils.NewDownTrackSpreader[types.DataTrackSender](sfuutils.DownTrackSpreaderParams{
 		Threshold: 20,
 		Logger:    d.logger,
@@ -82,6 +97,7 @@ func NewDataTrack(params DataTrackParams, dti *livekit.DataTrackInfo) *DataTrack
 func (d *DataTrack) Close() {
 	d.logger.Infow("closing data track")
 	d.closed.Break()
+	d.notifyOpsQueue.Stop()
 
 	d.stats.Close()
 	if d.params.BytesTrackStats != nil {
@@ -147,6 +163,7 @@ func (d *DataTrack) AddSubscriber(sub types.LocalParticipant) (types.DataDownTra
 		subscriber:    sub,
 		dataDownTrack: dataDownTrack,
 	}
+	d.updateDemandLocked(false)
 	return dataDownTrack, nil
 }
 
@@ -154,10 +171,46 @@ func (d *DataTrack) RemoveSubscriber(subID livekit.ParticipantID) {
 	d.lock.Lock()
 	subscribedTrack, ok := d.subscribedTracks[subID]
 	delete(d.subscribedTracks, subID)
+	d.updateDemandLocked(false)
 	d.lock.Unlock()
 
 	if ok {
 		subscribedTrack.dataDownTrack.Close()
+	}
+}
+
+func (d *DataTrack) NotifySubscriptionNode(nodeID livekit.NodeID, enabled bool) {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+
+	if !enabled {
+		delete(d.subscriberNodeEnables, nodeID)
+	} else {
+		d.subscriberNodeEnables[nodeID] = true
+	}
+	d.updateDemandLocked(false)
+}
+
+func (d *DataTrack) StartDemandUpdates() {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+
+	d.demandStarted = true
+	d.updateDemandLocked(true)
+}
+
+func (d *DataTrack) updateDemandLocked(force bool) {
+	hasSubscribers := len(d.subscribedTracks) != 0 || len(d.subscriberNodeEnables) != 0
+	if !d.demandStarted || (hasSubscribers == d.hasSubscribers && !force) {
+		return
+	}
+
+	d.hasSubscribers = hasSubscribers
+	d.logger.Infow("data track demand changed", "hasSubscribers", hasSubscribers, "force", force)
+	if d.params.OnDemandChanged != nil {
+		d.notifyOpsQueue.Enqueue(func() {
+			d.params.OnDemandChanged(hasSubscribers)
+		})
 	}
 }
 

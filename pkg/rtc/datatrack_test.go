@@ -15,7 +15,10 @@
 package rtc
 
 import (
+	"slices"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -68,4 +71,54 @@ func TestDataTrackRevokeDisallowedSubscribers(t *testing.T) {
 	require.True(t, dt.IsSubscriber(allowed.ID()))
 	require.False(t, dt.IsSubscriber(disallowed.ID()))
 	require.True(t, dt.IsSubscriber(recorder.ID()))
+}
+
+func TestDataTrackDemand(t *testing.T) {
+	var (
+		lock     sync.Mutex
+		reported []bool
+	)
+	requireReported := func(expected ...bool) {
+		require.Eventually(t, func() bool {
+			lock.Lock()
+			defer lock.Unlock()
+			return slices.Equal(expected, reported)
+		}, time.Second, 10*time.Millisecond)
+	}
+
+	dt := NewDataTrack(
+		DataTrackParams{
+			Logger:              logger.GetLogger(),
+			ParticipantID:       func() livekit.ParticipantID { return "pubID" },
+			ParticipantIdentity: "pub",
+			OnDemandChanged: func(hasSubscribers bool) {
+				lock.Lock()
+				reported = append(reported, hasSubscribers)
+				lock.Unlock()
+			},
+		},
+		&livekit.DataTrackInfo{
+			PubHandle: 1,
+			Sid:       "DTR_test",
+			Name:      "test",
+		},
+	)
+	defer dt.Close()
+
+	sub := newTestDataTrackSubscriber("subID", "sub", false)
+	_, err := dt.AddSubscriber(sub)
+	require.NoError(t, err)
+	dt.RemoveSubscriber(sub.ID())
+
+	dt.StartDemandUpdates()
+	requireReported(false)
+
+	_, err = dt.AddSubscriber(sub)
+	require.NoError(t, err)
+	dt.NotifySubscriptionNode("nodeB", true)
+	dt.RemoveSubscriber(sub.ID())
+	requireReported(false, true)
+
+	dt.NotifySubscriptionNode("nodeB", false)
+	requireReported(false, true, false)
 }
