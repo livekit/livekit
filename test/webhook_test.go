@@ -124,6 +124,57 @@ func TestWebhooks(t *testing.T) {
 	}
 }
 
+// a graceful shutdown sends the room_finished webhooks of the rooms it closes before
+// Start returns, after which the process exits
+func TestWebhookRoomFinishedOnShutdown(t *testing.T) {
+	conf, err := config.NewConfig("", true, nil, nil)
+	require.NoError(t, err)
+	conf.WebHook.URLs = []string{"http://localhost:7890"}
+	conf.WebHook.APIKey = testApiKey
+	conf.Keys = map[string]string{testApiKey: testApiSecret}
+
+	ts := newTestServer(":7890")
+	ts.server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// answer after some latency, like a remote endpoint
+		time.Sleep(100 * time.Millisecond)
+		ts.ServeHTTP(w, r)
+	})
+	require.NoError(t, ts.Start())
+	defer ts.Stop()
+
+	currentNode, err := routing.NewLocalNode(conf)
+	require.NoError(t, err)
+	currentNode.SetNodeID(livekit.NodeID(guid.New(nodeID1)))
+
+	server, err := service.InitializeServer(conf, currentNode)
+	require.NoError(t, err)
+	go func() {
+		if err := server.Start(); err != nil {
+			logger.Errorw("server returned error", err)
+		}
+	}()
+	waitForServerToStart(server)
+
+	// open with no participants, like a room created ahead of time or one whose
+	// last participant has just left
+	_, err = server.RoomManager().CreateRoom(context.Background(), &livekit.CreateRoomRequest{Name: testRoom})
+	require.NoError(t, err)
+	testutils.WithTimeout(t, func() string {
+		if ts.GetEvent(webhook.EventRoomStarted) == nil {
+			return "did not receive RoomStarted"
+		}
+		return ""
+	})
+
+	// returns once Start has finished shutting down
+	server.Stop(false)
+
+	finished := ts.GetEvent(webhook.EventRoomFinished)
+	require.NotNil(t, finished, "room_finished was not sent before shutdown completed")
+	require.Equal(t, testRoom, finished.Room.Name)
+	require.Equal(t, livekit.RoomEndReason_ROOM_END_SERVER_SHUTDOWN, finished.RoomEndReason)
+}
+
 func setupServerWithWebhook() (server *service.LivekitServer, testServer *webhookTestServer, finishFunc func(), err error) {
 	conf, err := config.NewConfig("", true, nil, nil)
 	if err != nil {

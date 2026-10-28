@@ -92,6 +92,8 @@ type TelemetryService interface {
 	AnalyticsService
 	NotifyEgressEvent(ctx context.Context, event string, info *livekit.EgressInfo)
 	FlushStats()
+	// Stop sends the events already queued, waiting up to stopTimeout
+	Stop()
 }
 
 // -----------------------------
@@ -156,6 +158,7 @@ func (n NullTelemetryService) Webhook(ctx context.Context, webhookInfo *livekit.
 func (n NullTelemetryService) NotifyEgressEvent(ctx context.Context, event string, info *livekit.EgressInfo) {
 }
 func (n NullTelemetryService) FlushStats() {}
+func (n NullTelemetryService) Stop()       {}
 
 // -----------------------------
 
@@ -164,6 +167,8 @@ const (
 	jobsQueueMinSize  = 2048
 
 	telemetryStatsUpdateInterval = time.Second * 30
+
+	stopTimeout = 5 * time.Second
 )
 
 type statsWorkerKey struct {
@@ -256,6 +261,23 @@ func (t *telemetryService) FlushStats() {
 func (t *telemetryService) run() {
 	for range time.Tick(telemetryStatsUpdateInterval) {
 		t.FlushStats()
+	}
+}
+
+func (t *telemetryService) Stop() {
+	done := make(chan struct{})
+	go func() {
+		<-t.jobsQueue.Stop()
+		if t.notifier != nil {
+			t.notifier.Stop(false)
+		}
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(stopTimeout):
+		logger.Warnw("timed out sending queued events on stop", nil)
 	}
 }
 
