@@ -23,6 +23,16 @@ import (
 )
 
 type FakeLocalParticipant struct {
+	APIKeyStub        func() string
+	aPIKeyMutex       sync.RWMutex
+	aPIKeyArgsForCall []struct {
+	}
+	aPIKeyReturns struct {
+		result1 string
+	}
+	aPIKeyReturnsOnCall map[int]struct {
+		result1 string
+	}
 	ActiveAtStub        func() time.Time
 	activeAtMutex       sync.RWMutex
 	activeAtArgsForCall []struct {
@@ -1655,6 +1665,58 @@ type FakeLocalParticipant struct {
 	invocationsMutex sync.RWMutex
 }
 
+func (fake *FakeLocalParticipant) APIKey() string {
+	fake.aPIKeyMutex.Lock()
+	ret, specificReturn := fake.aPIKeyReturnsOnCall[len(fake.aPIKeyArgsForCall)]
+	fake.aPIKeyArgsForCall = append(fake.aPIKeyArgsForCall, struct {
+	}{})
+	stub := fake.APIKeyStub
+	fakeReturns := fake.aPIKeyReturns
+	fake.recordInvocation("APIKey", []interface{}{})
+	fake.aPIKeyMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) APIKeyCallCount() int {
+	fake.aPIKeyMutex.RLock()
+	defer fake.aPIKeyMutex.RUnlock()
+	return len(fake.aPIKeyArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) APIKeyCalls(stub func() string) {
+	fake.aPIKeyMutex.Lock()
+	defer fake.aPIKeyMutex.Unlock()
+	fake.APIKeyStub = stub
+}
+
+func (fake *FakeLocalParticipant) APIKeyReturns(result1 string) {
+	fake.aPIKeyMutex.Lock()
+	defer fake.aPIKeyMutex.Unlock()
+	fake.APIKeyStub = nil
+	fake.aPIKeyReturns = struct {
+		result1 string
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) APIKeyReturnsOnCall(i int, result1 string) {
+	fake.aPIKeyMutex.Lock()
+	defer fake.aPIKeyMutex.Unlock()
+	fake.APIKeyStub = nil
+	if fake.aPIKeyReturnsOnCall == nil {
+		fake.aPIKeyReturnsOnCall = make(map[int]struct {
+			result1 string
+		})
+	}
+	fake.aPIKeyReturnsOnCall[i] = struct {
+		result1 string
+	}{result1}
+}
 func (fake *FakeLocalParticipant) ActiveAt() time.Time {
 	fake.activeAtMutex.Lock()
 	ret, specificReturn := fake.activeAtReturnsOnCall[len(fake.activeAtArgsForCall)]
