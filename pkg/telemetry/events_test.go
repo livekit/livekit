@@ -16,13 +16,16 @@ package telemetry_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/webhook"
 )
 
 func Test_OnParticipantJoin_EventIsSent(t *testing.T) {
@@ -257,4 +260,109 @@ func Test_OnRoomEnded_ReasonIsSent(t *testing.T) {
 	require.Equal(t, livekit.AnalyticsEventType_ROOM_ENDED, event.Type)
 	require.Equal(t, room.Sid, event.RoomId)
 	require.Equal(t, livekit.RoomEndReason_ROOM_END_API_DELETE, event.RoomEndReason)
+}
+
+// capturingNotifier records the webhook events the telemetry service emits.
+// QueueNotify runs on the telemetry queue goroutine, so access is guarded.
+type capturingNotifier struct {
+	mu     sync.Mutex
+	events []*livekit.WebhookEvent
+}
+
+func (n *capturingNotifier) RegisterProcessedHook(func(context.Context, *livekit.WebhookInfo)) {}
+func (n *capturingNotifier) SetKeys(string, string)                                            {}
+func (n *capturingNotifier) SetFilter(webhook.FilterParams)                                    {}
+func (n *capturingNotifier) QueueNotify(_ context.Context, event *livekit.WebhookEvent, _ ...webhook.NotifyOption) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.events = append(n.events, event)
+	return nil
+}
+func (n *capturingNotifier) Stop(bool) {}
+
+func (n *capturingNotifier) event(idx int) *livekit.WebhookEvent {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if idx >= len(n.events) {
+		return nil
+	}
+	return n.events[idx]
+}
+
+func (n *capturingNotifier) count() int {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return len(n.events)
+}
+
+func (n *capturingNotifier) reset() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.events = nil
+}
+
+func Test_OnIngressStarted_WebhookIncludesRoomID(t *testing.T) {
+	analytics := &telemetryfakes.FakeAnalyticsService{}
+	notifier := &capturingNotifier{}
+	sut := telemetry.NewTelemetryService(notifier, analytics)
+
+	tests := []struct {
+		name    string
+		info    *livekit.IngressInfo
+		wantSid string
+	}{
+		{
+			name: "room id from state once published",
+			info: &livekit.IngressInfo{
+				IngressId: "IN_1",
+				RoomName:  "myroom",
+				State:     &livekit.IngressState{RoomId: "RM_7HfLdE9dGpXa"},
+			},
+			wantSid: "RM_7HfLdE9dGpXa",
+		},
+		{
+			name: "no state yet falls back to name only",
+			info: &livekit.IngressInfo{
+				IngressId: "IN_2",
+				RoomName:  "myroom",
+			},
+			wantSid: "",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			notifier.reset()
+			sut.IngressStarted(context.Background(), test.info)
+			require.Eventually(t, func() bool {
+				return notifier.count() == 1
+			}, time.Second, time.Millisecond*50)
+
+			event := notifier.event(0)
+			require.Equal(t, webhook.EventIngressStarted, event.Event)
+			require.Equal(t, test.info.RoomName, event.Room.Name)
+			require.Equal(t, test.wantSid, event.Room.Sid)
+		})
+	}
+}
+
+func Test_OnIngressEnded_WebhookIncludesRoomID(t *testing.T) {
+	analytics := &telemetryfakes.FakeAnalyticsService{}
+	notifier := &capturingNotifier{}
+	sut := telemetry.NewTelemetryService(notifier, analytics)
+
+	info := &livekit.IngressInfo{
+		IngressId: "IN_3",
+		RoomName:  "myroom",
+		State:     &livekit.IngressState{RoomId: "RM_AbC123"},
+	}
+	sut.IngressEnded(context.Background(), info)
+	require.Eventually(t, func() bool {
+		return notifier.count() == 1
+	}, time.Second, time.Millisecond*50)
+
+	event := notifier.event(0)
+	require.Equal(t, webhook.EventIngressEnded, event.Event)
+	require.Equal(t, info.RoomName, event.Room.Name)
+	require.Equal(t, "RM_AbC123", event.Room.Sid)
 }
