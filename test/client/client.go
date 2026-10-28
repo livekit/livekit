@@ -113,6 +113,7 @@ type RTCClient struct {
 	pendingPublishedDataTracks map[uint16]*livekit.DataTrackInfo
 	pendingDataTrackWriters    []TrackWriter
 	subscribedDataTracks       map[livekit.ParticipantID]map[uint16]*DataTrackRemote
+	dataTrackDemands           map[uint16]bool
 }
 
 var (
@@ -244,6 +245,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 		bytesReceived:              make(map[livekit.ParticipantID]uint64),
 		pendingPublishedDataTracks: make(map[uint16]*livekit.DataTrackInfo),
 		subscribedDataTracks:       make(map[livekit.ParticipantID]map[uint16]*DataTrackRemote),
+		dataTrackDemands:           make(map[uint16]bool),
 		transportReady:             make(chan struct{}),
 	}
 	c.nextDataTrackHandle.Store(uint32(rand.IntN(8192)))
@@ -719,6 +721,17 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 			}
 		}
 		c.lock.Unlock()
+
+	case *livekit.SignalResponse_DataTrackDemandUpdate:
+		logger.Infow(
+			"received data track demand update",
+			"participant", c.localParticipant.Identity,
+			"trackHandle", msg.DataTrackDemandUpdate.PubHandle,
+			"hasSubscribers", msg.DataTrackDemandUpdate.HasSubscribers,
+		)
+		c.lock.Lock()
+		c.dataTrackDemands[uint16(msg.DataTrackDemandUpdate.PubHandle)] = msg.DataTrackDemandUpdate.HasSubscribers
+		c.lock.Unlock()
 	}
 	return nil
 }
@@ -797,6 +810,12 @@ func (c *RTCClient) SubscribedDataTracks() map[livekit.ParticipantID]map[uint16]
 		maps.Copy(tracks[publisherID], sts)
 	}
 	return tracks
+}
+
+func (c *RTCClient) DataTrackDemands() map[uint16]bool {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	return maps.Clone(c.dataTrackDemands)
 }
 
 func (c *RTCClient) RemoteParticipants() []*livekit.ParticipantInfo {

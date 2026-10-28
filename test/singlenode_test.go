@@ -1293,6 +1293,19 @@ func TestSinglePublisherDataTrack(t *testing.T) {
 				return ""
 			})
 
+			testutils.WithTimeout(t, func() string {
+				demands := c1.DataTrackDemands()
+				if len(demands) != 2 {
+					return "did not receive demand updates for both tracks"
+				}
+				for _, hasSubscribers := range demands {
+					if !hasSubscribers {
+						return "demand update did not indicate subscribers"
+					}
+				}
+				return ""
+			})
+
 			// a new client joins and should get the initial stream
 			c3 := createRTCClient("c3", defaultServerPort, testRTCServicePath, &testclient.Options{AutoSubscribeDataTrack: true})
 
@@ -1326,6 +1339,16 @@ func TestSinglePublisherDataTrack(t *testing.T) {
 				for _, t := range p.GetPublishedDataTracks() {
 					if t.IsSubscriber(c3.ID()) {
 						return "c3 was not a subscriber of c1's data tracks"
+					}
+				}
+				return ""
+			})
+
+			c2.Stop()
+			testutils.WithTimeout(t, func() string {
+				for _, hasSubscribers := range c1.DataTrackDemands() {
+					if hasSubscribers {
+						return "demand did not drop after last subscriber disconnected"
 					}
 				}
 				return ""
