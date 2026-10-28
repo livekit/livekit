@@ -81,6 +81,12 @@ type FakeDataTrack struct {
 	nameReturnsOnCall map[int]struct {
 		result1 string
 	}
+	NotifySubscriptionNodeStub        func(livekit.NodeID, bool)
+	notifySubscriptionNodeMutex       sync.RWMutex
+	notifySubscriptionNodeArgsForCall []struct {
+		arg1 livekit.NodeID
+		arg2 bool
+	}
 	PubHandleStub        func() uint16
 	pubHandleMutex       sync.RWMutex
 	pubHandleArgsForCall []struct {
@@ -526,6 +532,39 @@ func (fake *FakeDataTrack) NameReturnsOnCall(i int, result1 string) {
 	fake.nameReturnsOnCall[i] = struct {
 		result1 string
 	}{result1}
+}
+
+func (fake *FakeDataTrack) NotifySubscriptionNode(arg1 livekit.NodeID, arg2 bool) {
+	fake.notifySubscriptionNodeMutex.Lock()
+	fake.notifySubscriptionNodeArgsForCall = append(fake.notifySubscriptionNodeArgsForCall, struct {
+		arg1 livekit.NodeID
+		arg2 bool
+	}{arg1, arg2})
+	stub := fake.NotifySubscriptionNodeStub
+	fake.recordInvocation("NotifySubscriptionNode", []interface{}{arg1, arg2})
+	fake.notifySubscriptionNodeMutex.Unlock()
+	if stub != nil {
+		fake.NotifySubscriptionNodeStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeDataTrack) NotifySubscriptionNodeCallCount() int {
+	fake.notifySubscriptionNodeMutex.RLock()
+	defer fake.notifySubscriptionNodeMutex.RUnlock()
+	return len(fake.notifySubscriptionNodeArgsForCall)
+}
+
+func (fake *FakeDataTrack) NotifySubscriptionNodeCalls(stub func(livekit.NodeID, bool)) {
+	fake.notifySubscriptionNodeMutex.Lock()
+	defer fake.notifySubscriptionNodeMutex.Unlock()
+	fake.NotifySubscriptionNodeStub = stub
+}
+
+func (fake *FakeDataTrack) NotifySubscriptionNodeArgsForCall(i int) (livekit.NodeID, bool) {
+	fake.notifySubscriptionNodeMutex.RLock()
+	defer fake.notifySubscriptionNodeMutex.RUnlock()
+	argsForCall := fake.notifySubscriptionNodeArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeDataTrack) PubHandle() uint16 {

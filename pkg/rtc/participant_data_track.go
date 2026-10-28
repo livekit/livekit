@@ -126,6 +126,9 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 				p.GetTelemetryListener,
 				p.params.Reporter,
 			),
+			OnDemandChanged: func(hasSubscribers bool) {
+				p.onDataTrackDemandChange(dti.PubHandle, hasSubscribers)
+			},
 		},
 		dti,
 	)
@@ -133,6 +136,7 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 	p.UpDataTrackManager.AddPublishedDataTrack(dt)
 
 	p.sendPublishDataTrackResponse(dti)
+	dt.StartDemandUpdates()
 
 	p.setIsPublisher(true)
 	p.dirty.Store(true)

@@ -216,6 +216,7 @@ type ParticipantParams struct {
 	ReconnectOnDataChannelError       bool
 	VersionGenerator                  utils.TimedVersionGenerator
 	DisableDynacast                   bool
+	DisableDataTrackDynacast          bool
 	SubscriberAllowPause              bool
 	SubscriptionLimitAudio            int32
 	SubscriptionLimitVideo            int32
@@ -1488,10 +1489,14 @@ func (p *ParticipantImpl) SetMigrateInfo(
 					p.GetTelemetryListener,
 					p.params.Reporter,
 				),
+				OnDemandChanged: func(hasSubscribers bool) {
+					p.onDataTrackDemandChange(dti.PubHandle, hasSubscribers)
+				},
 			},
 			dti,
 		)
 		p.UpDataTrackManager.AddPublishedDataTrack(dt)
+		dt.StartDemandUpdates()
 	}
 
 	if len(mediaTracks) != 0 || len(dataTracks) != 0 {
@@ -2987,6 +2992,17 @@ func (p *ParticipantImpl) onSubscribedAudioCodecChange(
 		"update", logger.Proto(subscribedAudioCodecUpdate),
 	)
 	return p.sendSubscribedAudioCodecUpdate(subscribedAudioCodecUpdate)
+}
+
+func (p *ParticipantImpl) onDataTrackDemandChange(pubHandle uint32, hasSubscribers bool) error {
+	if p.params.DisableDynacast || p.params.DisableDataTrackDynacast {
+		return nil
+	}
+
+	return p.sendDataTrackDemandUpdate(&livekit.DataTrackDemandUpdate{
+		PubHandle:      pubHandle,
+		HasSubscribers: hasSubscribers,
+	})
 }
 
 // releasePendingTrackLocked drops every pending entry of a track whose media never arrived,

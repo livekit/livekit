@@ -932,6 +932,8 @@ type DataTrack interface {
 	IsSubscriber(subID livekit.ParticipantID) bool
 	RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity
 
+	NotifySubscriptionNode(nodeID livekit.NodeID, enabled bool)
+
 	AddDataDownTrack(sender DataTrackSender) error
 	DeleteDataDownTrack(subscriberID livekit.ParticipantID)
 
