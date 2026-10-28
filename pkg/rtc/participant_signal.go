@@ -444,6 +444,10 @@ func (p *ParticipantImpl) SendDataTrackSubscriberHandles(handles map[uint32]*liv
 	}))
 }
 
+func (p *ParticipantImpl) sendDataTrackDemandUpdate(dataTrackDemandUpdate *livekit.DataTrackDemandUpdate) error {
+	return p.signaller.WriteMessage(p.signalling.SignalDataTrackDemandUpdate(dataTrackDemandUpdate))
+}
+
 func (p *ParticipantImpl) sendStoreDataBlobResponse(requestId uint32, key *livekit.DataBlobKey) error {
 	return p.signaller.WriteMessage(p.signalling.SignalStoreDataBlobResponse(&livekit.StoreDataBlobResponse{
 		RequestId: requestId,

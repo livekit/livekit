@@ -128,6 +128,10 @@ func (u *signallingUnimplemented) SignalDataTrackSubscriberHandles(dataTrackSubs
 	return nil
 }
 
+func (u *signallingUnimplemented) SignalDataTrackDemandUpdate(dataTrackDemandUpdate *livekit.DataTrackDemandUpdate) proto.Message {
+	return nil
+}
+
 func (u *signallingUnimplemented) SignalStoreDataBlobResponse(storeDataBlobResponse *livekit.StoreDataBlobResponse) proto.Message {
 	return nil
 }
