@@ -200,6 +200,7 @@ type BufferBase struct {
 	enableStreamRestartDetection bool
 
 	pliThrottle int64
+	lastPliAt   atomic.Int64
 
 	rtpStats             *rtpstats.RTPStatsReceiver
 	ppsSnapshotId        uint32
@@ -696,7 +697,22 @@ func (b *BufferBase) SendPLI(force bool) {
 	pliThrottle := b.pliThrottle
 	b.RUnlock()
 
-	if rtpStats == nil || !rtpStats.CheckAndUpdatePli(pliThrottle, force) {
+	if rtpStats == nil {
+		return
+	}
+
+	// throttle without a lock, every subscriber of a track can ask for a key frame at once
+	now := mono.UnixNano()
+	if force {
+		b.lastPliAt.Store(now)
+	} else {
+		lastPliAt := b.lastPliAt.Load()
+		if now-lastPliAt < pliThrottle || !b.lastPliAt.CompareAndSwap(lastPliAt, now) {
+			return
+		}
+	}
+
+	if !rtpStats.CheckAndUpdatePli(pliThrottle, force) {
 		return
 	}
 
