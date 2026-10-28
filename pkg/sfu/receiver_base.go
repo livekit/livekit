@@ -641,6 +641,18 @@ func (r *ReceiverBase) getBufferLocked(layer int32) (buffer.BufferProvider, int3
 }
 
 func (r *ReceiverBase) GetOrCreateBuffer(layer int32) buffer.BufferProvider {
+	// fast path under read lock, the buffer exists on every call after the first (e.g. each subscriber PLI)
+	r.bufferMu.RLock()
+	if r.IsClosed() {
+		r.bufferMu.RUnlock()
+		return nil
+	}
+	if buff, _ := r.getBufferLocked(layer); buff != nil {
+		r.bufferMu.RUnlock()
+		return buff
+	}
+	r.bufferMu.RUnlock()
+
 	r.bufferMu.Lock()
 
 	if r.IsClosed() {
