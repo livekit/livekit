@@ -577,6 +577,8 @@ type NodeStatsConfig struct {
 	StatsUpdateInterval           time.Duration   `yaml:"stats_update_interval,omitempty"`
 	StatsRateMeasurementIntervals []time.Duration `yaml:"stats_rate_measurement_intervals,omitempty"`
 	StatsMaxDelay                 time.Duration   `yaml:"stats_max_delay,omitempty"`
+	// CPU load for the whole host from /proc/stat instead of the container cgroup, for a server that owns its node
+	HostCPU bool `yaml:"host_cpu,omitempty"`
 }
 
 var DefaultNodeStatsConfig = NodeStatsConfig{
