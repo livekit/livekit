@@ -1429,6 +1429,17 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 		return
 	}
 
+	if !buffer.ValidVideoLayers(req) {
+		p.pubLogger.Warnw("invalid video layer quality", nil, "trackID", req.Sid)
+		p.sendRequestResponse(&livekit.RequestResponse{
+			Reason: livekit.RequestResponse_INVALID_REQUEST,
+			Request: &livekit.RequestResponse_AddTrack{
+				AddTrack: proto.CloneOf(req),
+			},
+		})
+		return
+	}
+
 	ti := p.addPendingTrack(req)
 	if ti == nil {
 		return
