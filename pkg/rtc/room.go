@@ -1428,7 +1428,13 @@ func (r *Room) RemoveParticipant(
 	delete(r.participants, identity)
 	delete(r.participantOpts, identity)
 	delete(r.participantRequestSources, identity)
-	delete(r.hasPublished, identity)
+	// A duplicate identity eviction replaces the session for an identity that stays in
+	// the room. Participant egress is scoped to the identity and the running job follows
+	// it across the new SID, so dropping the guard here makes the replacement session
+	// launch a second job that records the same tracks as the one still running.
+	if reason != types.ParticipantCloseReasonDuplicateIdentity {
+		delete(r.hasPublished, identity)
+	}
 	delete(r.launchedTrackEgresses, identity)
 	delete(r.agentParticpants, identity)
 	// recorded while the participant is being removed, not after it is closed:
