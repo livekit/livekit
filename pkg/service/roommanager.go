@@ -61,6 +61,11 @@ import (
 const (
 	tokenRefreshInterval = 5 * time.Minute
 	tokenDefaultTTL      = 10 * time.Minute
+
+	// matches the lock StandardRoomAllocator takes around room creation and node selection
+	roomLockDuration = 5 * time.Second
+	// how often hosted rooms are checked against the router's room to node mapping
+	roomNodeCheckInterval = 10 * time.Second
 )
 
 type iceConfigCacheKey struct {
@@ -92,6 +97,8 @@ type RoomManager struct {
 	bus               psrpc.MessageBus
 
 	rooms map[livekit.RoomName]*rtc.Room
+	// only used by the background worker that calls CloseIdleRooms
+	nextRoomNodeCheck time.Time
 
 	roomServers                  utils.MultitonService[rpc.RoomTopic]
 	agentDispatchServers         utils.MultitonService[rpc.RoomTopic]
@@ -191,12 +198,120 @@ func (r *RoomManager) GetRoom(_ context.Context, roomName livekit.RoomName) *rtc
 	return r.rooms[roomName]
 }
 
-// deleteRoom completely deletes all room information, including active sessions, room store, and routing info
-func (r *RoomManager) deleteRoom(ctx context.Context, roomName livekit.RoomName) error {
-	logger.Infow("deleting room state", "room", roomName)
+// deleteRoomIfCurrent removes the room if it is still the one registered under its name, and
+// deletes the shared room state if the router does not map the room to another node.
+// The room lock is held from the map removal through the state deletion, so a same-name
+// room created during the teardown either waits and loads fresh state, or replaces this room
+// first and keeps its state.
+func (r *RoomManager) deleteRoomIfCurrent(ctx context.Context, roomName livekit.RoomName, room *rtc.Room) error {
+	r.lock.RLock()
+	current := r.rooms[roomName]
+	r.lock.RUnlock()
+	if current != room {
+		return nil
+	}
+
+	token, err := r.roomStore.LockRoom(ctx, roomName, roomLockDuration)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = r.roomStore.UnlockRoom(ctx, roomName, token)
+	}()
+
+	if !r.removeRoomIfCurrent(roomName, room) {
+		return nil
+	}
+
+	nodeID, err := r.roomNodeID(ctx, roomName)
+	if err != nil {
+		return err
+	}
+	if nodeID != "" && nodeID != r.currentNode.NodeID() {
+		room.Logger().Infow("room is mapped to another node, keeping room state", "roomNodeID", nodeID)
+		return nil
+	}
+	return r.deleteRoomState(ctx, roomName)
+}
+
+func (r *RoomManager) removeRoomIfCurrent(roomName livekit.RoomName, room *rtc.Room) bool {
 	r.lock.Lock()
+	defer r.lock.Unlock()
+	if r.rooms[roomName] != room {
+		return false
+	}
 	delete(r.rooms, roomName)
-	r.lock.Unlock()
+	return true
+}
+
+// roomNodeID returns the node the router maps the room to, or empty when it maps the room to none
+func (r *RoomManager) roomNodeID(ctx context.Context, roomName livekit.RoomName) (livekit.NodeID, error) {
+	node, err := r.router.GetNodeForRoom(ctx, roomName)
+	if errors.Is(err, routing.ErrNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return livekit.NodeID(node.Id), nil
+}
+
+// claimRoomNode maps the room to this node when the router maps it to none. A teardown of
+// an earlier same-name room can delete the mapping after a join was routed here, and later
+// joins would then be routed to another node.
+func (r *RoomManager) claimRoomNode(ctx context.Context, roomName livekit.RoomName, room *rtc.Room) {
+	token, err := r.roomStore.LockRoom(ctx, roomName, roomLockDuration)
+	if err != nil {
+		room.Logger().Warnw("could not lock room to claim node", err)
+		return
+	}
+	defer func() {
+		_ = r.roomStore.UnlockRoom(ctx, roomName, token)
+	}()
+
+	nodeID, err := r.roomNodeID(ctx, roomName)
+	switch {
+	case err != nil:
+		room.Logger().Warnw("could not get node for room", err)
+	case nodeID == "":
+		if err := r.router.SetNodeForRoom(ctx, roomName, r.currentNode.NodeID()); err != nil {
+			room.Logger().Warnw("could not set node for room", err)
+		}
+	case nodeID != r.currentNode.NodeID():
+		room.Logger().Warnw(
+			"room is mapped to another node", nil,
+			"roomNodeID", nodeID,
+		)
+	}
+}
+
+// reconnectMovedRooms asks the participants of each room the router maps to another node
+// to reconnect, so that they join the room on that node
+func (r *RoomManager) reconnectMovedRooms(rooms []*rtc.Room) {
+	for _, room := range rooms {
+		nodeID, err := r.roomNodeID(context.Background(), room.Name())
+		if err != nil || nodeID == "" || nodeID == r.currentNode.NodeID() {
+			continue
+		}
+
+		participants := room.GetParticipants()
+		if len(participants) == 0 {
+			continue
+		}
+		room.Logger().Warnw(
+			"room is mapped to another node, reconnecting participants", nil,
+			"roomNodeID", nodeID,
+			"numParticipants", len(participants),
+		)
+		for _, p := range participants {
+			p.IssueFullReconnect(types.ParticipantCloseReasonMigrationRequested)
+		}
+	}
+}
+
+// deleteRoomState deletes the room from the room store and its routing info
+func (r *RoomManager) deleteRoomState(ctx context.Context, roomName livekit.RoomName) error {
+	logger.Infow("deleting room state", "room", roomName)
 
 	var err, err2 error
 	wg := sync.WaitGroup{}
@@ -227,6 +342,11 @@ func (r *RoomManager) CloseIdleRooms() {
 
 	for _, room := range rooms {
 		room.CloseIfEmpty()
+	}
+
+	if r.config.Room.ReconnectMovedRooms && time.Now().After(r.nextRoomNodeCheck) {
+		r.nextRoomNodeCheck = time.Now().Add(roomNodeCheckInterval)
+		r.reconnectMovedRooms(rooms)
 	}
 }
 
@@ -647,37 +767,43 @@ func (r *RoomManager) StartSession(
 }
 
 // create the actual room object, to be used on RTC node
-func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.CreateRoomRequest) (*rtc.Room, error) {
-	roomName := livekit.RoomName(createRoom.Name)
+func (r *RoomManager) getOrCreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*rtc.Room, error) {
+	roomName := livekit.RoomName(req.Name)
 
-	r.lock.RLock()
-	lastSeenRoom := r.rooms[roomName]
-	r.lock.RUnlock()
+	var (
+		ri         *livekit.Room
+		internal   *livekit.RoomInternal
+		createRoom *livekit.CreateRoomRequest
+		created    bool
+		err        error
+	)
+	for {
+		r.lock.RLock()
+		lastSeenRoom := r.rooms[roomName]
+		r.lock.RUnlock()
 
-	if lastSeenRoom != nil && lastSeenRoom.Hold() {
-		return lastSeenRoom, nil
-	}
-
-	// create new room, get details first
-	// createRoom is reassigned to the request with the room preset applied, so that a room
-	// composite egress from the preset, which RoomInternal has no field for, is started
-	ri, internal, createRoom, created, err := r.roomAllocator.CreateRoom(ctx, createRoom, true)
-	if err != nil {
-		return nil, err
-	}
-
-	r.lock.Lock()
-
-	currentRoom := r.rooms[roomName]
-	for currentRoom != lastSeenRoom {
-		r.lock.Unlock()
-		if currentRoom != nil && currentRoom.Hold() {
-			return currentRoom, nil
+		if lastSeenRoom != nil && lastSeenRoom.Hold() {
+			return lastSeenRoom, nil
 		}
 
-		lastSeenRoom = currentRoom
+		// create new room, get details first
+		// createRoom is the request with the room preset applied, so that a room
+		// composite egress from the preset, which RoomInternal has no field for, is started
+		var passCreated bool
+		ri, internal, createRoom, passCreated, err = r.roomAllocator.CreateRoom(ctx, req, true)
+		if err != nil {
+			return nil, err
+		}
+		// a reload finds the room an earlier pass created
+		created = created || passCreated
+
 		r.lock.Lock()
-		currentRoom = r.rooms[roomName]
+		if r.rooms[roomName] == lastSeenRoom {
+			break
+		}
+		// a same-name room was created or torn down while the details loaded, they can be
+		// stale, for example the state of a room whose teardown deleted it since
+		r.lock.Unlock()
 	}
 
 	// construct ice servers
@@ -707,21 +833,26 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 		roomInfo := newRoom.ToProto()
 		r.telemetry.RoomEnded(ctx, roomInfo, reason.ToProto())
 		prometheus.RoomEnded(time.Unix(roomInfo.CreationTime, 0))
-		if err := r.deleteRoom(ctx, roomName); err != nil {
+		if err := r.deleteRoomIfCurrent(ctx, roomName, newRoom); err != nil {
 			newRoom.Logger().Errorw("could not delete room", err)
+			r.removeRoomIfCurrent(roomName, newRoom)
 		}
 
 		newRoom.Logger().Infow("room closed")
 	})
 
 	newRoom.OnRoomUpdated(func() {
+		// a room that is deleted or replaced must not write its state back
+		if r.GetRoom(ctx, roomName) != newRoom {
+			return
+		}
 		if err := r.roomStore.StoreRoom(ctx, newRoom.ToProto(), newRoom.Internal()); err != nil {
 			newRoom.Logger().Errorw("could not handle metadata update", err)
 		}
 	})
 
 	newRoom.OnParticipantChanged(func(p types.Participant) {
-		if !p.IsDisconnected() {
+		if !p.IsDisconnected() && r.GetRoom(ctx, roomName) == newRoom {
 			if err := r.roomStore.StoreParticipant(ctx, roomName, p.ToProto()); err != nil {
 				newRoom.Logger().Errorw("could not handle participant change", err)
 			}
@@ -733,6 +864,8 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 	r.lock.Unlock()
 
 	newRoom.Hold()
+
+	r.claimRoomNode(ctx, roomName, newRoom)
 
 	r.telemetry.RoomStarted(ctx, newRoom.ToProto())
 	prometheus.RoomStarted()
@@ -945,17 +1078,23 @@ func (r *RoomManager) PerformRpc(ctx context.Context, req *livekit.PerformRpcReq
 }
 
 func (r *RoomManager) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomRequest) (*livekit.DeleteRoomResponse, error) {
-	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
+	roomName := livekit.RoomName(req.Room)
+	room := r.GetRoom(ctx, roomName)
 	if room == nil {
 		// special case of a non-RTC room e.g. room created but no participants joined
 		logger.Debugw("Deleting non-rtc room, loading from roomstore")
-		err := r.roomStore.DeleteRoom(ctx, livekit.RoomName(req.Room))
+		err := r.roomStore.DeleteRoom(ctx, roomName)
 		if err != nil {
 			logger.Debugw("Error deleting non-rtc room", "err", err)
 			return nil, err
 		}
 	} else {
 		room.Logger().Infow("deleting room")
+		// delete the room state before the participants close, which can be slow, so that a
+		// same-name join during the close creates a new room instead of loading this one
+		if err := r.deleteRoomIfCurrent(ctx, roomName, room); err != nil {
+			room.Logger().Warnw("could not delete room state before closing", err)
+		}
 		room.Close(types.RoomCloseReasonAPIDelete)
 	}
 	return &livekit.DeleteRoomResponse{}, nil
