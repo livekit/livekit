@@ -1030,3 +1030,35 @@ func TestSyncStateWhileTrackMovesToPublished(t *testing.T) {
 	wg.Wait()
 	require.False(t, p.IsClosed(), "resume forced a full reconnect for a track that moved to published")
 }
+
+func TestParticipantEgressGuardOnRemove(t *testing.T) {
+	t.Run("duplicate identity eviction keeps the publish guard", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
+		p := rm.GetParticipants()[0]
+
+		rm.lock.Lock()
+		rm.hasPublished[p.Identity()] = true
+		rm.lock.Unlock()
+
+		rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonDuplicateIdentity)
+
+		rm.lock.RLock()
+		defer rm.lock.RUnlock()
+		require.True(t, rm.hasPublished[p.Identity()])
+	})
+
+	t.Run("a normal leave clears the publish guard", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
+		p := rm.GetParticipants()[0]
+
+		rm.lock.Lock()
+		rm.hasPublished[p.Identity()] = true
+		rm.lock.Unlock()
+
+		rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonClientRequestLeave)
+
+		rm.lock.RLock()
+		defer rm.lock.RUnlock()
+		require.False(t, rm.hasPublished[p.Identity()])
+	})
+}
