@@ -183,6 +183,24 @@ func TestDDForwarderRestartOnDeltaFrame(t *testing.T) {
 	require.Equal(t, uint16(1004), d.forward(f, d.packet(1, 5, false, 1), 0).FrameNumber)
 }
 
+func TestDDForwarderResync(t *testing.T) {
+	d := newDDForwarderTest(t)
+	f := NewDDForwarder(logger.GetLogger())
+	require.Equal(t, uint16(1000), d.forward(f, d.packet(1, 1000, true, 0), 0).FrameNumber)
+	require.Equal(t, uint16(1001), d.forward(f, d.packet(1, 1001, false, 0), 0).FrameNumber)
+
+	// a long mute: the publisher counted 40000 frames while nothing was forwarded, the
+	// subscriber would take a jump of more than half the 16 bit range as a jump back
+	f.Resync()
+	require.Nil(t, d.forward(f, d.packet(1, 41001, false, 0), 0))
+	require.Equal(t, uint16(1002), d.forward(f, d.packet(1, 41002, true, 0), 0).FrameNumber)
+	require.Equal(t, uint16(1003), d.forward(f, d.packet(1, 41003, false, 0), 0).FrameNumber)
+
+	// a short mute keeps the current offset, the gap stays
+	f.Resync()
+	require.Equal(t, uint16(1103), d.forward(f, d.packet(1, 41103, true, 0), 0).FrameNumber)
+}
+
 func TestDDForwarderPublisherActiveDecodeTargets(t *testing.T) {
 	d := newDDForwarderTest(t)
 	f := NewDDForwarder(logger.GetLogger())
