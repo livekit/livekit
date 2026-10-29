@@ -171,6 +171,10 @@ type FakeTelemetryService struct {
 		arg1 context.Context
 		arg2 []*livekit.AnalyticsStat
 	}
+	StopStub        func()
+	stopMutex       sync.RWMutex
+	stopArgsForCall []struct {
+	}
 	TrackMaxSubscribedVideoQualityStub        func(context.Context, *livekit.Room, livekit.ParticipantID, *livekit.TrackInfo, mime.MimeType, livekit.VideoQuality)
 	trackMaxSubscribedVideoQualityMutex       sync.RWMutex
 	trackMaxSubscribedVideoQualityArgsForCall []struct {
@@ -1111,6 +1115,30 @@ func (fake *FakeTelemetryService) SendStatsArgsForCall(i int) (context.Context, 
 	defer fake.sendStatsMutex.RUnlock()
 	argsForCall := fake.sendStatsArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeTelemetryService) Stop() {
+	fake.stopMutex.Lock()
+	fake.stopArgsForCall = append(fake.stopArgsForCall, struct {
+	}{})
+	stub := fake.StopStub
+	fake.recordInvocation("Stop", []interface{}{})
+	fake.stopMutex.Unlock()
+	if stub != nil {
+		fake.StopStub()
+	}
+}
+
+func (fake *FakeTelemetryService) StopCallCount() int {
+	fake.stopMutex.RLock()
+	defer fake.stopMutex.RUnlock()
+	return len(fake.stopArgsForCall)
+}
+
+func (fake *FakeTelemetryService) StopCalls(stub func()) {
+	fake.stopMutex.Lock()
+	defer fake.stopMutex.Unlock()
+	fake.StopStub = stub
 }
 
 func (fake *FakeTelemetryService) TrackMaxSubscribedVideoQuality(arg1 context.Context, arg2 *livekit.Room, arg3 livekit.ParticipantID, arg4 *livekit.TrackInfo, arg5 mime.MimeType, arg6 livekit.VideoQuality) {
