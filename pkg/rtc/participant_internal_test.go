@@ -804,6 +804,39 @@ func TestAddTrackVideoLayerMode(t *testing.T) {
 	require.Equal(t, livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM, ti.Codecs[1].VideoLayerMode)
 }
 
+func TestAddTrackRejectsInvalidQuality(t *testing.T) {
+	assertRejected := func(t *testing.T, req *livekit.AddTrackRequest) {
+		p := newParticipantForTest("test")
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+		p.AddTrack(req)
+
+		require.Equal(t, 1, sink.WriteMessageCallCount())
+		res := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
+		require.IsType(t, &livekit.SignalResponse_RequestResponse{}, res.Message)
+		require.Equal(t, livekit.RequestResponse_INVALID_REQUEST, res.Message.(*livekit.SignalResponse_RequestResponse).RequestResponse.Reason)
+		require.Empty(t, p.pendingTracks)
+	}
+
+	// a client can forge an out-of-range quality
+	t.Run("negative quality on request layers", func(t *testing.T) {
+		assertRejected(t, &livekit.AddTrackRequest{
+			Cid:    "cid",
+			Type:   livekit.TrackType_VIDEO,
+			Layers: []*livekit.VideoLayer{{Quality: livekit.VideoQuality(-1)}},
+		})
+	})
+
+	t.Run("negative quality on simulcast codec layers", func(t *testing.T) {
+		assertRejected(t, &livekit.AddTrackRequest{
+			Cid:  "cid",
+			Type: livekit.TrackType_VIDEO,
+			SimulcastCodecs: []*livekit.SimulcastCodec{
+				{Cid: "cid", Codec: "vp8", Layers: []*livekit.VideoLayer{{Quality: livekit.VideoQuality(-1)}}},
+			},
+		})
+	})
+}
+
 func TestPreferMediaCodecForPublisher(t *testing.T) {
 	testCases := []struct {
 		name                       string
