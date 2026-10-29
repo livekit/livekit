@@ -30,10 +30,17 @@ import (
 // frame numbers of a new layer are close to those of the old one. The numbers sent to the
 // subscriber must still never go back: a key frame older than the last structure the
 // subscriber received is dropped. So whenever the stream changes, a layer switch, a stream
-// restart or a new forwarder, the numbers are moved up past the last one sent if needed.
+// restart, a resync or a new forwarder, the numbers are moved up past the last one sent if
+// needed. They must not jump too far ahead either: the subscriber unwraps the 16 bit frame
+// number, so a jump of half its range or more reads as a jump back. The publisher keeps
+// counting while a muted subscriber gets nothing, so a long mute would cause such a jump.
 // Otherwise they pass through with the current offset, so frame diffs and chain diffs stay
 // valid. A migrated subscriber continues with the last number sent, which is part of the
 // migrated forwarder state.
+// maxFrameNumJump is the largest jump in the frame numbers sent on a stream change, well below
+// half the range of the 16 bit frame number.
+const maxFrameNumJump = 1 << 14
+
 type DDForwarder struct {
 	logger logger.Logger
 
@@ -159,8 +166,18 @@ func (d *DDForwarder) Forward(extPkt *buffer.ExtPacket, temporal int32, result *
 }
 
 // rebase moves the frame numbers up when a new stream would go back past the last one sent
+// Resync starts the stream again on the next key frame with a structure, like a new forwarder,
+// keeping the last number sent. The forwarder resyncs on a mute, for example.
+func (d *DDForwarder) Resync() {
+	d.initialized = false
+}
+
 func (d *DDForwarder) rebase(extFrameNum uint64) {
-	if d.hasLast && extFrameNum+d.frameNumOffset <= d.extLastFrameNum {
+	if !d.hasLast {
+		return
+	}
+	extOutFrameNum := extFrameNum + d.frameNumOffset
+	if extOutFrameNum <= d.extLastFrameNum || extOutFrameNum-d.extLastFrameNum > maxFrameNumJump {
 		d.frameNumOffset = d.extLastFrameNum + 1 - extFrameNum
 	}
 }

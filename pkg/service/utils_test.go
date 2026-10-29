@@ -155,3 +155,30 @@ func TestRemoveDoubleSlashes(t *testing.T) {
 		})
 	}
 }
+
+func TestGetClientIP(t *testing.T) {
+	cases := []struct {
+		name    string
+		headers map[string]string
+		want    string
+	}{
+		{"remote address", nil, "192.0.2.1"},
+		{"cloudflare header wins", map[string]string{"CF-Connecting-IP": "203.0.113.7", "X-Forwarded-For": "198.51.100.2"}, "203.0.113.7"},
+		{"single forwarded address", map[string]string{"X-Forwarded-For": "198.51.100.2"}, "198.51.100.2"},
+		{"forwarded through two proxies", map[string]string{"X-Forwarded-For": "198.51.100.2, 10.0.0.5"}, "198.51.100.2"},
+		{"forwarded list without spaces", map[string]string{"X-Forwarded-For": "198.51.100.2,10.0.0.5,10.0.0.6"}, "198.51.100.2"},
+		{"forwarded ipv6", map[string]string{"X-Forwarded-For": "2001:db8::1, 10.0.0.5"}, "2001:db8::1"},
+		{"real ip header", map[string]string{"X-Real-IP": "198.51.100.9"}, "198.51.100.9"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/rtc", nil)
+			r.RemoteAddr = "192.0.2.1:54321"
+			for k, v := range c.headers {
+				r.Header.Set(k, v)
+			}
+			require.Equal(t, c.want, service.GetClientIP(r))
+		})
+	}
+}

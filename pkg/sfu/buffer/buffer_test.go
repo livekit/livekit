@@ -28,6 +28,7 @@ import (
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/mediatransportutil/pkg/nack"
 
@@ -778,4 +779,46 @@ func TestGetPacketConcurrentWithWrite(t *testing.T) {
 		close(stop)
 		wg.Wait()
 	})
+}
+
+func TestSendPLIThrottle(t *testing.T) {
+	buff := NewBuffer(123, 1, 1)
+	buff.codecType = webrtc.RTPCodecTypeVideo
+	var plis atomic.Int32
+	buff.OnRtcpFeedback(func(fb []rtcp.Packet) {
+		for _, pkt := range fb {
+			if _, ok := pkt.(*rtcp.PictureLossIndication); ok {
+				plis.Inc()
+			}
+		}
+	})
+	require.NoError(t, buff.Bind(webrtc.RTPParameters{
+		Codecs: []webrtc.RTPCodecParameters{vp8Codec},
+	}, vp8Codec.RTPCodecCapability, 0))
+	buff.SetPLIThrottle(int64(time.Minute))
+
+	// many subscribers asking at once send one PLI upstream
+	var wg sync.WaitGroup
+	for range 100 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			buff.SendPLI(false)
+		}()
+	}
+	wg.Wait()
+	require.Equal(t, int32(1), plis.Load())
+
+	// force bypasses the throttle and restarts the window
+	buff.SendPLI(true)
+	require.Equal(t, int32(2), plis.Load())
+	buff.SendPLI(false)
+	require.Equal(t, int32(2), plis.Load())
+
+	// a restarted stream needs a key frame right away, the old window does not apply
+	buff.Lock()
+	buff.restartStreamLocked("test", false)
+	buff.Unlock()
+	buff.SendPLI(false)
+	require.Equal(t, int32(3), plis.Load())
 }

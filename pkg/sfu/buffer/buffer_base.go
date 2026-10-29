@@ -200,6 +200,7 @@ type BufferBase struct {
 	enableStreamRestartDetection bool
 
 	pliThrottle int64
+	lastPliAt   atomic.Int64
 
 	rtpStats             *rtpstats.RTPStatsReceiver
 	ppsSnapshotId        uint32
@@ -479,6 +480,8 @@ func (b *BufferBase) SetStreamRestartDetection(enable bool) {
 
 func (b *BufferBase) setupRTPStats(clockRate uint32) {
 	b.rtpStats = rtpstats.NewRTPStatsReceiver(rtpstats.RTPStatsParams{})
+	// a new stream has no PLI history, so the PLI throttle starts fresh with it
+	b.lastPliAt.Store(0)
 	b.rtpStats.SetLogger(b.logger)
 	b.rtpStats.SetClockRate(clockRate)
 
@@ -687,16 +690,29 @@ func (b *BufferBase) SetPLIThrottle(duration int64) {
 
 func (b *BufferBase) SendPLI(force bool) {
 	b.RLock()
-	if b.codecType != webrtc.RTPCodecTypeVideo {
+	if b.codecType != webrtc.RTPCodecTypeVideo || b.rtpStats == nil {
 		b.RUnlock()
 		return
+	}
+
+	// throttle before the rtpstats lock, every subscriber of a track can ask for a key frame at once,
+	// under the buffer read lock so a stream restart cannot interleave with claiming the window
+	now := mono.UnixNano()
+	if force {
+		b.lastPliAt.Store(now)
+	} else {
+		lastPliAt := b.lastPliAt.Load()
+		if now-lastPliAt < b.pliThrottle || !b.lastPliAt.CompareAndSwap(lastPliAt, now) {
+			b.RUnlock()
+			return
+		}
 	}
 
 	rtpStats := b.rtpStats
 	pliThrottle := b.pliThrottle
 	b.RUnlock()
 
-	if rtpStats == nil || !rtpStats.CheckAndUpdatePli(pliThrottle, force) {
+	if !rtpStats.CheckAndUpdatePli(pliThrottle, force) {
 		return
 	}
 
