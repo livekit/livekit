@@ -1483,3 +1483,23 @@ func TestLeaveJoinSession(t *testing.T) {
 	require.Equal(t, 2, tl.OnTrackUnpublishedCallCount())
 	require.Equal(t, 2, tl.OnTrackPublishedCallCount())
 }
+
+func TestUpdateMetadataAttributesSizeLimit(t *testing.T) {
+	p := newParticipantForTest("test")
+	p.params.LimitConfig.MaxAttributesSize = 10
+
+	update := func(attrs map[string]string) error {
+		return p.UpdateMetadata(&livekit.UpdateParticipantMetadata{Attributes: attrs}, true)
+	}
+
+	require.NoError(t, update(map[string]string{"a": "1234"}))
+	require.NoError(t, update(map[string]string{"b": "1234"}))
+
+	// each update is within the limit, but the participant's attributes would not be
+	require.EqualError(t, update(map[string]string{"c": "1234"}), "attributes size exceeds limits")
+	require.Equal(t, map[string]string{"a": "1234", "b": "1234"}, p.ClaimGrants().Attributes)
+
+	// replacing and deleting keys frees space
+	require.NoError(t, update(map[string]string{"a": "", "b": "123456789"}))
+	require.Equal(t, map[string]string{"b": "123456789"}, p.ClaimGrants().Attributes)
+}
