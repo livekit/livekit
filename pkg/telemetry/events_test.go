@@ -22,7 +22,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/webhook"
 )
 
 func Test_OnParticipantJoin_EventIsSent(t *testing.T) {
@@ -257,4 +259,37 @@ func Test_OnRoomEnded_ReasonIsSent(t *testing.T) {
 	require.Equal(t, livekit.AnalyticsEventType_ROOM_ENDED, event.Type)
 	require.Equal(t, room.Sid, event.RoomId)
 	require.Equal(t, livekit.RoomEndReason_ROOM_END_API_DELETE, event.RoomEndReason)
+}
+
+// drainingNotifier sends the queued webhook on Stop(false) and reports it to the processed hook
+type drainingNotifier struct {
+	hook func(ctx context.Context, whi *livekit.WebhookInfo)
+}
+
+func (n *drainingNotifier) RegisterProcessedHook(f func(ctx context.Context, whi *livekit.WebhookInfo)) {
+	n.hook = f
+}
+func (n *drainingNotifier) SetKeys(apiKey, apiSecret string)      {}
+func (n *drainingNotifier) SetFilter(params webhook.FilterParams) {}
+func (n *drainingNotifier) QueueNotify(ctx context.Context, event *livekit.WebhookEvent, opts ...webhook.NotifyOption) error {
+	return nil
+}
+func (n *drainingNotifier) Stop(force bool) {
+	if !force {
+		n.hook(context.Background(), &livekit.WebhookInfo{Event: "room_finished"})
+	}
+}
+
+func Test_Stop_SendsWebhookEventsOfDrainedWebhooks(t *testing.T) {
+	analytics := &telemetryfakes.FakeAnalyticsService{}
+	notifier := &drainingNotifier{}
+	sut := telemetry.NewTelemetryService(notifier, analytics)
+	notifier.RegisterProcessedHook(sut.Webhook)
+
+	sut.Stop()
+
+	require.Equal(t, 1, analytics.SendEventCallCount())
+	_, event := analytics.SendEventArgsForCall(0)
+	require.Equal(t, livekit.AnalyticsEventType_WEBHOOK, event.Type)
+	require.Equal(t, "room_finished", event.Webhook.Event)
 }

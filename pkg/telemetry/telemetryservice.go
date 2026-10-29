@@ -267,10 +267,17 @@ func (t *telemetryService) run() {
 func (t *telemetryService) Stop() {
 	done := make(chan struct{})
 	go func() {
-		<-t.jobsQueue.Stop()
+		// run the events already queued, which queues their webhooks
+		flushed := make(chan struct{})
+		t.jobsQueue.Enqueue(func() { close(flushed) })
+		<-flushed
+
+		// sending those webhooks queues their analytics events through the processed hook,
+		// so stop the jobs queue only after the notifier has drained
 		if t.notifier != nil {
 			t.notifier.Stop(false)
 		}
+		<-t.jobsQueue.Stop()
 		close(done)
 	}()
 
