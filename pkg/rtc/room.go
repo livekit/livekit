@@ -125,6 +125,7 @@ type Room struct {
 	participantOpts           map[livekit.ParticipantIdentity]*ParticipantOptions
 	participantRequestSources map[livekit.ParticipantIdentity]routing.MessageSource
 	hasPublished              map[livekit.ParticipantIdentity]bool
+	launchedParticipantEgress map[livekit.ParticipantIdentity]bool
 	launchedTrackEgresses     map[livekit.ParticipantIdentity][]livekit.TrackID
 	agentParticpants          map[livekit.ParticipantIdentity]*agentJob
 	bufferFactory             *buffer.FactoryOfBufferFactory
@@ -274,6 +275,7 @@ func NewRoom(
 		participantOpts:                      make(map[livekit.ParticipantIdentity]*ParticipantOptions),
 		participantRequestSources:            make(map[livekit.ParticipantIdentity]routing.MessageSource),
 		hasPublished:                         make(map[livekit.ParticipantIdentity]bool),
+		launchedParticipantEgress:            make(map[livekit.ParticipantIdentity]bool),
 		launchedTrackEgresses:                make(map[livekit.ParticipantIdentity][]livekit.TrackID),
 		agentParticpants:                     make(map[livekit.ParticipantIdentity]*agentJob),
 		bufferFactory:                        buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSizeVideo, config.Receiver.PacketBufferSizeAudio),
@@ -1113,27 +1115,29 @@ func (r *Room) onTrackPublished(participant types.Participant, track types.Media
 	r.lock.Lock()
 	hasPublished := r.hasPublished[participant.Identity()]
 	r.hasPublished[participant.Identity()] = true
+	launchedParticipantEgress := r.launchedParticipantEgress[participant.Identity()]
+	r.launchedParticipantEgress[participant.Identity()] = true
 	r.lock.Unlock()
 
 	if !hasPublished {
 		r.lock.RLock()
 		r.launchTargetAgents(slices.Collect(maps.Values(r.agentDispatches)), participant, livekit.JobType_JT_PUBLISHER)
 		r.lock.RUnlock()
-		if r.internal != nil && r.internal.ParticipantEgress != nil {
-			go func() {
-				if err := StartParticipantEgress(
-					context.Background(),
-					r.egressLauncher,
-					r.telemetry,
-					r.internal.ParticipantEgress,
-					participant.Identity(),
-					r.Name(),
-					r.ID(),
-				); err != nil {
-					r.logger.Errorw("failed to launch participant egress", err)
-				}
-			}()
-		}
+	}
+	if !launchedParticipantEgress && r.internal != nil && r.internal.ParticipantEgress != nil {
+		go func() {
+			if err := StartParticipantEgress(
+				context.Background(),
+				r.egressLauncher,
+				r.telemetry,
+				r.internal.ParticipantEgress,
+				participant.Identity(),
+				r.Name(),
+				r.ID(),
+			); err != nil {
+				r.logger.Errorw("failed to launch participant egress", err)
+			}
+		}()
 	}
 	if participant.Kind() != livekit.ParticipantInfo_EGRESS && r.internal != nil && r.internal.TrackEgress != nil {
 		r.lock.Lock()
@@ -1405,6 +1409,15 @@ func (r *Room) onLeave(p types.LocalParticipant, reason types.ParticipantCloseRe
 	r.RemoveParticipant(p.Identity(), p.ID(), reason)
 }
 
+// ClearLaunchedParticipantEgress drops the identity scoped participant egress guard that a
+// duplicate identity eviction preserves for the incoming session. The caller uses it when that
+// session never joins, so the guard cannot outlive the handoff it was kept for.
+func (r *Room) ClearLaunchedParticipantEgress(identity livekit.ParticipantIdentity) {
+	r.lock.Lock()
+	delete(r.launchedParticipantEgress, identity)
+	r.lock.Unlock()
+}
+
 func (r *Room) RemoveParticipant(
 	identity livekit.ParticipantIdentity,
 	pID livekit.ParticipantID,
@@ -1428,12 +1441,13 @@ func (r *Room) RemoveParticipant(
 	delete(r.participants, identity)
 	delete(r.participantOpts, identity)
 	delete(r.participantRequestSources, identity)
+	delete(r.hasPublished, identity)
 	// A duplicate identity eviction replaces the session for an identity that stays in
 	// the room. Participant egress is scoped to the identity and the running job follows
-	// it across the new SID, so dropping the guard here makes the replacement session
-	// launch a second job that records the same tracks as the one still running.
+	// it across the new SID, so dropping this guard would make the replacement session
+	// launch a second job recording the same tracks as the one still running.
 	if reason != types.ParticipantCloseReasonDuplicateIdentity {
-		delete(r.hasPublished, identity)
+		delete(r.launchedParticipantEgress, identity)
 	}
 	delete(r.launchedTrackEgresses, identity)
 	delete(r.agentParticpants, identity)

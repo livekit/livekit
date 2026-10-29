@@ -923,33 +923,49 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
 }
 
 func TestParticipantEgressGuardOnRemove(t *testing.T) {
-	t.Run("duplicate identity eviction keeps the publish guard", func(t *testing.T) {
+	setGuards := func(rm *Room, identity livekit.ParticipantIdentity) {
+		rm.lock.Lock()
+		rm.hasPublished[identity] = true
+		rm.launchedParticipantEgress[identity] = true
+		rm.lock.Unlock()
+	}
+
+	t.Run("duplicate identity eviction keeps the egress guard and clears the publish guard", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
 		p := rm.GetParticipants()[0]
-
-		rm.lock.Lock()
-		rm.hasPublished[p.Identity()] = true
-		rm.lock.Unlock()
+		setGuards(rm, p.Identity())
 
 		rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonDuplicateIdentity)
 
 		rm.lock.RLock()
 		defer rm.lock.RUnlock()
-		require.True(t, rm.hasPublished[p.Identity()])
+		require.True(t, rm.launchedParticipantEgress[p.Identity()])
+		require.False(t, rm.hasPublished[p.Identity()])
 	})
 
-	t.Run("a normal leave clears the publish guard", func(t *testing.T) {
+	t.Run("a normal leave clears both guards", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
 		p := rm.GetParticipants()[0]
-
-		rm.lock.Lock()
-		rm.hasPublished[p.Identity()] = true
-		rm.lock.Unlock()
+		setGuards(rm, p.Identity())
 
 		rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonClientRequestLeave)
 
 		rm.lock.RLock()
 		defer rm.lock.RUnlock()
+		require.False(t, rm.launchedParticipantEgress[p.Identity()])
 		require.False(t, rm.hasPublished[p.Identity()])
+	})
+
+	t.Run("ClearLaunchedParticipantEgress releases a preserved guard", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
+		p := rm.GetParticipants()[0]
+		setGuards(rm, p.Identity())
+		rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonDuplicateIdentity)
+
+		rm.ClearLaunchedParticipantEgress(p.Identity())
+
+		rm.lock.RLock()
+		defer rm.lock.RUnlock()
+		require.False(t, rm.launchedParticipantEgress[p.Identity()])
 	})
 }
