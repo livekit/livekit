@@ -294,31 +294,55 @@ func TestDeleteRoomState(t *testing.T) {
 	}
 }
 
-// TestDeleteRoomClosingParticipantsKeepStateDeleted checks that the participants of a room
-// deleted through the API do not write its state back while they close.
-func TestDeleteRoomClosingParticipantsKeepStateDeleted(t *testing.T) {
-	ctx := context.Background()
-	conf, err := config.NewConfig("", true, nil, nil)
-	require.NoError(t, err)
-	rm, node, router, store := newRoomStateTestManager(t, conf)
-	router.GetNodeForRoomReturns(node.Clone(), nil)
+// TestDeleteRoomParticipantRecords checks what the participants of a room deleted through the
+// API write to the shared state while they close.
+func TestDeleteRoomParticipantRecords(t *testing.T) {
+	for _, tc := range []struct {
+		name                     string
+		lockErr                  error
+		roomDeletions            int
+		participantRecordDeletes int
+	}{
+		{
+			// the room state, participant records included, is deleted before they close
+			name:          "room state deleted",
+			roomDeletions: 1,
+		},
+		{
+			// the room stays registered while they close, so each deletes its own record
+			name:                     "room lock fails",
+			lockErr:                  service.ErrRoomLockFailed,
+			participantRecordDeletes: 1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			conf, err := config.NewConfig("", true, nil, nil)
+			require.NoError(t, err)
+			rm, node, router, store := newRoomStateTestManager(t, conf)
+			router.GetNodeForRoomReturns(node.Clone(), nil)
 
-	err = rm.StartSession(ctx, routing.ParticipantInit{
-		Identity:   "p",
-		Grants:     &auth.ClaimGrants{Identity: "p", Video: &auth.VideoGrant{RoomJoin: true, Room: "room"}},
-		Client:     &livekit.ClientInfo{},
-		CreateRoom: &livekit.CreateRoomRequest{Name: "room"},
-	}, &routingfakes.FakeMessageSource{}, &routingfakes.FakeMessageSink{}, false)
-	require.NoError(t, err)
-	require.Len(t, rm.GetRoom(ctx, "room").GetParticipants(), 1)
+			err = rm.StartSession(ctx, routing.ParticipantInit{
+				Identity:   "p",
+				Grants:     &auth.ClaimGrants{Identity: "p", Video: &auth.VideoGrant{RoomJoin: true, Room: "room"}},
+				Client:     &livekit.ClientInfo{},
+				CreateRoom: &livekit.CreateRoomRequest{Name: "room"},
+			}, &routingfakes.FakeMessageSource{}, &routingfakes.FakeMessageSink{}, false)
+			require.NoError(t, err)
+			require.Len(t, rm.GetRoom(ctx, "room").GetParticipants(), 1)
 
-	storeRoomCalls := store.StoreRoomCallCount()
-	_, err = rm.DeleteRoom(ctx, &livekit.DeleteRoomRequest{Room: "room"})
-	require.NoError(t, err)
+			store.LockRoomReturns("", tc.lockErr)
+			storeRoomCalls := store.StoreRoomCallCount()
+			_, err = rm.DeleteRoom(ctx, &livekit.DeleteRoomRequest{Room: "room"})
+			require.NoError(t, err)
 
-	require.Equal(t, 1, store.DeleteRoomCallCount())
-	require.Zero(t, store.DeleteParticipantCallCount())
-	require.Equal(t, storeRoomCalls, store.StoreRoomCallCount())
+			require.Nil(t, rm.GetRoom(ctx, "room"))
+			require.Equal(t, tc.roomDeletions, store.DeleteRoomCallCount())
+			require.Equal(t, tc.participantRecordDeletes, store.DeleteParticipantCallCount())
+			// closing participants do not write the room back
+			require.Equal(t, storeRoomCalls, store.StoreRoomCallCount())
+		})
+	}
 }
 
 func TestClaimRoomNodeOnCreate(t *testing.T) {
