@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
@@ -293,34 +294,67 @@ func TestDeleteRoomState(t *testing.T) {
 	}
 }
 
+// TestDeleteRoomClosingParticipantsKeepStateDeleted checks that the participants of a room
+// deleted through the API do not write its state back while they close.
+func TestDeleteRoomClosingParticipantsKeepStateDeleted(t *testing.T) {
+	ctx := context.Background()
+	conf, err := config.NewConfig("", true, nil, nil)
+	require.NoError(t, err)
+	rm, node, router, store := newRoomStateTestManager(t, conf)
+	router.GetNodeForRoomReturns(node.Clone(), nil)
+
+	err = rm.StartSession(ctx, routing.ParticipantInit{
+		Identity:   "p",
+		Grants:     &auth.ClaimGrants{Identity: "p", Video: &auth.VideoGrant{RoomJoin: true, Room: "room"}},
+		Client:     &livekit.ClientInfo{},
+		CreateRoom: &livekit.CreateRoomRequest{Name: "room"},
+	}, &routingfakes.FakeMessageSource{}, &routingfakes.FakeMessageSink{}, false)
+	require.NoError(t, err)
+	require.Len(t, rm.GetRoom(ctx, "room").GetParticipants(), 1)
+
+	storeRoomCalls := store.StoreRoomCallCount()
+	_, err = rm.DeleteRoom(ctx, &livekit.DeleteRoomRequest{Room: "room"})
+	require.NoError(t, err)
+
+	require.Equal(t, 1, store.DeleteRoomCallCount())
+	require.Zero(t, store.DeleteParticipantCallCount())
+	require.Equal(t, storeRoomCalls, store.StoreRoomCallCount())
+}
+
 func TestClaimRoomNodeOnCreate(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		roomNode func(self *livekit.Node) (*livekit.Node, error)
 		claimed  bool
+		// the allocator's lock around room creation, plus the claim's unless the room is mapped here
+		locks int
 	}{
 		{
 			name:     "room mapped to no node",
 			roomNode: func(*livekit.Node) (*livekit.Node, error) { return nil, routing.ErrNotFound },
 			claimed:  true,
+			locks:    2,
 		},
 		{
 			name:     "room mapped to this node",
 			roomNode: func(self *livekit.Node) (*livekit.Node, error) { return self, nil },
+			locks:    1,
 		},
 		{
 			name:     "room mapped to another node",
 			roomNode: func(*livekit.Node) (*livekit.Node, error) { return &livekit.Node{Id: "ND_other"}, nil },
+			locks:    2,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			conf, err := config.NewConfig("", true, nil, nil)
 			require.NoError(t, err)
-			rm, node, router, _ := newRoomStateTestManager(t, conf)
+			rm, node, router, store := newRoomStateTestManager(t, conf)
 			router.GetNodeForRoomReturns(tc.roomNode(node.Clone()))
 
 			_, err = rm.CreateRoom(context.Background(), &livekit.CreateRoomRequest{Name: "room"})
 			require.NoError(t, err)
+			require.Equal(t, tc.locks, store.LockRoomCallCount())
 
 			if !tc.claimed {
 				require.Zero(t, router.SetNodeForRoomCallCount())

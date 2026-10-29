@@ -260,6 +260,10 @@ func (r *RoomManager) roomNodeID(ctx context.Context, roomName livekit.RoomName)
 // an earlier same-name room can delete the mapping after a join was routed here, and later
 // joins would then be routed to another node.
 func (r *RoomManager) claimRoomNode(ctx context.Context, roomName livekit.RoomName, room *rtc.Room) {
+	if nodeID, err := r.roomNodeID(ctx, roomName); err == nil && nodeID == r.currentNode.NodeID() {
+		return
+	}
+
 	token, err := r.roomStore.LockRoom(ctx, roomName, roomLockDuration)
 	if err != nil {
 		room.Logger().Warnw("could not lock room to claim node", err)
@@ -719,8 +723,12 @@ func (r *RoomManager) StartSession(
 		pLogger.Errorw("could not store participant", err)
 	}
 
+	// a room that is deleted or replaced must not write its state back
+	isCurrentRoom := func() bool {
+		return r.GetRoom(ctx, room.Name()) == room
+	}
 	persistRoomForParticipantCount := func(proto *livekit.Room) {
-		if !participant.Hidden() && !room.IsClosed() {
+		if !participant.Hidden() && !room.IsClosed() && isCurrentRoom() {
 			err = r.roomStore.StoreRoom(ctx, proto, room.Internal())
 			if err != nil {
 				logger.Errorw("could not store room", err)
@@ -736,8 +744,11 @@ func (r *RoomManager) StartSession(
 	participant.AddOnClose(types.ParticipantCloseKeyNormal, func(p types.LocalParticipant) {
 		participantServerClosers.Close()
 
-		if err := r.roomStore.DeleteParticipant(ctx, room.Name(), p.Identity()); err != nil {
-			pLogger.Errorw("could not delete participant", err)
+		// the participant records of a replaced room can belong to a same-name room created since
+		if isCurrentRoom() {
+			if err := r.roomStore.DeleteParticipant(ctx, room.Name(), p.Identity()); err != nil {
+				pLogger.Errorw("could not delete participant", err)
+			}
 		}
 
 		// update room store with new numParticipants
