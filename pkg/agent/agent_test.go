@@ -361,23 +361,17 @@ func TestDrainConnectionsDoesNotDeadlock(t *testing.T) {
 			}
 			responses.Stop()
 
-			done := make(chan struct{})
-			go func() {
+			// the register response is sent before the handler adds the worker, so a drain right
+			// after it can miss the worker; drain again until it is closed, a deadlocked drain never returns
+			require.Eventually(t, func() bool {
 				server.DrainConnections(time.Millisecond, force)
-				close(done)
-			}()
-
-			select {
-			case <-done:
-			case <-time.After(5 * time.Second):
-				require.Fail(t, "DrainConnections deadlocked while closing workers")
-			}
-
-			select {
-			case <-worker.Closed():
-			case <-time.After(time.Second):
-				require.Fail(t, "worker should be closed after drain")
-			}
+				select {
+				case <-worker.Closed():
+					return true
+				default:
+					return false
+				}
+			}, 5*time.Second, 10*time.Millisecond, "worker should be closed after drain without deadlock")
 		})
 	}
 }
