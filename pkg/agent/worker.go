@@ -20,6 +20,8 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,6 +49,30 @@ var (
 )
 
 const AgentNameAttributeKey = "lk.agent_name"
+
+// JobAttemptAttributeKey names the job attempt an agent's token was issued for,
+// so the room can turn away the agent of an attempt it has already ended. See
+// FormatJobAttempt.
+const JobAttemptAttributeKey = "lk.agent_job_attempt"
+
+// FormatJobAttempt identifies a job's attempt by the job ID and the attempt's
+// StartedAt.
+func FormatJobAttempt(jobID livekit.JobID, startedAt int64) string {
+	return string(jobID) + ":" + strconv.FormatInt(startedAt, 10)
+}
+
+// ParseJobAttempt reads an attempt that FormatJobAttempt wrote.
+func ParseJobAttempt(s string) (livekit.JobID, int64, bool) {
+	i := strings.LastIndexByte(s, ':')
+	if i <= 0 {
+		return "", 0, false
+	}
+	startedAt, err := strconv.ParseInt(s[i+1:], 10, 64)
+	if err != nil {
+		return "", 0, false
+	}
+	return livekit.JobID(s[:i]), startedAt, true
+}
 
 type WorkerProtocolVersion int
 
@@ -464,6 +490,7 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook Assignmen
 			attributes = make(map[string]string)
 		}
 		attributes[AgentNameAttributeKey] = w.AgentName
+		attributes[JobAttemptAttributeKey] = FormatJobAttempt(jobID, job.State.StartedAt)
 
 		token, err := protoagent.BuildAgentToken(
 			w.apiKey,

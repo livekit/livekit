@@ -61,6 +61,50 @@ func TestAgent(t *testing.T) {
 		}
 	})
 
+	t.Run("the token of an assigned job names the job's attempt", func(t *testing.T) {
+		bus := psrpc.NewLocalMessageBus()
+
+		client := must.Get(rpc.NewAgentInternalClient(bus))
+		server := testutils.NewTestServer(bus)
+		t.Cleanup(server.Close)
+
+		worker := server.SimulateAgentWorker()
+		worker.Register(testAgentName, livekit.JobType_JT_ROOM)
+		jobAssignments := worker.JobAssignments.Observe()
+
+		job := &livekit.Job{
+			Id:         guid.New(guid.AgentJobPrefix),
+			DispatchId: guid.New(guid.AgentDispatchPrefix),
+			Type:       livekit.JobType_JT_ROOM,
+			Room:       &livekit.Room{},
+			AgentName:  testAgentName,
+		}
+		var res *rpc.JobRequestResponse
+		require.EventuallyWithT(t, func(c *assert.CollectT) {
+			var err error
+			res, err = client.JobRequest(context.Background(), testAgentName, agent.RoomAgentTopic, job)
+			assert.NoError(c, err)
+		}, 5*time.Second, 50*time.Millisecond)
+
+		var a *livekit.JobAssignment
+		select {
+		case a = <-jobAssignments.Events():
+		case <-time.After(time.Second):
+			require.Fail(t, "job assignment timeout")
+		}
+		v, err := auth.ParseAPIToken(a.Token)
+		require.NoError(t, err)
+		_, claims, err := v.Verify(server.TestAPISecret)
+		require.NoError(t, err)
+
+		// the room knows the attempt by the StartedAt of the state it is answered with
+		jobID, startedAt, ok := agent.ParseJobAttempt(claims.Attributes[agent.JobAttemptAttributeKey])
+		require.True(t, ok)
+		require.EqualValues(t, job.Id, jobID)
+		require.NotZero(t, startedAt)
+		require.Equal(t, res.State.StartedAt, startedAt)
+	})
+
 	t.Run("dispatch burst does not wait for the CheckEnabled timeout", func(t *testing.T) {
 		bus := psrpc.NewLocalMessageBus()
 		server := testutils.NewTestServer(bus)
