@@ -21,12 +21,22 @@ import (
 // SystemLoadSelector eliminates nodes that surpass has a per-cpu node higher than SysloadLimit
 // then selects a node from nodes that are not overloaded
 type SystemLoadSelector struct {
-	SysloadLimit float32
-	SortBy       string
-	Algorithm    string
+	SysloadLimit     float32
+	CPULoadLimit     float32
+	BytesPerSecLimit float32
+	SortBy           string
+	Algorithm        string
 }
 
 func (s *SystemLoadSelector) filterNodes(nodes []*livekit.Node) ([]*livekit.Node, error) {
+	if s.CPULoadLimit > 0 || s.BytesPerSecLimit > 0 {
+		return (&LimitsFilter{
+			SysloadLimit:     s.SysloadLimit,
+			CPULoadLimit:     s.CPULoadLimit,
+			BytesPerSecLimit: s.BytesPerSecLimit,
+		}).Filter(nodes)
+	}
+
 	nodes, err := FilterNodesByCriteria(nodes, s.SysloadLimit, GetNodeSysload)
 	if err != nil {
 		return nil, err

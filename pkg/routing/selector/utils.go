@@ -55,6 +55,13 @@ func GetNodeSysload(node *livekit.Node) float32 {
 	return stats.LoadAvgLast1Min / float32(numCpus)
 }
 
+func GetNodeBytesPerSec(node *livekit.Node) float32 {
+	if node.Stats == nil || len(node.Stats.Rates) == 0 {
+		return 0
+	}
+	return float32(node.Stats.Rates[0].BytesIn + node.Stats.Rates[0].BytesOut)
+}
+
 // TODO: check remote node configured limit, instead of this node's config
 func LimitsReached(limitConfig config.LimitConfig, nodeStats *livekit.NodeStats) bool {
 	if nodeStats == nil {
@@ -151,16 +158,7 @@ func selectLowestSortedNode(nodes []*livekit.Node, sortBy string) (*livekit.Node
 		return nodes[0], nil
 	case "bytespersec":
 		slices.SortFunc(nodes, func(a, b *livekit.Node) int {
-			ratea := &livekit.NodeStatsRate{}
-			if len(a.Stats.Rates) > 0 {
-				ratea = a.Stats.Rates[0]
-			}
-
-			rateb := &livekit.NodeStatsRate{}
-			if len(b.Stats.Rates) > 0 {
-				rateb = b.Stats.Rates[0]
-			}
-			return utils.Signum((ratea.BytesIn + ratea.BytesOut) - (rateb.BytesIn + rateb.BytesOut))
+			return utils.Signum(GetNodeBytesPerSec(a) - GetNodeBytesPerSec(b))
 		})
 		return nodes[0], nil
 	default:
