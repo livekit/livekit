@@ -61,6 +61,13 @@ func FormatJobAttempt(jobID livekit.JobID, startedAt int64) string {
 	return string(jobID) + ":" + strconv.FormatInt(startedAt, 10)
 }
 
+// advance returns a job's StartedAt or UpdatedAt after prev: now, unless the
+// node that wrote prev has a clock ahead of this one. A job's attempts, and the
+// versions of its state, are then ordered across nodes whatever their clocks.
+func advance(prev, now int64) int64 {
+	return max(now, prev+1)
+}
+
 // ParseJobAttempt reads an attempt that FormatJobAttempt wrote.
 func ParseJobAttempt(s string) (livekit.JobID, int64, bool) {
 	i := strings.LastIndexByte(s, ':')
@@ -422,7 +429,7 @@ func (w *Worker) AttachJob(job *livekit.Job) *livekit.JobState {
 	now := time.Now().UnixNano()
 	job.State.WorkerId = w.ID
 	job.State.AgentId = w.AgentID
-	job.State.UpdatedAt = now
+	job.State.UpdatedAt = advance(job.State.UpdatedAt, now)
 	job.State.StartedAt = cmp.Or(job.State.StartedAt, now)
 	job.State.Status = livekit.JobStatus_JS_RUNNING
 
@@ -458,8 +465,10 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook Assignmen
 	now := time.Now()
 	job.State.WorkerId = w.ID
 	job.State.AgentId = w.AgentID
-	job.State.UpdatedAt = now.UnixNano()
-	job.State.StartedAt = now.UnixNano()
+	job.State.UpdatedAt = advance(job.State.UpdatedAt, now.UnixNano())
+	// StartedAt identifies the attempt: after the one the request carries, the
+	// job's previous attempt or its creation; see advance
+	job.State.StartedAt = advance(job.State.StartedAt, now.UnixNano())
 	job.State.Status = livekit.JobStatus_JS_RUNNING
 
 	if _, err := w.conn.WriteServerMessage(&livekit.ServerMessage{Message: &livekit.ServerMessage_Availability{
@@ -641,7 +650,7 @@ func (w *Worker) UpdateJobStatus(update *livekit.UpdateJobStatus) (*livekit.JobS
 	}
 
 	now := time.Now()
-	job.State.UpdatedAt = now.UnixNano()
+	job.State.UpdatedAt = advance(job.State.UpdatedAt, now.UnixNano())
 
 	if job.State.Status == livekit.JobStatus_JS_PENDING && update.Status != livekit.JobStatus_JS_PENDING {
 		job.State.StartedAt = now.UnixNano()

@@ -105,6 +105,52 @@ func TestAgent(t *testing.T) {
 		require.Equal(t, res.State.StartedAt, startedAt)
 	})
 
+	t.Run("an attempt follows the one its job request carries, whatever the clock", func(t *testing.T) {
+		bus := psrpc.NewLocalMessageBus()
+
+		client := must.Get(rpc.NewAgentInternalClient(bus))
+		server := testutils.NewTestServer(bus)
+		t.Cleanup(server.Close)
+
+		worker := server.SimulateAgentWorker()
+		worker.Register(testAgentName, livekit.JobType_JT_ROOM)
+		jobAssignments := worker.JobAssignments.Observe()
+
+		// the previous attempt started, and its state was last written, on a node
+		// whose clock is ahead of this one
+		previous := time.Now().Add(time.Hour).UnixNano()
+		job := &livekit.Job{
+			Id:         guid.New(guid.AgentJobPrefix),
+			DispatchId: guid.New(guid.AgentDispatchPrefix),
+			Type:       livekit.JobType_JT_ROOM,
+			Room:       &livekit.Room{},
+			AgentName:  testAgentName,
+			State:      &livekit.JobState{StartedAt: previous, UpdatedAt: previous},
+		}
+		var res *rpc.JobRequestResponse
+		require.EventuallyWithT(t, func(c *assert.CollectT) {
+			var err error
+			res, err = client.JobRequest(context.Background(), testAgentName, agent.RoomAgentTopic, job)
+			assert.NoError(c, err)
+		}, 5*time.Second, 50*time.Millisecond)
+		require.Greater(t, res.State.StartedAt, previous)
+		require.Greater(t, res.State.UpdatedAt, previous, "the assignment is a later version of the job's state")
+
+		var a *livekit.JobAssignment
+		select {
+		case a = <-jobAssignments.Events():
+		case <-time.After(time.Second):
+			require.Fail(t, "job assignment timeout")
+		}
+		v, err := auth.ParseAPIToken(a.Token)
+		require.NoError(t, err)
+		_, claims, err := v.Verify(server.TestAPISecret)
+		require.NoError(t, err)
+		_, startedAt, ok := agent.ParseJobAttempt(claims.Attributes[agent.JobAttemptAttributeKey])
+		require.True(t, ok)
+		require.Equal(t, res.State.StartedAt, startedAt, "the token names the attempt the room is answered with")
+	})
+
 	t.Run("dispatch burst does not wait for the CheckEnabled timeout", func(t *testing.T) {
 		bus := psrpc.NewLocalMessageBus()
 		server := testutils.NewTestServer(bus)
