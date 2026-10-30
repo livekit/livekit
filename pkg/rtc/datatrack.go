@@ -191,6 +191,14 @@ func (d *DataTrack) NotifySubscriptionNode(nodeID livekit.NodeID, enabled bool) 
 	d.updateDemandLocked(false)
 }
 
+func (d *DataTrack) ClearSubscriberNodes() {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+
+	clear(d.subscriberNodeEnables)
+	d.updateDemandLocked(false)
+}
+
 func (d *DataTrack) StartDemandUpdates() {
 	d.lock.Lock()
 	defer d.lock.Unlock()
@@ -220,6 +228,17 @@ func (d *DataTrack) IsSubscriber(subID livekit.ParticipantID) bool {
 
 	_, ok := d.subscribedTracks[subID]
 	return ok
+}
+
+func (d *DataTrack) GetAllSubscribers() []livekit.ParticipantID {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+
+	subs := make([]livekit.ParticipantID, 0, len(d.subscribedTracks))
+	for id := range d.subscribedTracks {
+		subs = append(subs, id)
+	}
+	return subs
 }
 
 func (d *DataTrack) RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity {

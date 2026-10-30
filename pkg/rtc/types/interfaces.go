@@ -930,9 +930,11 @@ type DataTrack interface {
 	AddSubscriber(sub LocalParticipant) (DataDownTrack, error)
 	RemoveSubscriber(participantID livekit.ParticipantID)
 	IsSubscriber(subID livekit.ParticipantID) bool
+	GetAllSubscribers() []livekit.ParticipantID
 	RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity
 
 	NotifySubscriptionNode(nodeID livekit.NodeID, enabled bool)
+	ClearSubscriberNodes()
 
 	AddDataDownTrack(sender DataTrackSender) error
 	DeleteDataDownTrack(subscriberID livekit.ParticipantID)

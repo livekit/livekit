@@ -34,6 +34,10 @@ type FakeDataTrack struct {
 		result1 types.DataDownTrack
 		result2 error
 	}
+	ClearSubscriberNodesStub        func()
+	clearSubscriberNodesMutex       sync.RWMutex
+	clearSubscriberNodesArgsForCall []struct {
+	}
 	CloseStub        func()
 	closeMutex       sync.RWMutex
 	closeArgsForCall []struct {
@@ -42,6 +46,16 @@ type FakeDataTrack struct {
 	deleteDataDownTrackMutex       sync.RWMutex
 	deleteDataDownTrackArgsForCall []struct {
 		arg1 livekit.ParticipantID
+	}
+	GetAllSubscribersStub        func() []livekit.ParticipantID
+	getAllSubscribersMutex       sync.RWMutex
+	getAllSubscribersArgsForCall []struct {
+	}
+	getAllSubscribersReturns struct {
+		result1 []livekit.ParticipantID
+	}
+	getAllSubscribersReturnsOnCall map[int]struct {
+		result1 []livekit.ParticipantID
 	}
 	HandlePacketStub        func([]byte, *datatrack.Packet, int64)
 	handlePacketMutex       sync.RWMutex
@@ -272,6 +286,30 @@ func (fake *FakeDataTrack) AddSubscriberReturnsOnCall(i int, result1 types.DataD
 	}{result1, result2}
 }
 
+func (fake *FakeDataTrack) ClearSubscriberNodes() {
+	fake.clearSubscriberNodesMutex.Lock()
+	fake.clearSubscriberNodesArgsForCall = append(fake.clearSubscriberNodesArgsForCall, struct {
+	}{})
+	stub := fake.ClearSubscriberNodesStub
+	fake.recordInvocation("ClearSubscriberNodes", []interface{}{})
+	fake.clearSubscriberNodesMutex.Unlock()
+	if stub != nil {
+		fake.ClearSubscriberNodesStub()
+	}
+}
+
+func (fake *FakeDataTrack) ClearSubscriberNodesCallCount() int {
+	fake.clearSubscriberNodesMutex.RLock()
+	defer fake.clearSubscriberNodesMutex.RUnlock()
+	return len(fake.clearSubscriberNodesArgsForCall)
+}
+
+func (fake *FakeDataTrack) ClearSubscriberNodesCalls(stub func()) {
+	fake.clearSubscriberNodesMutex.Lock()
+	defer fake.clearSubscriberNodesMutex.Unlock()
+	fake.ClearSubscriberNodesStub = stub
+}
+
 func (fake *FakeDataTrack) Close() {
 	fake.closeMutex.Lock()
 	fake.closeArgsForCall = append(fake.closeArgsForCall, struct {
@@ -326,6 +364,59 @@ func (fake *FakeDataTrack) DeleteDataDownTrackArgsForCall(i int) livekit.Partici
 	defer fake.deleteDataDownTrackMutex.RUnlock()
 	argsForCall := fake.deleteDataDownTrackArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakeDataTrack) GetAllSubscribers() []livekit.ParticipantID {
+	fake.getAllSubscribersMutex.Lock()
+	ret, specificReturn := fake.getAllSubscribersReturnsOnCall[len(fake.getAllSubscribersArgsForCall)]
+	fake.getAllSubscribersArgsForCall = append(fake.getAllSubscribersArgsForCall, struct {
+	}{})
+	stub := fake.GetAllSubscribersStub
+	fakeReturns := fake.getAllSubscribersReturns
+	fake.recordInvocation("GetAllSubscribers", []interface{}{})
+	fake.getAllSubscribersMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeDataTrack) GetAllSubscribersCallCount() int {
+	fake.getAllSubscribersMutex.RLock()
+	defer fake.getAllSubscribersMutex.RUnlock()
+	return len(fake.getAllSubscribersArgsForCall)
+}
+
+func (fake *FakeDataTrack) GetAllSubscribersCalls(stub func() []livekit.ParticipantID) {
+	fake.getAllSubscribersMutex.Lock()
+	defer fake.getAllSubscribersMutex.Unlock()
+	fake.GetAllSubscribersStub = stub
+}
+
+func (fake *FakeDataTrack) GetAllSubscribersReturns(result1 []livekit.ParticipantID) {
+	fake.getAllSubscribersMutex.Lock()
+	defer fake.getAllSubscribersMutex.Unlock()
+	fake.GetAllSubscribersStub = nil
+	fake.getAllSubscribersReturns = struct {
+		result1 []livekit.ParticipantID
+	}{result1}
+}
+
+func (fake *FakeDataTrack) GetAllSubscribersReturnsOnCall(i int, result1 []livekit.ParticipantID) {
+	fake.getAllSubscribersMutex.Lock()
+	defer fake.getAllSubscribersMutex.Unlock()
+	fake.GetAllSubscribersStub = nil
+	if fake.getAllSubscribersReturnsOnCall == nil {
+		fake.getAllSubscribersReturnsOnCall = make(map[int]struct {
+			result1 []livekit.ParticipantID
+		})
+	}
+	fake.getAllSubscribersReturnsOnCall[i] = struct {
+		result1 []livekit.ParticipantID
+	}{result1}
 }
 
 func (fake *FakeDataTrack) HandlePacket(arg1 []byte, arg2 *datatrack.Packet, arg3 int64) {

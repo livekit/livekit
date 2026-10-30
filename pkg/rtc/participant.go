@@ -4546,6 +4546,16 @@ func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 		track.(types.LocalMediaTrack).ClearSubscriberNodes()
 	}
 
+	for _, track := range p.UpDataTrackManager.GetPublishedDataTracks() {
+		for _, sub := range track.GetAllSubscribers() {
+			track.RemoveSubscriber(sub)
+		}
+
+		// clear the subscriber node demand as the remote notify
+		// from source room would not reach the moving out participant.
+		track.ClearSubscriberNodes()
+	}
+
 	p.LeaveSession(func() {
 		p.SubscriptionManager.ClearAllSubscriptions()
 

@@ -121,4 +121,39 @@ func TestDataTrackDemand(t *testing.T) {
 
 	dt.NotifySubscriptionNode("nodeB", false)
 	requireReported(false, true, false)
+
+	dt.NotifySubscriptionNode("nodeB", true)
+	dt.NotifySubscriptionNode("nodeC", true)
+	requireReported(false, true, false, true)
+	dt.ClearSubscriberNodes()
+	requireReported(false, true, false, true, false)
+}
+
+func TestDataTrackGetAllSubscribers(t *testing.T) {
+	dt := NewDataTrack(
+		DataTrackParams{
+			Logger:              logger.GetLogger(),
+			ParticipantID:       func() livekit.ParticipantID { return "pubID" },
+			ParticipantIdentity: "pub",
+		},
+		&livekit.DataTrackInfo{
+			PubHandle: 1,
+			Sid:       "DTR_test",
+			Name:      "test",
+		},
+	)
+	defer dt.Close()
+
+	require.Empty(t, dt.GetAllSubscribers())
+
+	subA := newTestDataTrackSubscriber("subA", "a", false)
+	subB := newTestDataTrackSubscriber("subB", "b", false)
+	for _, sub := range []*typesfakes.FakeLocalParticipant{subA, subB} {
+		_, err := dt.AddSubscriber(sub)
+		require.NoError(t, err)
+	}
+	require.ElementsMatch(t, []livekit.ParticipantID{subA.ID(), subB.ID()}, dt.GetAllSubscribers())
+
+	dt.RemoveSubscriber(subA.ID())
+	require.Equal(t, []livekit.ParticipantID{subB.ID()}, dt.GetAllSubscribers())
 }
