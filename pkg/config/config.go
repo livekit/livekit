@@ -97,12 +97,15 @@ type Config struct {
 	Ingress        IngressConfig            `yaml:"ingress,omitempty"`
 	SIP            SIPConfig                `yaml:"sip,omitempty"`
 	WebHook        webhook.WebHookConfig    `yaml:"webhook,omitempty"`
-	NodeSelector   NodeSelectorConfig       `yaml:"node_selector,omitempty"`
-	KeyFile        string                   `yaml:"key_file,omitempty"`
-	Keys           map[string]string        `yaml:"keys,omitempty"`
-	Region         string                   `yaml:"region,omitempty"`
-	SignalRelay    SignalRelayConfig        `yaml:"signal_relay,omitempty"`
-	PSRPC          rpc.PSRPCConfig          `yaml:"psrpc,omitempty"`
+	// KevlarAuthHandler is an FK fork option: when URL is set, RTC joins call icap-gateway
+	// GET /validate with the Kevlar AT before the WebSocket is accepted.
+	KevlarAuthHandler KevlarAuthHandlerConfig `yaml:"kevlar_auth_handler,omitempty"`
+	NodeSelector      NodeSelectorConfig      `yaml:"node_selector,omitempty"`
+	KeyFile           string                  `yaml:"key_file,omitempty"`
+	Keys              map[string]string       `yaml:"keys,omitempty"`
+	Region            string                  `yaml:"region,omitempty"`
+	SignalRelay       SignalRelayConfig       `yaml:"signal_relay,omitempty"`
+	PSRPC             rpc.PSRPCConfig         `yaml:"psrpc,omitempty"`
 	// Deprecated: LogLevel is deprecated
 	LogLevel string        `yaml:"log_level,omitempty"`
 	Logging  LoggingConfig `yaml:"logging,omitempty"`
@@ -121,6 +124,20 @@ type Config struct {
 	EnableParticipantDataBlob bool `yaml:"enable_participant_data_blob,omitempty"`
 
 	API APIConfig `yaml:"api,omitempty"`
+}
+
+// KevlarAuthHandlerConfig configures synchronous pre-join validation against icap-gateway.
+// Empty URL disables the check (stock LiveKit behavior).
+type KevlarAuthHandlerConfig struct {
+	// URL is the full validate endpoint, e.g. https://chat.pg.flipkart.com/icap-gateway/v1/validate
+	URL string `yaml:"url,omitempty"`
+	// Timeout for the outbound GET. Defaults to 2s when unset.
+	Timeout time.Duration `yaml:"timeout,omitempty"`
+	// TokenAttribute is the participant attribute key carrying the Kevlar AT (default "at").
+	TokenAttribute string `yaml:"token_attribute,omitempty"`
+	// TenantAttribute is the participant attribute key for tenant (default "tenant").
+	// Value is forwarded to icap-gateway as header x-tenant-id.
+	TenantAttribute string `yaml:"tenant_attribute,omitempty"`
 }
 
 // WebTransportConfig is the node's HTTP/3 listener. QUIC has no plaintext mode,
