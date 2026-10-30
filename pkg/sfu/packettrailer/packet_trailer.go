@@ -14,6 +14,15 @@
 
 package packettrailer
 
+import (
+	"strconv"
+	"strings"
+
+	"github.com/pion/webrtc/v4"
+
+	"github.com/livekit/protocol/codecs/mime"
+)
+
 var Magic = [4]byte{'L', 'K', 'T', 'S'}
 
 const (
@@ -45,4 +54,58 @@ func StripTrailer(payload []byte, isEndOfFrame bool) int {
 	}
 
 	return trailerLen
+}
+
+// Strip removes n trailer bytes, as returned by StripTrailer, from the end of
+// payload. The trailer is part of the frame's last NALU, so in an H.264 STAP-A
+// or H.265 aggregation packet the size of the NALU ending the payload shrinks
+// by n too.
+func Strip(payload []byte, n int, codec webrtc.RTPCodecCapability) []byte {
+	switch mime.NormalizeMimeType(codec.MimeType) {
+	case mime.MimeTypeH264:
+		if len(payload) > 0 && payload[0]&0x1f == 24 { // STAP-A
+			shrinkLastNALU(payload, 1, 0, n)
+		}
+	case mime.MimeTypeH265:
+		if len(payload) > 1 && (payload[0]>>1)&0x3f == 48 { // AP
+			if hasDONL(codec.SDPFmtpLine) {
+				// a 2-byte DONL before the first NALU, a 1-byte DOND before the others
+				shrinkLastNALU(payload, 4, 1, n)
+			} else {
+				shrinkLastNALU(payload, 2, 0, n)
+			}
+		}
+	}
+	return payload[:len(payload)-n]
+}
+
+// hasDONL reports whether H.265 aggregation units carry decoding order
+// numbers, which they do when sprop-max-don-diff is above 0 (RFC 7798 7.1).
+func hasDONL(fmtp string) bool {
+	for _, param := range strings.Split(fmtp, ";") {
+		key, value, _ := strings.Cut(strings.TrimSpace(param), "=")
+		if strings.EqualFold(key, "sprop-max-don-diff") {
+			diff, err := strconv.Atoi(value)
+			return err == nil && diff > 0
+		}
+	}
+	return false
+}
+
+// shrinkLastNALU walks the size prefixed NALUs of an aggregation packet, from
+// pos, skipping skip bytes between them, and shrinks the one ending the
+// payload by n.
+func shrinkLastNALU(payload []byte, pos int, skip int, n int) {
+	for pos+2 <= len(payload) {
+		size := int(payload[pos])<<8 | int(payload[pos+1])
+		end := pos + 2 + size
+		if end == len(payload) && size > n {
+			size -= n
+			payload[pos], payload[pos+1] = byte(size>>8), byte(size)
+		}
+		if end >= len(payload) {
+			return
+		}
+		pos = end + skip
+	}
 }
