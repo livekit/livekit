@@ -57,7 +57,7 @@ type DataTrack struct {
 	lock                  sync.Mutex
 	dti                   *livekit.DataTrackInfo
 	subscribedTracks      map[livekit.ParticipantID]subscribedDataTrack
-	subscriberNodeEnables map[livekit.NodeID]bool
+	subscriberNodeEnables map[livekit.NodeID]struct{}
 	demandStarted         bool
 	hasSubscribers        bool
 
@@ -75,7 +75,7 @@ func NewDataTrack(params DataTrackParams, dti *livekit.DataTrackInfo) *DataTrack
 		params:                params,
 		dti:                   dti,
 		subscribedTracks:      make(map[livekit.ParticipantID]subscribedDataTrack),
-		subscriberNodeEnables: make(map[livekit.NodeID]bool),
+		subscriberNodeEnables: make(map[livekit.NodeID]struct{}),
 	}
 	d.logger = params.Logger.WithValues("name", d.Name(), "handle", dti.PubHandle)
 	d.notifyOpsQueue = utils.NewOpsQueue(utils.OpsQueueParams{
@@ -186,7 +186,7 @@ func (d *DataTrack) NotifySubscriptionNode(nodeID livekit.NodeID, enabled bool) 
 	if !enabled {
 		delete(d.subscriberNodeEnables, nodeID)
 	} else {
-		d.subscriberNodeEnables[nodeID] = true
+		d.subscriberNodeEnables[nodeID] = struct{}{}
 	}
 	d.updateDemandLocked(false)
 }
