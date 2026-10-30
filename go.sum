@@ -168,6 +168,8 @@ github.com/livekit/mediatransportutil v0.0.0-20261030110923-03518fb8a6f6 h1:Jas6
 github.com/livekit/mediatransportutil v0.0.0-20261030110923-03518fb8a6f6/go.mod h1:o8CFmAdrVwzJNOCsQCLUzXRjokkufNshnQHOe4fRaqU=
 github.com/livekit/protocol v1.53.2-0.20261029075249-0aaaf11694ad h1:fRxgf/Ian1KzwR62jEwBAdrAiJfYGk/TVS+QArFMDs8=
 github.com/livekit/protocol v1.53.2-0.20261029075249-0aaaf11694ad/go.mod h1:h9P4KCc3K715NCgCrkkFsb8/RRY1kKqOS1EIHUNRlCk=
+github.com/livekit/protocol v1.53.2-0.20261029173217-b8c797a0e8f3 h1:vgZwmcYt+XGO+C7rt1yksdr9qxPPPs/U2uea/ACtP+A=
+github.com/livekit/protocol v1.53.2-0.20261029173217-b8c797a0e8f3/go.mod h1:h9P4KCc3K715NCgCrkkFsb8/RRY1kKqOS1EIHUNRlCk=
 github.com/livekit/psrpc v0.8.2 h1:7tbkhBJoYlK5Csfkdv1XYbZjyAQeaEZgupvIXNCv7Dc=
 github.com/livekit/psrpc v0.8.2/go.mod h1:6KnU8vULoizX0Er9NNfeKJDV8ug87j3fuo19M0bhj6Q=
 github.com/livekit/webrtc-pion/v4 v4.2.18-warp.7 h1:I1UkbeJI5V6slqLmef0JoaGF8wPnFsKzzXGUzz4KDvs=
