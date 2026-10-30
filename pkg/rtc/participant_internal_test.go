@@ -835,6 +835,17 @@ func TestAddTrackRejectsInvalidQuality(t *testing.T) {
 			},
 		})
 	})
+
+	// a client can forge a video layer mode outside the enum range
+	t.Run("out-of-range video layer mode", func(t *testing.T) {
+		assertRejected(t, &livekit.AddTrackRequest{
+			Cid:  "cid",
+			Type: livekit.TrackType_VIDEO,
+			SimulcastCodecs: []*livekit.SimulcastCodec{
+				{Cid: "cid", Codec: "vp8", VideoLayerMode: livekit.VideoLayer_Mode(99)},
+			},
+		})
+	})
 }
 
 func TestPreferMediaCodecForPublisher(t *testing.T) {

@@ -57,6 +57,9 @@ func ValidVideoLayers(req *livekit.AddTrackRequest) bool {
 		if !valid(codec.Layers) {
 			return false
 		}
+		if codec.VideoLayerMode < livekit.VideoLayer_MODE_UNUSED || codec.VideoLayerMode > livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM_INCOMPLETE_RTCP_SR {
+			return false
+		}
 	}
 	return true
 }
