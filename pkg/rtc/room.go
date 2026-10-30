@@ -1412,9 +1412,16 @@ func (r *Room) onLeave(p types.LocalParticipant, reason types.ParticipantCloseRe
 // ClearLaunchedParticipantEgress drops the identity scoped participant egress guard that a
 // duplicate identity eviction preserves for the incoming session. The caller uses it when that
 // session never joins, so the guard cannot outlive the handoff it was kept for.
+//
+// The guard is only released while the identity has no participant in the room. Sessions for one
+// identity can race, and a handoff fails with ErrAlreadyJoined precisely when another session won
+// and is now the owner of the guard; clearing it then would let that session start a second egress
+// alongside the job still recording.
 func (r *Room) ClearLaunchedParticipantEgress(identity livekit.ParticipantIdentity) {
 	r.lock.Lock()
-	delete(r.launchedParticipantEgress, identity)
+	if _, ok := r.participants[identity]; !ok {
+		delete(r.launchedParticipantEgress, identity)
+	}
 	r.lock.Unlock()
 }
 

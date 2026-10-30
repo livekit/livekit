@@ -968,4 +968,17 @@ func TestParticipantEgressGuardOnRemove(t *testing.T) {
 		defer rm.lock.RUnlock()
 		require.False(t, rm.launchedParticipantEgress[p.Identity()])
 	})
+
+	t.Run("ClearLaunchedParticipantEgress keeps the guard when a session owns the identity", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
+		p := rm.GetParticipants()[0]
+		setGuards(rm, p.Identity())
+
+		// the identity is still held by a joined session, so a losing handoff must not release it
+		rm.ClearLaunchedParticipantEgress(p.Identity())
+
+		rm.lock.RLock()
+		defer rm.lock.RUnlock()
+		require.True(t, rm.launchedParticipantEgress[p.Identity()])
+	})
 }
