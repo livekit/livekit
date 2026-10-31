@@ -93,9 +93,10 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 	}
 
 	serverConfig := turn.ServerConfig{
-		Realm:         LivekitRealm,
-		AuthHandler:   authHandler,
-		LoggerFactory: pionlogger.NewLoggerFactory(logger.GetLogger()),
+		Realm:               LivekitRealm,
+		AuthHandler:         authHandler,
+		LoggerFactory:       pionlogger.NewLoggerFactory(logger.GetLogger()),
+		StrictAddressFamily: turnConf.UnixSocket != "",
 	}
 
 	// cap concurrent relay allocations per participant so one credential cannot

@@ -464,3 +464,47 @@ func TestTURNConfig_HasTLS(t *testing.T) {
 	require.True(t, config.TURNConfig{TLSPort: 5349}.HasTLS())
 	require.True(t, config.TURNConfig{UnixSocket: "/run/turn.socket"}.HasTLS())
 }
+
+func TestNewTurnServer_UnixSocketAllocatesIPv4RelayBehindIPv6Proxy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "turn.socket")
+	conf := &config.Config{}
+	conf.TURN = proxyProtocolTURNConfig("127.0.0.0/8")
+	conf.TURN.Enabled = true
+	conf.TURN.Domain = "turn.example.com"
+	conf.TURN.UnixSocket = path
+	conf.TURN.BindAddresses = []string{"127.0.0.1"}
+	conf.TURN.RelayPortRangeStart = 30000
+	conf.TURN.RelayPortRangeEnd = 40000
+	conf.RTC.NodeIP.V4 = "127.0.0.1"
+	h := newTestTurnAuthHandler()
+
+	server, err := NewTurnServer(conf, h.HandleAuth, false)
+	require.NoError(t, err)
+	defer server.Close()
+
+	conn, err := net.Dial("unix", path)
+	require.NoError(t, err)
+	defer conn.Close()
+	_, err = conn.Write([]byte("PROXY TCP6 2001:db8::7 2001:db8::1 40123 443\r\n"))
+	require.NoError(t, err)
+
+	pID := livekit.ParticipantID("PA_unix_v6")
+	username, expiry := h.CreateUsername(turnTestAPIKey, pID, 60)
+	password, err := h.CreatePassword(turnTestAPIKey, pID, expiry)
+	require.NoError(t, err)
+
+	client, err := turn.NewClient(&turn.ClientConfig{
+		Conn:     turn.NewSTUNConn(conn),
+		Username: username,
+		Password: password,
+		Realm:    LivekitRealm,
+	})
+	require.NoError(t, err)
+	defer client.Close()
+	require.NoError(t, client.Listen())
+
+	relay, err := client.Allocate()
+	require.NoError(t, err)
+	defer relay.Close()
+	require.Equal(t, "127.0.0.1", relay.LocalAddr().(*net.UDPAddr).IP.String())
+}
