@@ -136,6 +136,20 @@ func TestDDForwarder(t *testing.T) {
 	require.Equal(t, uint16(1007), out.FrameNumber)
 }
 
+func TestDDForwarderChainMismatch(t *testing.T) {
+	d := newDDForwarderTest(t)
+	f := NewDDForwarder(logger.GetLogger())
+	require.NotNil(t, d.forward(f, d.packet(1, 1000, true, 0), 0))
+
+	// parsed with a structure that has fewer chains, attached to a packet this forwarder dropped
+	extPkt := d.packet(1, 1001, false, 0)
+	fd := *extPkt.DependencyDescriptor.Descriptor.FrameDependencies
+	fd.ChainDiffs = fd.ChainDiffs[:d.structure.NumChains-1]
+	extPkt.DependencyDescriptor.Descriptor.FrameDependencies = &fd
+
+	require.NotPanics(t, func() { require.Nil(t, d.forward(f, extPkt, 0)) })
+}
+
 func TestDDForwarderSharedFrameCounter(t *testing.T) {
 	// libwebrtc numbers the frames of all simulcast layers with one counter
 	d := newDDForwarderTest(t)

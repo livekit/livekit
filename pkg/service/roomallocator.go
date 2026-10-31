@@ -85,6 +85,9 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 		applyDefaultRoomConfig(rm, internal, &r.config.Room)
 	} else if err != nil {
 		return nil, nil, nil, false, err
+	} else if internal == nil {
+		// a stored room can lack its internal record, for example after a delete races a store
+		internal = &livekit.RoomInternal{}
 	}
 
 	req, err = r.applyNamedRoomConfiguration(req)
