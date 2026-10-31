@@ -110,8 +110,6 @@ func TestDependencyDescriptorUnmarshalIntoStorage(t *testing.T) {
 	}
 }
 
-// a caller may hand Unmarshal a descriptor that still points at one of the structure's templates,
-// custom fields of the packet must not change that template
 func TestDependencyDescriptorMarshalMissingChainDiffs(t *testing.T) {
 	structure := newDependencyDescriptorMarshalFixture(t).Structure
 	require.Positive(t, structure.NumChains)
@@ -129,6 +127,8 @@ func TestDependencyDescriptorMarshalMissingChainDiffs(t *testing.T) {
 	})
 }
 
+// a caller may hand Unmarshal a descriptor that still points at one of the structure's templates,
+// custom fields of the packet must not change that template
 func TestDependencyDescriptorUnmarshalDoesNotWriteIntoTemplate(t *testing.T) {
 	fixture := newDependencyDescriptorMarshalFixture(t)
 	structure := fixture.Structure
