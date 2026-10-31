@@ -134,6 +134,10 @@ func (d *DDForwarder) Forward(extPkt *buffer.ExtPacket, temporal int32, result *
 	if d.structure == nil {
 		return false
 	}
+	// the publisher can switch to a structure with other chains on a packet this forwarder dropped
+	if len(descriptor.FrameDependencies.ChainDiffs) != d.structure.NumChains {
+		return false
+	}
 
 	extOutFrameNum := extFrameNum + d.frameNumOffset
 	if !d.hasLast || extOutFrameNum > d.extLastFrameNum {
