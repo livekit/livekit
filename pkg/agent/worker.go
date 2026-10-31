@@ -55,10 +55,16 @@ const AgentNameAttributeKey = "lk.agent_name"
 // FormatJobAttempt.
 const JobAttemptAttributeKey = "lk.agent.job_attempt"
 
-// FormatJobAttempt identifies a job's attempt by the job ID and the attempt's
-// StartedAt.
-func FormatJobAttempt(jobID livekit.JobID, startedAt int64) string {
-	return string(jobID) + ":" + strconv.FormatInt(startedAt, 10)
+// JobAttempt returns the attempt of a job that its state describes. An attempt
+// is identified by its StartedAt, which AssignJob orders after the job's
+// previous attempt; see advance.
+func JobAttempt(state *livekit.JobState) int64 {
+	return state.GetStartedAt()
+}
+
+// FormatJobAttempt identifies a job's attempt by the job ID and the attempt.
+func FormatJobAttempt(jobID livekit.JobID, attempt int64) string {
+	return string(jobID) + ":" + strconv.FormatInt(attempt, 10)
 }
 
 // advance returns a job's StartedAt or UpdatedAt after prev: now, unless the
@@ -74,11 +80,11 @@ func ParseJobAttempt(s string) (livekit.JobID, int64, bool) {
 	if i <= 0 {
 		return "", 0, false
 	}
-	startedAt, err := strconv.ParseInt(s[i+1:], 10, 64)
+	attempt, err := strconv.ParseInt(s[i+1:], 10, 64)
 	if err != nil {
 		return "", 0, false
 	}
-	return livekit.JobID(s[:i]), startedAt, true
+	return livekit.JobID(s[:i]), attempt, true
 }
 
 type WorkerProtocolVersion int
@@ -500,7 +506,7 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook Assignmen
 			attributes = make(map[string]string)
 		}
 		attributes[AgentNameAttributeKey] = w.AgentName
-		attributes[JobAttemptAttributeKey] = FormatJobAttempt(jobID, job.State.StartedAt)
+		attributes[JobAttemptAttributeKey] = FormatJobAttempt(jobID, JobAttempt(job.State))
 
 		token, err := protoagent.BuildAgentToken(
 			w.apiKey,
