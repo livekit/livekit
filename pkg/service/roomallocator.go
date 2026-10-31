@@ -88,6 +88,7 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	} else if internal == nil {
 		// a stored room can lack its internal record, for example after a delete races a store
 		internal = &livekit.RoomInternal{}
+		applyDefaultRoomInternalConfig(internal, &r.config.Room)
 	}
 
 	req, err = r.applyNamedRoomConfiguration(req)
@@ -198,6 +199,10 @@ func applyDefaultRoomConfig(room *livekit.Room, internal *livekit.RoomInternal, 
 			FmtpLine: codec.FmtpLine,
 		})
 	}
+	applyDefaultRoomInternalConfig(internal, conf)
+}
+
+func applyDefaultRoomInternalConfig(internal *livekit.RoomInternal, conf *config.RoomConfig) {
 	internal.PlayoutDelay = &livekit.PlayoutDelay{
 		Enabled: conf.PlayoutDelay.Enabled,
 		Min:     uint32(conf.PlayoutDelay.Min),
