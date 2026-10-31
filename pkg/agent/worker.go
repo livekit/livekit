@@ -20,6 +20,8 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,6 +49,37 @@ var (
 )
 
 const AgentNameAttributeKey = "lk.agent_name"
+
+// JobAttemptAttributeKey names the job attempt an agent's token was issued for,
+// so the room can turn away the agent of an attempt it has already ended. See
+// FormatJobAttempt.
+const JobAttemptAttributeKey = "lk.agent.job_attempt"
+
+// FormatJobAttempt identifies a job's attempt by the job ID and the attempt's
+// StartedAt.
+func FormatJobAttempt(jobID livekit.JobID, startedAt int64) string {
+	return string(jobID) + ":" + strconv.FormatInt(startedAt, 10)
+}
+
+// advance returns a job's StartedAt or UpdatedAt after prev: now, unless the
+// node that wrote prev has a clock ahead of this one. A job's attempts, and the
+// versions of its state, are then ordered across nodes whatever their clocks.
+func advance(prev, now int64) int64 {
+	return max(now, prev+1)
+}
+
+// ParseJobAttempt reads an attempt that FormatJobAttempt wrote.
+func ParseJobAttempt(s string) (livekit.JobID, int64, bool) {
+	i := strings.LastIndexByte(s, ':')
+	if i <= 0 {
+		return "", 0, false
+	}
+	startedAt, err := strconv.ParseInt(s[i+1:], 10, 64)
+	if err != nil {
+		return "", 0, false
+	}
+	return livekit.JobID(s[:i]), startedAt, true
+}
 
 type WorkerProtocolVersion int
 
@@ -396,7 +429,7 @@ func (w *Worker) AttachJob(job *livekit.Job) *livekit.JobState {
 	now := time.Now().UnixNano()
 	job.State.WorkerId = w.ID
 	job.State.AgentId = w.AgentID
-	job.State.UpdatedAt = now
+	job.State.UpdatedAt = advance(job.State.UpdatedAt, now)
 	job.State.StartedAt = cmp.Or(job.State.StartedAt, now)
 	job.State.Status = livekit.JobStatus_JS_RUNNING
 
@@ -432,8 +465,10 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook Assignmen
 	now := time.Now()
 	job.State.WorkerId = w.ID
 	job.State.AgentId = w.AgentID
-	job.State.UpdatedAt = now.UnixNano()
-	job.State.StartedAt = now.UnixNano()
+	job.State.UpdatedAt = advance(job.State.UpdatedAt, now.UnixNano())
+	// StartedAt identifies the attempt: after the one the request carries, the
+	// job's previous attempt or its creation; see advance
+	job.State.StartedAt = advance(job.State.StartedAt, now.UnixNano())
 	job.State.Status = livekit.JobStatus_JS_RUNNING
 
 	if _, err := w.conn.WriteServerMessage(&livekit.ServerMessage{Message: &livekit.ServerMessage_Availability{
@@ -449,7 +484,8 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook Assignmen
 	select {
 	case res := <-availCh:
 		if res.Terminate {
-			job.State.EndedAt = now.UnixNano()
+			// the attempt may have started past this node's clock; see advance
+			job.State.EndedAt = advance(job.State.StartedAt, now.UnixNano())
 			job.State.Status = livekit.JobStatus_JS_SUCCESS
 			return job.State, nil
 		}
@@ -464,6 +500,7 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook Assignmen
 			attributes = make(map[string]string)
 		}
 		attributes[AgentNameAttributeKey] = w.AgentName
+		attributes[JobAttemptAttributeKey] = FormatJobAttempt(jobID, job.State.StartedAt)
 
 		token, err := protoagent.BuildAgentToken(
 			w.apiKey,
@@ -614,7 +651,7 @@ func (w *Worker) UpdateJobStatus(update *livekit.UpdateJobStatus) (*livekit.JobS
 	}
 
 	now := time.Now()
-	job.State.UpdatedAt = now.UnixNano()
+	job.State.UpdatedAt = advance(job.State.UpdatedAt, now.UnixNano())
 
 	if job.State.Status == livekit.JobStatus_JS_PENDING && update.Status != livekit.JobStatus_JS_PENDING {
 		job.State.StartedAt = now.UnixNano()
@@ -624,7 +661,8 @@ func (w *Worker) UpdateJobStatus(update *livekit.UpdateJobStatus) (*livekit.JobS
 	job.State.Error = update.Error
 
 	if JobStatusIsEnded(update.Status) {
-		job.State.EndedAt = now.UnixNano()
+		// the attempt may have started past this node's clock; see advance
+		job.State.EndedAt = advance(job.State.StartedAt, now.UnixNano())
 		delete(w.runningJobs, jobID)
 
 		w.logger.Infow("job ended", "jobID", update.JobId, "status", update.Status, "error", update.Error)

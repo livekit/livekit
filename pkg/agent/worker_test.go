@@ -115,3 +115,15 @@ func TestAttachJobWithoutState(t *testing.T) {
 	require.Equal(t, attached.StartedAt, state.StartedAt, "a termination is not the job's start")
 	require.Zero(t, w.RunningJobCount())
 }
+
+func TestParseJobAttempt(t *testing.T) {
+	jobID, startedAt, ok := agent.ParseJobAttempt(agent.FormatJobAttempt("AJ_abc", 1761700000000000000))
+	require.True(t, ok)
+	require.EqualValues(t, "AJ_abc", jobID)
+	require.EqualValues(t, 1761700000000000000, startedAt)
+
+	for _, s := range []string{"", "AJ_abc", ":123", "AJ_abc:", "AJ_abc:x"} {
+		_, _, ok := agent.ParseJobAttempt(s)
+		require.False(t, ok, s)
+	}
+}
