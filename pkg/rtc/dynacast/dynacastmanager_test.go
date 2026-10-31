@@ -498,6 +498,20 @@ func TestCodecRegression(t *testing.T) {
 	})
 }
 
+func TestCodecRegressionWithoutTarget(t *testing.T) {
+	dm := NewDynacastManagerVideo(DynacastManagerVideoParams{
+		Listener: &testDynacastManagerListener{
+			onSubscribedMaxQualityChange: func([]*livekit.SubscribedCodec) {},
+		},
+	})
+	dm.AddCodec(mime.MimeTypeAV1)
+
+	require.NotPanics(t, func() { dm.HandleCodecRegression(mime.MimeTypeAV1, mime.MimeTypeUnknown) })
+
+	dm.Close()
+	require.NotPanics(t, func() { dm.HandleCodecRegression(mime.MimeTypeAV1, mime.MimeTypeVP8) })
+}
+
 func TestResendCommittedQuality(t *testing.T) {
 	var lock sync.Mutex
 	var notified []string

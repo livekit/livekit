@@ -74,6 +74,7 @@ func (d *dynacastManagerBase) AddCodec(mime mime.MimeType) {
 
 func (d *dynacastManagerBase) HandleCodecRegression(fromMime, toMime mime.MimeType) {
 	fromDq := d.getOrCreateDynacastQuality(fromMime)
+	toDq := d.getOrCreateDynacastQuality(toMime)
 
 	d.lock.Lock()
 	if d.isClosed {
@@ -87,6 +88,12 @@ func (d *dynacastManagerBase) HandleCodecRegression(fromMime, toMime mime.MimeTy
 		d.lock.Unlock()
 		return
 	}
+	if toDq == nil {
+		// the manager closed between the lookups, or the target codec is unknown
+		d.params.Logger.Warnw("regression to codec not found", nil, "mime", fromMime, "toMime", toMime)
+		d.lock.Unlock()
+		return
+	}
 	d.regressedCodec[fromMime] = struct{}{}
 	d.params.OnRegressCodec(fromMime, toMime)
 	d.lock.Unlock()
@@ -94,7 +101,7 @@ func (d *dynacastManagerBase) HandleCodecRegression(fromMime, toMime mime.MimeTy
 	d.params.OnUpdateNeeded(false)
 
 	fromDq.Stop()
-	fromDq.RegressTo(d.getOrCreateDynacastQuality(toMime))
+	fromDq.RegressTo(toDq)
 }
 
 func (d *dynacastManagerBase) Restart() {
