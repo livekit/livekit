@@ -15,6 +15,7 @@
 package test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -25,7 +26,9 @@ import (
 	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/testutils"
 	"github.com/livekit/livekit-server/test/client"
 )
@@ -78,6 +81,53 @@ func TestMultiNodeRouting(t *testing.T) {
 			require.Equal(t, "metadatac1", remoteC1.Metadata)
 		})
 	}
+}
+
+// TestMultiNodeCloseMovedRoom checks that a node closing a room that the router maps to another
+// node leaves the room's state in place for that node.
+func TestMultiNodeCloseMovedRoom(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	s1, s2, finish := setupMultiNodeTest("TestMultiNodeCloseMovedRoom")
+	defer finish()
+
+	ctx := context.Background()
+	_, err := roomClient.CreateRoom(contextWithToken(createRoomToken()), &livekit.CreateRoomRequest{
+		Name:             testRoom,
+		DepartureTimeout: 1,
+	})
+	require.NoError(t, err)
+
+	c1 := createRTCClient("c1", defaultServerPort, testRTCServicePaths[0], nil)
+	waitUntilConnected(t, c1)
+
+	rc := redisClient()
+	hostID, err := rc.HGet(ctx, routing.NodeRoomKey, testRoom).Result()
+	require.NoError(t, err)
+	host, other := s1, s2
+	if s2.Node().Id == hostID {
+		host, other = s2, s1
+	}
+	require.NotNil(t, host.RoomManager().GetRoom(ctx, testRoom))
+
+	// the room is moved to the other node while the host still runs it
+	require.NoError(t, rc.HSet(ctx, routing.NodeRoomKey, testRoom, other.Node().Id).Err())
+
+	// the host closes the room after the departure timeout
+	stopClients(c1)
+	require.Eventually(t, func() bool {
+		return host.RoomManager().GetRoom(ctx, testRoom) == nil
+	}, 10*time.Second, 50*time.Millisecond)
+
+	nodeID, err := rc.HGet(ctx, routing.NodeRoomKey, testRoom).Result()
+	require.NoError(t, err)
+	require.Equal(t, other.Node().Id, nodeID)
+	exists, err := rc.HExists(ctx, service.RoomsKey, testRoom).Result()
+	require.NoError(t, err)
+	require.True(t, exists, "room state of the moved room was deleted")
 }
 
 func TestConnectWithoutCreation(t *testing.T) {
