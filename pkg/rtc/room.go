@@ -2188,8 +2188,20 @@ func BroadcastDataMessageForRoom(r types.Room, source types.LocalParticipant, da
 		sourceIdentity = source.Identity()
 	}
 
+	BroadcastDataMessageForRoomFrom(r, sourceID, sourceIdentity, data, logger)
+}
+
+// BroadcastDataMessageForRoomFrom sends an unlabeled data message to every local participant except sourceID,
+// which is empty when the source is on another node, stamping sourceIdentity as the sender.
+func BroadcastDataMessageForRoomFrom(
+	r types.Room,
+	sourceID livekit.ParticipantID,
+	sourceIdentity livekit.ParticipantIdentity,
+	data []byte,
+	logger logger.Logger,
+) {
 	utils.ParallelExec(r.GetLocalParticipants(), dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
-		if source != nil && op.ID() == sourceID {
+		if sourceID != "" && op.ID() == sourceID {
 			return
 		}
 
