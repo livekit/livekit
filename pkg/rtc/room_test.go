@@ -773,6 +773,21 @@ func TestDataChannel(t *testing.T) {
 		}
 	})
 
+	t.Run("unlabeled broadcast without source", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
+		defer rm.Close(types.RoomCloseReasonUnknown)
+
+		BroadcastDataMessageForRoom(rm, nil, []byte("relayed"), rm.logger)
+
+		for _, op := range rm.GetParticipants() {
+			fp := op.(*typesfakes.FakeLocalParticipant)
+			require.Equal(t, 1, fp.SendDataMessageUnlabeledCallCount())
+			got, _, sender := fp.SendDataMessageUnlabeledArgsForCall(0)
+			require.Equal(t, []byte("relayed"), got)
+			require.Empty(t, sender)
+		}
+	})
+
 	t.Run("publishing disallowed", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
 		defer rm.Close(types.RoomCloseReasonUnknown)

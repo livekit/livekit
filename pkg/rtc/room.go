@@ -2180,12 +2180,20 @@ func BroadcastDataPacketForRoom(
 }
 
 func BroadcastDataMessageForRoom(r types.Room, source types.LocalParticipant, data []byte, logger logger.Logger) {
+	// source is nil for data relayed from a remote node
+	var sourceID livekit.ParticipantID
+	var sourceIdentity livekit.ParticipantIdentity
+	if source != nil {
+		sourceID = source.ID()
+		sourceIdentity = source.Identity()
+	}
+
 	utils.ParallelExec(r.GetLocalParticipants(), dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
-		if source != nil && op.ID() == source.ID() {
+		if source != nil && op.ID() == sourceID {
 			return
 		}
 
-		op.SendDataMessageUnlabeled(data, false, source.Identity())
+		op.SendDataMessageUnlabeled(data, false, sourceIdentity)
 	})
 }
 
