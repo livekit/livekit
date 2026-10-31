@@ -53,7 +53,7 @@ const AgentNameAttributeKey = "lk.agent_name"
 // JobAttemptAttributeKey names the job attempt an agent's token was issued for,
 // so the room can turn away the agent of an attempt it has already ended. See
 // FormatJobAttempt.
-const JobAttemptAttributeKey = "lk.agent_job_attempt"
+const JobAttemptAttributeKey = "lk.agent.job_attempt"
 
 // FormatJobAttempt identifies a job's attempt by the job ID and the attempt's
 // StartedAt.
@@ -484,7 +484,8 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook Assignmen
 	select {
 	case res := <-availCh:
 		if res.Terminate {
-			job.State.EndedAt = now.UnixNano()
+			// the attempt may have started past this node's clock; see advance
+			job.State.EndedAt = advance(job.State.StartedAt, now.UnixNano())
 			job.State.Status = livekit.JobStatus_JS_SUCCESS
 			return job.State, nil
 		}
@@ -660,7 +661,8 @@ func (w *Worker) UpdateJobStatus(update *livekit.UpdateJobStatus) (*livekit.JobS
 	job.State.Error = update.Error
 
 	if JobStatusIsEnded(update.Status) {
-		job.State.EndedAt = now.UnixNano()
+		// the attempt may have started past this node's clock; see advance
+		job.State.EndedAt = advance(job.State.StartedAt, now.UnixNano())
 		delete(w.runningJobs, jobID)
 
 		w.logger.Infow("job ended", "jobID", update.JobId, "status", update.Status, "error", update.Error)
