@@ -242,12 +242,18 @@ func (s *RedisStore) ListRooms(_ context.Context, roomNames []livekit.RoomName) 
 	return rooms, nil
 }
 
-func (s *RedisStore) DeleteRoom(ctx context.Context, roomName livekit.RoomName) error {
-	_, _, err := s.LoadRoom(ctx, roomName, false)
-	if err == ErrRoomNotFound {
-		return nil
+// ListRoomNames returns the names of all stored rooms
+func (s *RedisStore) ListRoomNames(_ context.Context) ([]livekit.RoomName, error) {
+	names, err := s.rc.HKeys(s.ctx, RoomsKey).Result()
+	if err != nil {
+		return nil, errors.Wrap(err, "could not list room names")
 	}
+	return livekit.StringsAsIDs[livekit.RoomName](names), nil
+}
 
+// DeleteRoom deletes the room's state, also when its record is already gone, e.g. after a partial deletion
+// or restoration
+func (s *RedisStore) DeleteRoom(ctx context.Context, roomName livekit.RoomName) error {
 	pp := s.rc.Pipeline()
 	pp.HDel(s.ctx, RoomsKey, string(roomName))
 	pp.HDel(s.ctx, RoomInternalKey, string(roomName))
@@ -255,7 +261,7 @@ func (s *RedisStore) DeleteRoom(ctx context.Context, roomName livekit.RoomName) 
 	pp.Del(s.ctx, AgentDispatchPrefix+string(roomName))
 	pp.Del(s.ctx, AgentJobPrefix+string(roomName))
 
-	_, err = pp.Exec(s.ctx)
+	_, err := pp.Exec(s.ctx)
 	return err
 }
 
@@ -349,6 +355,23 @@ func (s *RedisStore) ListParticipants(_ context.Context, roomName livekit.RoomNa
 		participants = append(participants, &pi)
 	}
 	return participants, nil
+}
+
+// ListParticipantIdentities returns the identities of the stored participants of each room
+func (s *RedisStore) ListParticipantIdentities(_ context.Context, roomNames []livekit.RoomName) (map[livekit.RoomName][]livekit.ParticipantIdentity, error) {
+	pp := s.rc.Pipeline()
+	cmds := make([]*redis.StringSliceCmd, len(roomNames))
+	for i, roomName := range roomNames {
+		cmds[i] = pp.HKeys(s.ctx, RoomParticipantsPrefix+string(roomName))
+	}
+	if _, err := pp.Exec(s.ctx); err != nil {
+		return nil, err
+	}
+	identities := make(map[livekit.RoomName][]livekit.ParticipantIdentity, len(roomNames))
+	for i, roomName := range roomNames {
+		identities[roomName] = livekit.StringsAsIDs[livekit.ParticipantIdentity](cmds[i].Val())
+	}
+	return identities, nil
 }
 
 func (s *RedisStore) DeleteParticipant(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) error {
