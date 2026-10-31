@@ -98,11 +98,11 @@ func TestAgent(t *testing.T) {
 		require.NoError(t, err)
 
 		// the room knows the attempt by the StartedAt of the state it is answered with
-		jobID, startedAt, ok := agent.ParseJobAttempt(claims.Attributes[agent.JobAttemptAttributeKey])
+		jobID, attempt, ok := agent.ParseJobAttempt(claims.Attributes[agent.JobAttemptAttributeKey])
 		require.True(t, ok)
 		require.EqualValues(t, job.Id, jobID)
-		require.NotZero(t, startedAt)
-		require.Equal(t, res.State.StartedAt, startedAt)
+		require.NotZero(t, attempt)
+		require.Equal(t, agent.JobAttempt(res.State), attempt)
 	})
 
 	t.Run("an attempt follows the one its job request carries, whatever the clock", func(t *testing.T) {
@@ -146,9 +146,9 @@ func TestAgent(t *testing.T) {
 		require.NoError(t, err)
 		_, claims, err := v.Verify(server.TestAPISecret)
 		require.NoError(t, err)
-		_, startedAt, ok := agent.ParseJobAttempt(claims.Attributes[agent.JobAttemptAttributeKey])
+		_, attempt, ok := agent.ParseJobAttempt(claims.Attributes[agent.JobAttemptAttributeKey])
 		require.True(t, ok)
-		require.Equal(t, res.State.StartedAt, startedAt, "the token names the attempt the room is answered with")
+		require.Equal(t, agent.JobAttempt(res.State), attempt, "the token names the attempt the room is answered with")
 	})
 
 	t.Run("an attempt that started past this node's clock ends after it started", func(t *testing.T) {

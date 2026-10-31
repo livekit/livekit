@@ -117,10 +117,10 @@ func TestAttachJobWithoutState(t *testing.T) {
 }
 
 func TestParseJobAttempt(t *testing.T) {
-	jobID, startedAt, ok := agent.ParseJobAttempt(agent.FormatJobAttempt("AJ_abc", 1761700000000000000))
+	jobID, attempt, ok := agent.ParseJobAttempt(agent.FormatJobAttempt("AJ_abc", 1761700000000000000))
 	require.True(t, ok)
 	require.EqualValues(t, "AJ_abc", jobID)
-	require.EqualValues(t, 1761700000000000000, startedAt)
+	require.EqualValues(t, 1761700000000000000, attempt)
 
 	for _, s := range []string{"", "AJ_abc", ":123", "AJ_abc:", "AJ_abc:x"} {
 		_, _, ok := agent.ParseJobAttempt(s)
