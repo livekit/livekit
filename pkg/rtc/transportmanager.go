@@ -376,13 +376,9 @@ func (t *TransportManager) SendDataMessage(kind livekit.DataPacket_Kind, data []
 	return t.handleSendDataResult(t.getTransport(true).SendDataMessage(kind, data), kind.String(), len(data))
 }
 
-func (t *TransportManager) SendDataMessageUnlabeled(data []byte, useRaw bool, sender livekit.ParticipantIdentity) error {
+func (t *TransportManager) SendDataMessageUnlabeled(data []byte) error {
 	// downstream data is sent via primary peer connection
-	return t.handleSendDataResult(
-		t.getTransport(true).SendDataMessageUnlabeled(data, useRaw, sender),
-		"unlabeled",
-		len(data),
-	)
+	return t.handleSendDataResult(t.getTransport(true).SendDataMessageUnlabeled(data), "unlabeled", len(data))
 }
 
 func (t *TransportManager) handleSendDataResult(err error, kind string, size int) error {

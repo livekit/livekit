@@ -1325,6 +1325,18 @@ func TestUnsequencedReliableDataBufferedWhileJoining(t *testing.T) {
 		require.Error(t, p.SendDataMessage(livekit.DataPacket_LOSSY, []byte("one"), "", 0))
 		require.Empty(t, p.reliableDataInfo.joiningUnsequencedMessages)
 	})
+
+	t.Run("unlabeled data is buffered as a user packet", func(t *testing.T) {
+		p := newParticipantForTest("test")
+
+		require.NoError(t, p.SendDataMessageUnlabeled([]byte("one"), false, "alice"))
+
+		require.Len(t, p.reliableDataInfo.joiningUnsequencedMessages, 1)
+		dp := &livekit.DataPacket{}
+		require.NoError(t, proto.Unmarshal(p.reliableDataInfo.joiningUnsequencedMessages[0], dp))
+		require.Equal(t, "alice", dp.ParticipantIdentity)
+		require.Equal(t, []byte("one"), dp.GetUser().GetPayload())
+	})
 }
 
 func TestMigratingInParticipantWaitsForReconnectResponse(t *testing.T) {
