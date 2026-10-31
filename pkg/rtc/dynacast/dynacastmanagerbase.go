@@ -74,7 +74,11 @@ func (d *dynacastManagerBase) AddCodec(mime mime.MimeType) {
 
 func (d *dynacastManagerBase) HandleCodecRegression(fromMime, toMime mime.MimeType) {
 	fromDq := d.getOrCreateDynacastQuality(fromMime)
-	toDq := d.getOrCreateDynacastQuality(toMime)
+	var toDq dynacastQuality
+	if fromDq != nil {
+		// a target quality starts a timer that notifies the publisher, create it only for a valid regression
+		toDq = d.getOrCreateDynacastQuality(toMime)
+	}
 
 	d.lock.Lock()
 	if d.isClosed {

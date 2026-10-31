@@ -508,6 +508,10 @@ func TestCodecRegressionWithoutTarget(t *testing.T) {
 
 	require.NotPanics(t, func() { dm.HandleCodecRegression(mime.MimeTypeAV1, mime.MimeTypeUnknown) })
 
+	// a regression from an unknown codec does not create the target quality
+	dm.HandleCodecRegression(mime.MimeTypeUnknown, mime.MimeTypeVP8)
+	require.NotContains(t, dm.(*dynacastManagerVideo).dynacastQuality, mime.MimeTypeVP8)
+
 	dm.Close()
 	require.NotPanics(t, func() { dm.HandleCodecRegression(mime.MimeTypeAV1, mime.MimeTypeVP8) })
 }
