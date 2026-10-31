@@ -739,7 +739,22 @@ func (p *ParticipantImpl) UpdateMetadata(update *livekit.UpdateParticipantMetada
 		return sendRequestResponse()
 	}
 
-	if err = p.checkMetadataLimits(update.Name, update.Metadata, update.Attributes); err != nil {
+	// the attributes limit applies to all attributes of the participant, not to one update
+	attributes := update.Attributes
+	if len(attributes) != 0 {
+		attributes = maps.Clone(p.ClaimGrants().Attributes)
+		if attributes == nil {
+			attributes = make(map[string]string)
+		}
+		for k, v := range update.Attributes {
+			if v == "" {
+				delete(attributes, k)
+			} else {
+				attributes[k] = v
+			}
+		}
+	}
+	if err = p.checkMetadataLimits(update.Name, update.Metadata, attributes); err != nil {
 		switch err {
 		case signalling.ErrNameExceedsLimits:
 			requestResponse.Reason = livekit.RequestResponse_LIMIT_EXCEEDED
