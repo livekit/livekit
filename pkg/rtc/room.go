@@ -2191,8 +2191,8 @@ func BroadcastDataMessageForRoom(r types.Room, source types.LocalParticipant, da
 	BroadcastDataMessageForRoomFrom(r, sourceID, sourceIdentity, data, logger)
 }
 
-// BroadcastDataMessageForRoomFrom sends an unlabeled data message to every local participant except sourceID,
-// which is empty when the source is on another node, stamping sourceIdentity as the sender.
+// BroadcastDataMessageForRoomFrom sends an unlabeled data message to every local participant, stamping
+// sourceIdentity as the sender and skipping the local participant with sourceID, if there is one.
 func BroadcastDataMessageForRoomFrom(
 	r types.Room,
 	sourceID livekit.ParticipantID,
