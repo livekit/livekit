@@ -112,6 +112,23 @@ func TestDependencyDescriptorUnmarshalIntoStorage(t *testing.T) {
 
 // a caller may hand Unmarshal a descriptor that still points at one of the structure's templates,
 // custom fields of the packet must not change that template
+func TestDependencyDescriptorMarshalMissingChainDiffs(t *testing.T) {
+	structure := newDependencyDescriptorMarshalFixture(t).Structure
+	require.Positive(t, structure.NumChains)
+
+	// chain diffs parsed against a structure with fewer chains
+	custom := structure.Templates[0].Clone()
+	custom.ChainDiffs = custom.ChainDiffs[:structure.NumChains-1]
+
+	require.NotPanics(t, func() {
+		_, err := (&DependencyDescriptorExtension{
+			Descriptor: &DependencyDescriptor{FrameNumber: 7, FrameDependencies: custom},
+			Structure:  structure,
+		}).Marshal()
+		require.Error(t, err)
+	})
+}
+
 func TestDependencyDescriptorUnmarshalDoesNotWriteIntoTemplate(t *testing.T) {
 	fixture := newDependencyDescriptorMarshalFixture(t)
 	structure := fixture.Structure
