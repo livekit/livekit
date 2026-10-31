@@ -77,6 +77,26 @@ room:
 		require.Equal(t, "grid", applied.GetEgress().GetRoom().GetLayout())
 		require.NotSame(t, conf.Room.RoomConfigurations["record"].Egress.Room, applied.Egress.Room)
 	})
+
+	t.Run("update a stored room without an internal record", func(t *testing.T) {
+		conf, err := config.NewConfig("", true, nil, nil)
+		require.NoError(t, err)
+
+		node, err := routing.NewLocalNode(conf)
+		require.NoError(t, err)
+
+		store := &servicefakes.FakeObjectStore{}
+		store.LoadRoomReturns(&livekit.Room{Sid: "RM_existing", Name: "myroom"}, nil, nil)
+		router := &routingfakes.FakeRouter{}
+		router.GetNodeForRoomReturns(node.Clone(), nil)
+		ra, err := service.NewRoomAllocator(conf, router, store)
+		require.NoError(t, err)
+
+		_, internal, _, created, err := ra.CreateRoom(context.Background(), &livekit.CreateRoomRequest{Name: "myroom", SyncStreams: true}, true)
+		require.NoError(t, err)
+		require.False(t, created)
+		require.True(t, internal.GetSyncStreams())
+	})
 }
 
 func SelectRoomNode(t *testing.T) {
