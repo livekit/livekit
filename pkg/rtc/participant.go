@@ -4278,11 +4278,24 @@ func (p *ParticipantImpl) SendDataMessage(kind livekit.DataPacket_Kind, data []b
 }
 
 func (p *ParticipantImpl) SendDataMessageUnlabeled(data []byte, useRaw bool, sender livekit.ParticipantIdentity) error {
-	if p.State() != livekit.ParticipantInfo_ACTIVE {
-		return ErrDataChannelUnavailable
+	if useRaw || p.params.UseOneShotSignallingMode {
+		if p.State() != livekit.ParticipantInfo_ACTIVE {
+			return ErrDataChannelUnavailable
+		}
+		return p.TransportManager.SendDataMessageUnlabeled(data)
 	}
 
-	return p.TransportManager.SendDataMessageUnlabeled(data, useRaw, sender)
+	// a UserPacket on the reliable channel, held like any reliable message while that channel opens
+	dpData, err := proto.Marshal(&livekit.DataPacket{
+		ParticipantIdentity: string(sender),
+		Value: &livekit.DataPacket_User{
+			User: &livekit.UserPacket{Payload: data},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	return p.SendDataMessage(livekit.DataPacket_RELIABLE, dpData, "", 0)
 }
 
 func (p *ParticipantImpl) onDataSendError(err error) {
