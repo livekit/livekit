@@ -381,4 +381,8 @@ func TestSuppressCodecMismatchedSender(t *testing.T) {
 	h.mu.Unlock()
 	require.NotContains(t, answerSDP, "vh264",
 		"answer advertises a track the subscriber cannot receive")
+
+	require.Positive(t, h.handler.OnSubscribedTrackCodecUnmatchedCallCount(),
+		"codec mismatch was not reported to the participant")
+	require.Equal(t, livekit.TrackID("vh264"), h.handler.OnSubscribedTrackCodecUnmatchedArgsForCall(0))
 }

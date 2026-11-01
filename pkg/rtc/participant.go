@@ -2042,6 +2042,10 @@ func (h AnyTransportHandler) OnICECandidate(c *webrtc.ICECandidate, target livek
 	return h.p.onICECandidate(c, target)
 }
 
+func (h AnyTransportHandler) OnSubscribedTrackCodecUnmatched(trackID livekit.TrackID) {
+	h.p.onSubscribedTrackCodecUnmatched(trackID)
+}
+
 // ----------------------------------------------------------
 
 type PublisherTransportHandler struct {
@@ -4135,6 +4139,14 @@ func (p *ParticipantImpl) onPublicationError(trackID livekit.TrackID) {
 		p.pubLogger.Infow("issuing full reconnect on publication error", "trackID", trackID)
 		p.IssueFullReconnect(types.ParticipantCloseReasonPublicationError)
 	}
+}
+
+// onSubscribedTrackCodecUnmatched tears down a subscription whose downtrack codec
+// the subscriber did not offer. The transport parks the sender before the answer,
+// so the subscriber never sees the track, and this unsubscribes and reports it.
+func (p *ParticipantImpl) onSubscribedTrackCodecUnmatched(trackID livekit.TrackID) {
+	p.UnsubscribeFromTrack(trackID)
+	p.onSubscriptionError(trackID, false, webrtc.ErrUnsupportedCodec)
 }
 
 func (p *ParticipantImpl) onSubscriptionError(trackID livekit.TrackID, fatal bool, err error) {

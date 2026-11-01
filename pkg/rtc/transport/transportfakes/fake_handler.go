@@ -14,82 +14,53 @@ import (
 type FakeHandler struct {
 	OnAnswerStub        func(webrtc.SessionDescription, uint32, map[string]string) error
 	onAnswerMutex       sync.RWMutex
-	onAnswerArgsForCall []struct {
-		arg1 webrtc.SessionDescription
-		arg2 uint32
-		arg3 map[string]string
-	}
-	onAnswerReturns struct {
+	onAnswerArgsForCall []FakeHandlerOnAnswerArgs
+	onAnswerReturns     struct {
 		result1 error
 	}
 	onAnswerReturnsOnCall map[int]struct {
 		result1 error
 	}
-	OnDataMessageStub        func(livekit.DataPacket_Kind, []byte)
-	onDataMessageMutex       sync.RWMutex
-	onDataMessageArgsForCall []struct {
-		arg1 livekit.DataPacket_Kind
-		arg2 []byte
-	}
+	OnDataMessageStub                 func(livekit.DataPacket_Kind, []byte)
+	onDataMessageMutex                sync.RWMutex
+	onDataMessageArgsForCall          []FakeHandlerOnDataMessageArgs
 	OnDataMessageUnlabeledStub        func([]byte)
 	onDataMessageUnlabeledMutex       sync.RWMutex
-	onDataMessageUnlabeledArgsForCall []struct {
-		arg1 []byte
-	}
-	OnDataSendErrorStub        func(error)
-	onDataSendErrorMutex       sync.RWMutex
-	onDataSendErrorArgsForCall []struct {
-		arg1 error
-	}
-	OnDataTrackMessageStub        func([]byte, int64)
-	onDataTrackMessageMutex       sync.RWMutex
-	onDataTrackMessageArgsForCall []struct {
-		arg1 []byte
-		arg2 int64
-	}
-	OnFailedStub        func(bool, *types.ICEConnectionInfo)
-	onFailedMutex       sync.RWMutex
-	onFailedArgsForCall []struct {
-		arg1 bool
-		arg2 *types.ICEConnectionInfo
-	}
-	OnFullyEstablishedStub        func()
-	onFullyEstablishedMutex       sync.RWMutex
-	onFullyEstablishedArgsForCall []struct {
-	}
-	OnICECandidateStub        func(*webrtc.ICECandidate, livekit.SignalTarget) error
-	onICECandidateMutex       sync.RWMutex
-	onICECandidateArgsForCall []struct {
-		arg1 *webrtc.ICECandidate
-		arg2 livekit.SignalTarget
-	}
-	onICECandidateReturns struct {
+	onDataMessageUnlabeledArgsForCall []FakeHandlerOnDataMessageUnlabeledArgs
+	OnDataSendErrorStub               func(error)
+	onDataSendErrorMutex              sync.RWMutex
+	onDataSendErrorArgsForCall        []FakeHandlerOnDataSendErrorArgs
+	OnDataTrackMessageStub            func([]byte, int64)
+	onDataTrackMessageMutex           sync.RWMutex
+	onDataTrackMessageArgsForCall     []FakeHandlerOnDataTrackMessageArgs
+	OnFailedStub                      func(bool, *types.ICEConnectionInfo)
+	onFailedMutex                     sync.RWMutex
+	onFailedArgsForCall               []FakeHandlerOnFailedArgs
+	OnFullyEstablishedStub            func()
+	onFullyEstablishedMutex           sync.RWMutex
+	onFullyEstablishedArgsForCall     []struct{}
+	OnICECandidateStub                func(*webrtc.ICECandidate, livekit.SignalTarget) error
+	onICECandidateMutex               sync.RWMutex
+	onICECandidateArgsForCall         []FakeHandlerOnICECandidateArgs
+	onICECandidateReturns             struct {
 		result1 error
 	}
 	onICECandidateReturnsOnCall map[int]struct {
 		result1 error
 	}
-	OnInitialConnectedStub        func()
-	onInitialConnectedMutex       sync.RWMutex
-	onInitialConnectedArgsForCall []struct {
-	}
-	OnNegotiationFailedStub        func()
-	onNegotiationFailedMutex       sync.RWMutex
-	onNegotiationFailedArgsForCall []struct {
-	}
+	OnInitialConnectedStub               func()
+	onInitialConnectedMutex              sync.RWMutex
+	onInitialConnectedArgsForCall        []struct{}
+	OnNegotiationFailedStub              func()
+	onNegotiationFailedMutex             sync.RWMutex
+	onNegotiationFailedArgsForCall       []struct{}
 	OnNegotiationStateChangedStub        func(transport.NegotiationState)
 	onNegotiationStateChangedMutex       sync.RWMutex
-	onNegotiationStateChangedArgsForCall []struct {
-		arg1 transport.NegotiationState
-	}
-	OnOfferStub        func(webrtc.SessionDescription, uint32, map[string]string) error
-	onOfferMutex       sync.RWMutex
-	onOfferArgsForCall []struct {
-		arg1 webrtc.SessionDescription
-		arg2 uint32
-		arg3 map[string]string
-	}
-	onOfferReturns struct {
+	onNegotiationStateChangedArgsForCall []FakeHandlerOnNegotiationStateChangedArgs
+	OnOfferStub                          func(webrtc.SessionDescription, uint32, map[string]string) error
+	onOfferMutex                         sync.RWMutex
+	onOfferArgsForCall                   []FakeHandlerOnOfferArgs
+	onOfferReturns                       struct {
 		result1 error
 	}
 	onOfferReturnsOnCall map[int]struct {
@@ -97,49 +68,115 @@ type FakeHandler struct {
 	}
 	OnSetRemoteDescriptionOfferStub        func()
 	onSetRemoteDescriptionOfferMutex       sync.RWMutex
-	onSetRemoteDescriptionOfferArgsForCall []struct {
-	}
-	OnStreamStateChangeStub        func(*streamallocator.StreamStateUpdate) error
-	onStreamStateChangeMutex       sync.RWMutex
-	onStreamStateChangeArgsForCall []struct {
-		arg1 *streamallocator.StreamStateUpdate
-	}
-	onStreamStateChangeReturns struct {
+	onSetRemoteDescriptionOfferArgsForCall []struct{}
+	OnStreamStateChangeStub                func(*streamallocator.StreamStateUpdate) error
+	onStreamStateChangeMutex               sync.RWMutex
+	onStreamStateChangeArgsForCall         []FakeHandlerOnStreamStateChangeArgs
+	onStreamStateChangeReturns             struct {
 		result1 error
 	}
 	onStreamStateChangeReturnsOnCall map[int]struct {
 		result1 error
 	}
-	OnTrackStub        func(*webrtc.TrackRemote, *webrtc.RTPReceiver)
-	onTrackMutex       sync.RWMutex
-	onTrackArgsForCall []struct {
-		arg1 *webrtc.TrackRemote
-		arg2 *webrtc.RTPReceiver
-	}
-	OnUnmatchedMediaStub        func(uint32, uint32) error
-	onUnmatchedMediaMutex       sync.RWMutex
-	onUnmatchedMediaArgsForCall []struct {
-		arg1 uint32
-		arg2 uint32
-	}
-	onUnmatchedMediaReturns struct {
+	OnSubscribedTrackCodecUnmatchedStub        func(livekit.TrackID)
+	onSubscribedTrackCodecUnmatchedMutex       sync.RWMutex
+	onSubscribedTrackCodecUnmatchedArgsForCall []FakeHandlerOnSubscribedTrackCodecUnmatchedArgs
+	OnTrackStub                                func(*webrtc.TrackRemote, *webrtc.RTPReceiver)
+	onTrackMutex                               sync.RWMutex
+	onTrackArgsForCall                         []FakeHandlerOnTrackArgs
+	OnUnmatchedMediaStub                       func(uint32, uint32) error
+	onUnmatchedMediaMutex                      sync.RWMutex
+	onUnmatchedMediaArgsForCall                []FakeHandlerOnUnmatchedMediaArgs
+	onUnmatchedMediaReturns                    struct {
 		result1 error
 	}
 	onUnmatchedMediaReturnsOnCall map[int]struct {
 		result1 error
 	}
 	invocations      map[string][][]interface{}
+	callOrder        []string
 	invocationsMutex sync.RWMutex
+}
+
+// FakeHandlerOnAnswerArgs holds the arguments of one call to OnAnswer.
+type FakeHandlerOnAnswerArgs struct {
+	Arg1 webrtc.SessionDescription
+	Arg2 uint32
+	Arg3 map[string]string
+}
+
+// FakeHandlerOnDataMessageArgs holds the arguments of one call to OnDataMessage.
+type FakeHandlerOnDataMessageArgs struct {
+	Arg1 livekit.DataPacket_Kind
+	Arg2 []byte
+}
+
+// FakeHandlerOnDataMessageUnlabeledArgs holds the arguments of one call to OnDataMessageUnlabeled.
+type FakeHandlerOnDataMessageUnlabeledArgs struct {
+	Arg1 []byte
+}
+
+// FakeHandlerOnDataSendErrorArgs holds the arguments of one call to OnDataSendError.
+type FakeHandlerOnDataSendErrorArgs struct {
+	Arg1 error
+}
+
+// FakeHandlerOnDataTrackMessageArgs holds the arguments of one call to OnDataTrackMessage.
+type FakeHandlerOnDataTrackMessageArgs struct {
+	Arg1 []byte
+	Arg2 int64
+}
+
+// FakeHandlerOnFailedArgs holds the arguments of one call to OnFailed.
+type FakeHandlerOnFailedArgs struct {
+	Arg1 bool
+	Arg2 *types.ICEConnectionInfo
+}
+
+// FakeHandlerOnICECandidateArgs holds the arguments of one call to OnICECandidate.
+type FakeHandlerOnICECandidateArgs struct {
+	Arg1 *webrtc.ICECandidate
+	Arg2 livekit.SignalTarget
+}
+
+// FakeHandlerOnNegotiationStateChangedArgs holds the arguments of one call to OnNegotiationStateChanged.
+type FakeHandlerOnNegotiationStateChangedArgs struct {
+	Arg1 transport.NegotiationState
+}
+
+// FakeHandlerOnOfferArgs holds the arguments of one call to OnOffer.
+type FakeHandlerOnOfferArgs struct {
+	Arg1 webrtc.SessionDescription
+	Arg2 uint32
+	Arg3 map[string]string
+}
+
+// FakeHandlerOnStreamStateChangeArgs holds the arguments of one call to OnStreamStateChange.
+type FakeHandlerOnStreamStateChangeArgs struct {
+	Arg1 *streamallocator.StreamStateUpdate
+}
+
+// FakeHandlerOnSubscribedTrackCodecUnmatchedArgs holds the arguments of one call to OnSubscribedTrackCodecUnmatched.
+type FakeHandlerOnSubscribedTrackCodecUnmatchedArgs struct {
+	Arg1 livekit.TrackID
+}
+
+// FakeHandlerOnTrackArgs holds the arguments of one call to OnTrack.
+type FakeHandlerOnTrackArgs struct {
+	Arg1 *webrtc.TrackRemote
+	Arg2 *webrtc.RTPReceiver
+}
+
+// FakeHandlerOnUnmatchedMediaArgs holds the arguments of one call to OnUnmatchedMedia.
+type FakeHandlerOnUnmatchedMediaArgs struct {
+	Arg1 uint32
+	Arg2 uint32
 }
 
 func (fake *FakeHandler) OnAnswer(arg1 webrtc.SessionDescription, arg2 uint32, arg3 map[string]string) error {
 	fake.onAnswerMutex.Lock()
 	ret, specificReturn := fake.onAnswerReturnsOnCall[len(fake.onAnswerArgsForCall)]
-	fake.onAnswerArgsForCall = append(fake.onAnswerArgsForCall, struct {
-		arg1 webrtc.SessionDescription
-		arg2 uint32
-		arg3 map[string]string
-	}{arg1, arg2, arg3})
+	fake.onAnswerArgsForCall = append(fake.onAnswerArgsForCall, FakeHandlerOnAnswerArgs{arg1, arg2, arg3})
 	stub := fake.OnAnswerStub
 	fakeReturns := fake.onAnswerReturns
 	fake.recordInvocation("OnAnswer", []interface{}{arg1, arg2, arg3})
@@ -169,7 +206,15 @@ func (fake *FakeHandler) OnAnswerArgsForCall(i int) (webrtc.SessionDescription, 
 	fake.onAnswerMutex.RLock()
 	defer fake.onAnswerMutex.RUnlock()
 	argsForCall := fake.onAnswerArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+	return argsForCall.Arg1, argsForCall.Arg2, argsForCall.Arg3
+}
+
+func (fake *FakeHandler) OnAnswerArgs() []FakeHandlerOnAnswerArgs {
+	fake.onAnswerMutex.RLock()
+	defer fake.onAnswerMutex.RUnlock()
+	args := make([]FakeHandlerOnAnswerArgs, len(fake.onAnswerArgsForCall))
+	copy(args, fake.onAnswerArgsForCall)
+	return args
 }
 
 func (fake *FakeHandler) OnAnswerReturns(result1 error) {
@@ -202,15 +247,12 @@ func (fake *FakeHandler) OnDataMessage(arg1 livekit.DataPacket_Kind, arg2 []byte
 		copy(arg2Copy, arg2)
 	}
 	fake.onDataMessageMutex.Lock()
-	fake.onDataMessageArgsForCall = append(fake.onDataMessageArgsForCall, struct {
-		arg1 livekit.DataPacket_Kind
-		arg2 []byte
-	}{arg1, arg2Copy})
+	fake.onDataMessageArgsForCall = append(fake.onDataMessageArgsForCall, FakeHandlerOnDataMessageArgs{arg1, arg2Copy})
 	stub := fake.OnDataMessageStub
 	fake.recordInvocation("OnDataMessage", []interface{}{arg1, arg2Copy})
 	fake.onDataMessageMutex.Unlock()
 	if stub != nil {
-		fake.OnDataMessageStub(arg1, arg2)
+		stub(arg1, arg2)
 	}
 }
 
@@ -230,7 +272,15 @@ func (fake *FakeHandler) OnDataMessageArgsForCall(i int) (livekit.DataPacket_Kin
 	fake.onDataMessageMutex.RLock()
 	defer fake.onDataMessageMutex.RUnlock()
 	argsForCall := fake.onDataMessageArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.Arg1, argsForCall.Arg2
+}
+
+func (fake *FakeHandler) OnDataMessageArgs() []FakeHandlerOnDataMessageArgs {
+	fake.onDataMessageMutex.RLock()
+	defer fake.onDataMessageMutex.RUnlock()
+	args := make([]FakeHandlerOnDataMessageArgs, len(fake.onDataMessageArgsForCall))
+	copy(args, fake.onDataMessageArgsForCall)
+	return args
 }
 
 func (fake *FakeHandler) OnDataMessageUnlabeled(arg1 []byte) {
@@ -240,14 +290,12 @@ func (fake *FakeHandler) OnDataMessageUnlabeled(arg1 []byte) {
 		copy(arg1Copy, arg1)
 	}
 	fake.onDataMessageUnlabeledMutex.Lock()
-	fake.onDataMessageUnlabeledArgsForCall = append(fake.onDataMessageUnlabeledArgsForCall, struct {
-		arg1 []byte
-	}{arg1Copy})
+	fake.onDataMessageUnlabeledArgsForCall = append(fake.onDataMessageUnlabeledArgsForCall, FakeHandlerOnDataMessageUnlabeledArgs{arg1Copy})
 	stub := fake.OnDataMessageUnlabeledStub
 	fake.recordInvocation("OnDataMessageUnlabeled", []interface{}{arg1Copy})
 	fake.onDataMessageUnlabeledMutex.Unlock()
 	if stub != nil {
-		fake.OnDataMessageUnlabeledStub(arg1)
+		stub(arg1)
 	}
 }
 
@@ -267,19 +315,25 @@ func (fake *FakeHandler) OnDataMessageUnlabeledArgsForCall(i int) []byte {
 	fake.onDataMessageUnlabeledMutex.RLock()
 	defer fake.onDataMessageUnlabeledMutex.RUnlock()
 	argsForCall := fake.onDataMessageUnlabeledArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.Arg1
+}
+
+func (fake *FakeHandler) OnDataMessageUnlabeledArgs() []FakeHandlerOnDataMessageUnlabeledArgs {
+	fake.onDataMessageUnlabeledMutex.RLock()
+	defer fake.onDataMessageUnlabeledMutex.RUnlock()
+	args := make([]FakeHandlerOnDataMessageUnlabeledArgs, len(fake.onDataMessageUnlabeledArgsForCall))
+	copy(args, fake.onDataMessageUnlabeledArgsForCall)
+	return args
 }
 
 func (fake *FakeHandler) OnDataSendError(arg1 error) {
 	fake.onDataSendErrorMutex.Lock()
-	fake.onDataSendErrorArgsForCall = append(fake.onDataSendErrorArgsForCall, struct {
-		arg1 error
-	}{arg1})
+	fake.onDataSendErrorArgsForCall = append(fake.onDataSendErrorArgsForCall, FakeHandlerOnDataSendErrorArgs{arg1})
 	stub := fake.OnDataSendErrorStub
 	fake.recordInvocation("OnDataSendError", []interface{}{arg1})
 	fake.onDataSendErrorMutex.Unlock()
 	if stub != nil {
-		fake.OnDataSendErrorStub(arg1)
+		stub(arg1)
 	}
 }
 
@@ -299,7 +353,15 @@ func (fake *FakeHandler) OnDataSendErrorArgsForCall(i int) error {
 	fake.onDataSendErrorMutex.RLock()
 	defer fake.onDataSendErrorMutex.RUnlock()
 	argsForCall := fake.onDataSendErrorArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.Arg1
+}
+
+func (fake *FakeHandler) OnDataSendErrorArgs() []FakeHandlerOnDataSendErrorArgs {
+	fake.onDataSendErrorMutex.RLock()
+	defer fake.onDataSendErrorMutex.RUnlock()
+	args := make([]FakeHandlerOnDataSendErrorArgs, len(fake.onDataSendErrorArgsForCall))
+	copy(args, fake.onDataSendErrorArgsForCall)
+	return args
 }
 
 func (fake *FakeHandler) OnDataTrackMessage(arg1 []byte, arg2 int64) {
@@ -309,15 +371,12 @@ func (fake *FakeHandler) OnDataTrackMessage(arg1 []byte, arg2 int64) {
 		copy(arg1Copy, arg1)
 	}
 	fake.onDataTrackMessageMutex.Lock()
-	fake.onDataTrackMessageArgsForCall = append(fake.onDataTrackMessageArgsForCall, struct {
-		arg1 []byte
-		arg2 int64
-	}{arg1Copy, arg2})
+	fake.onDataTrackMessageArgsForCall = append(fake.onDataTrackMessageArgsForCall, FakeHandlerOnDataTrackMessageArgs{arg1Copy, arg2})
 	stub := fake.OnDataTrackMessageStub
 	fake.recordInvocation("OnDataTrackMessage", []interface{}{arg1Copy, arg2})
 	fake.onDataTrackMessageMutex.Unlock()
 	if stub != nil {
-		fake.OnDataTrackMessageStub(arg1, arg2)
+		stub(arg1, arg2)
 	}
 }
 
@@ -337,20 +396,25 @@ func (fake *FakeHandler) OnDataTrackMessageArgsForCall(i int) ([]byte, int64) {
 	fake.onDataTrackMessageMutex.RLock()
 	defer fake.onDataTrackMessageMutex.RUnlock()
 	argsForCall := fake.onDataTrackMessageArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.Arg1, argsForCall.Arg2
+}
+
+func (fake *FakeHandler) OnDataTrackMessageArgs() []FakeHandlerOnDataTrackMessageArgs {
+	fake.onDataTrackMessageMutex.RLock()
+	defer fake.onDataTrackMessageMutex.RUnlock()
+	args := make([]FakeHandlerOnDataTrackMessageArgs, len(fake.onDataTrackMessageArgsForCall))
+	copy(args, fake.onDataTrackMessageArgsForCall)
+	return args
 }
 
 func (fake *FakeHandler) OnFailed(arg1 bool, arg2 *types.ICEConnectionInfo) {
 	fake.onFailedMutex.Lock()
-	fake.onFailedArgsForCall = append(fake.onFailedArgsForCall, struct {
-		arg1 bool
-		arg2 *types.ICEConnectionInfo
-	}{arg1, arg2})
+	fake.onFailedArgsForCall = append(fake.onFailedArgsForCall, FakeHandlerOnFailedArgs{arg1, arg2})
 	stub := fake.OnFailedStub
 	fake.recordInvocation("OnFailed", []interface{}{arg1, arg2})
 	fake.onFailedMutex.Unlock()
 	if stub != nil {
-		fake.OnFailedStub(arg1, arg2)
+		stub(arg1, arg2)
 	}
 }
 
@@ -370,18 +434,25 @@ func (fake *FakeHandler) OnFailedArgsForCall(i int) (bool, *types.ICEConnectionI
 	fake.onFailedMutex.RLock()
 	defer fake.onFailedMutex.RUnlock()
 	argsForCall := fake.onFailedArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.Arg1, argsForCall.Arg2
+}
+
+func (fake *FakeHandler) OnFailedArgs() []FakeHandlerOnFailedArgs {
+	fake.onFailedMutex.RLock()
+	defer fake.onFailedMutex.RUnlock()
+	args := make([]FakeHandlerOnFailedArgs, len(fake.onFailedArgsForCall))
+	copy(args, fake.onFailedArgsForCall)
+	return args
 }
 
 func (fake *FakeHandler) OnFullyEstablished() {
 	fake.onFullyEstablishedMutex.Lock()
-	fake.onFullyEstablishedArgsForCall = append(fake.onFullyEstablishedArgsForCall, struct {
-	}{})
+	fake.onFullyEstablishedArgsForCall = append(fake.onFullyEstablishedArgsForCall, struct{}{})
 	stub := fake.OnFullyEstablishedStub
 	fake.recordInvocation("OnFullyEstablished", []interface{}{})
 	fake.onFullyEstablishedMutex.Unlock()
 	if stub != nil {
-		fake.OnFullyEstablishedStub()
+		stub()
 	}
 }
 
@@ -400,10 +471,7 @@ func (fake *FakeHandler) OnFullyEstablishedCalls(stub func()) {
 func (fake *FakeHandler) OnICECandidate(arg1 *webrtc.ICECandidate, arg2 livekit.SignalTarget) error {
 	fake.onICECandidateMutex.Lock()
 	ret, specificReturn := fake.onICECandidateReturnsOnCall[len(fake.onICECandidateArgsForCall)]
-	fake.onICECandidateArgsForCall = append(fake.onICECandidateArgsForCall, struct {
-		arg1 *webrtc.ICECandidate
-		arg2 livekit.SignalTarget
-	}{arg1, arg2})
+	fake.onICECandidateArgsForCall = append(fake.onICECandidateArgsForCall, FakeHandlerOnICECandidateArgs{arg1, arg2})
 	stub := fake.OnICECandidateStub
 	fakeReturns := fake.onICECandidateReturns
 	fake.recordInvocation("OnICECandidate", []interface{}{arg1, arg2})
@@ -433,7 +501,15 @@ func (fake *FakeHandler) OnICECandidateArgsForCall(i int) (*webrtc.ICECandidate,
 	fake.onICECandidateMutex.RLock()
 	defer fake.onICECandidateMutex.RUnlock()
 	argsForCall := fake.onICECandidateArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.Arg1, argsForCall.Arg2
+}
+
+func (fake *FakeHandler) OnICECandidateArgs() []FakeHandlerOnICECandidateArgs {
+	fake.onICECandidateMutex.RLock()
+	defer fake.onICECandidateMutex.RUnlock()
+	args := make([]FakeHandlerOnICECandidateArgs, len(fake.onICECandidateArgsForCall))
+	copy(args, fake.onICECandidateArgsForCall)
+	return args
 }
 
 func (fake *FakeHandler) OnICECandidateReturns(result1 error) {
@@ -461,13 +537,12 @@ func (fake *FakeHandler) OnICECandidateReturnsOnCall(i int, result1 error) {
 
 func (fake *FakeHandler) OnInitialConnected() {
 	fake.onInitialConnectedMutex.Lock()
-	fake.onInitialConnectedArgsForCall = append(fake.onInitialConnectedArgsForCall, struct {
-	}{})
+	fake.onInitialConnectedArgsForCall = append(fake.onInitialConnectedArgsForCall, struct{}{})
 	stub := fake.OnInitialConnectedStub
 	fake.recordInvocation("OnInitialConnected", []interface{}{})
 	fake.onInitialConnectedMutex.Unlock()
 	if stub != nil {
-		fake.OnInitialConnectedStub()
+		stub()
 	}
 }
 
@@ -485,13 +560,12 @@ func (fake *FakeHandler) OnInitialConnectedCalls(stub func()) {
 
 func (fake *FakeHandler) OnNegotiationFailed() {
 	fake.onNegotiationFailedMutex.Lock()
-	fake.onNegotiationFailedArgsForCall = append(fake.onNegotiationFailedArgsForCall, struct {
-	}{})
+	fake.onNegotiationFailedArgsForCall = append(fake.onNegotiationFailedArgsForCall, struct{}{})
 	stub := fake.OnNegotiationFailedStub
 	fake.recordInvocation("OnNegotiationFailed", []interface{}{})
 	fake.onNegotiationFailedMutex.Unlock()
 	if stub != nil {
-		fake.OnNegotiationFailedStub()
+		stub()
 	}
 }
 
@@ -509,14 +583,12 @@ func (fake *FakeHandler) OnNegotiationFailedCalls(stub func()) {
 
 func (fake *FakeHandler) OnNegotiationStateChanged(arg1 transport.NegotiationState) {
 	fake.onNegotiationStateChangedMutex.Lock()
-	fake.onNegotiationStateChangedArgsForCall = append(fake.onNegotiationStateChangedArgsForCall, struct {
-		arg1 transport.NegotiationState
-	}{arg1})
+	fake.onNegotiationStateChangedArgsForCall = append(fake.onNegotiationStateChangedArgsForCall, FakeHandlerOnNegotiationStateChangedArgs{arg1})
 	stub := fake.OnNegotiationStateChangedStub
 	fake.recordInvocation("OnNegotiationStateChanged", []interface{}{arg1})
 	fake.onNegotiationStateChangedMutex.Unlock()
 	if stub != nil {
-		fake.OnNegotiationStateChangedStub(arg1)
+		stub(arg1)
 	}
 }
 
@@ -536,17 +608,21 @@ func (fake *FakeHandler) OnNegotiationStateChangedArgsForCall(i int) transport.N
 	fake.onNegotiationStateChangedMutex.RLock()
 	defer fake.onNegotiationStateChangedMutex.RUnlock()
 	argsForCall := fake.onNegotiationStateChangedArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.Arg1
+}
+
+func (fake *FakeHandler) OnNegotiationStateChangedArgs() []FakeHandlerOnNegotiationStateChangedArgs {
+	fake.onNegotiationStateChangedMutex.RLock()
+	defer fake.onNegotiationStateChangedMutex.RUnlock()
+	args := make([]FakeHandlerOnNegotiationStateChangedArgs, len(fake.onNegotiationStateChangedArgsForCall))
+	copy(args, fake.onNegotiationStateChangedArgsForCall)
+	return args
 }
 
 func (fake *FakeHandler) OnOffer(arg1 webrtc.SessionDescription, arg2 uint32, arg3 map[string]string) error {
 	fake.onOfferMutex.Lock()
 	ret, specificReturn := fake.onOfferReturnsOnCall[len(fake.onOfferArgsForCall)]
-	fake.onOfferArgsForCall = append(fake.onOfferArgsForCall, struct {
-		arg1 webrtc.SessionDescription
-		arg2 uint32
-		arg3 map[string]string
-	}{arg1, arg2, arg3})
+	fake.onOfferArgsForCall = append(fake.onOfferArgsForCall, FakeHandlerOnOfferArgs{arg1, arg2, arg3})
 	stub := fake.OnOfferStub
 	fakeReturns := fake.onOfferReturns
 	fake.recordInvocation("OnOffer", []interface{}{arg1, arg2, arg3})
@@ -576,7 +652,15 @@ func (fake *FakeHandler) OnOfferArgsForCall(i int) (webrtc.SessionDescription, u
 	fake.onOfferMutex.RLock()
 	defer fake.onOfferMutex.RUnlock()
 	argsForCall := fake.onOfferArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+	return argsForCall.Arg1, argsForCall.Arg2, argsForCall.Arg3
+}
+
+func (fake *FakeHandler) OnOfferArgs() []FakeHandlerOnOfferArgs {
+	fake.onOfferMutex.RLock()
+	defer fake.onOfferMutex.RUnlock()
+	args := make([]FakeHandlerOnOfferArgs, len(fake.onOfferArgsForCall))
+	copy(args, fake.onOfferArgsForCall)
+	return args
 }
 
 func (fake *FakeHandler) OnOfferReturns(result1 error) {
@@ -604,13 +688,12 @@ func (fake *FakeHandler) OnOfferReturnsOnCall(i int, result1 error) {
 
 func (fake *FakeHandler) OnSetRemoteDescriptionOffer() {
 	fake.onSetRemoteDescriptionOfferMutex.Lock()
-	fake.onSetRemoteDescriptionOfferArgsForCall = append(fake.onSetRemoteDescriptionOfferArgsForCall, struct {
-	}{})
+	fake.onSetRemoteDescriptionOfferArgsForCall = append(fake.onSetRemoteDescriptionOfferArgsForCall, struct{}{})
 	stub := fake.OnSetRemoteDescriptionOfferStub
 	fake.recordInvocation("OnSetRemoteDescriptionOffer", []interface{}{})
 	fake.onSetRemoteDescriptionOfferMutex.Unlock()
 	if stub != nil {
-		fake.OnSetRemoteDescriptionOfferStub()
+		stub()
 	}
 }
 
@@ -629,9 +712,7 @@ func (fake *FakeHandler) OnSetRemoteDescriptionOfferCalls(stub func()) {
 func (fake *FakeHandler) OnStreamStateChange(arg1 *streamallocator.StreamStateUpdate) error {
 	fake.onStreamStateChangeMutex.Lock()
 	ret, specificReturn := fake.onStreamStateChangeReturnsOnCall[len(fake.onStreamStateChangeArgsForCall)]
-	fake.onStreamStateChangeArgsForCall = append(fake.onStreamStateChangeArgsForCall, struct {
-		arg1 *streamallocator.StreamStateUpdate
-	}{arg1})
+	fake.onStreamStateChangeArgsForCall = append(fake.onStreamStateChangeArgsForCall, FakeHandlerOnStreamStateChangeArgs{arg1})
 	stub := fake.OnStreamStateChangeStub
 	fakeReturns := fake.onStreamStateChangeReturns
 	fake.recordInvocation("OnStreamStateChange", []interface{}{arg1})
@@ -661,7 +742,15 @@ func (fake *FakeHandler) OnStreamStateChangeArgsForCall(i int) *streamallocator.
 	fake.onStreamStateChangeMutex.RLock()
 	defer fake.onStreamStateChangeMutex.RUnlock()
 	argsForCall := fake.onStreamStateChangeArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.Arg1
+}
+
+func (fake *FakeHandler) OnStreamStateChangeArgs() []FakeHandlerOnStreamStateChangeArgs {
+	fake.onStreamStateChangeMutex.RLock()
+	defer fake.onStreamStateChangeMutex.RUnlock()
+	args := make([]FakeHandlerOnStreamStateChangeArgs, len(fake.onStreamStateChangeArgsForCall))
+	copy(args, fake.onStreamStateChangeArgsForCall)
+	return args
 }
 
 func (fake *FakeHandler) OnStreamStateChangeReturns(result1 error) {
@@ -687,17 +776,52 @@ func (fake *FakeHandler) OnStreamStateChangeReturnsOnCall(i int, result1 error) 
 	}{result1}
 }
 
+func (fake *FakeHandler) OnSubscribedTrackCodecUnmatched(arg1 livekit.TrackID) {
+	fake.onSubscribedTrackCodecUnmatchedMutex.Lock()
+	fake.onSubscribedTrackCodecUnmatchedArgsForCall = append(fake.onSubscribedTrackCodecUnmatchedArgsForCall, FakeHandlerOnSubscribedTrackCodecUnmatchedArgs{arg1})
+	stub := fake.OnSubscribedTrackCodecUnmatchedStub
+	fake.recordInvocation("OnSubscribedTrackCodecUnmatched", []interface{}{arg1})
+	fake.onSubscribedTrackCodecUnmatchedMutex.Unlock()
+	if stub != nil {
+		stub(arg1)
+	}
+}
+
+func (fake *FakeHandler) OnSubscribedTrackCodecUnmatchedCallCount() int {
+	fake.onSubscribedTrackCodecUnmatchedMutex.RLock()
+	defer fake.onSubscribedTrackCodecUnmatchedMutex.RUnlock()
+	return len(fake.onSubscribedTrackCodecUnmatchedArgsForCall)
+}
+
+func (fake *FakeHandler) OnSubscribedTrackCodecUnmatchedCalls(stub func(livekit.TrackID)) {
+	fake.onSubscribedTrackCodecUnmatchedMutex.Lock()
+	defer fake.onSubscribedTrackCodecUnmatchedMutex.Unlock()
+	fake.OnSubscribedTrackCodecUnmatchedStub = stub
+}
+
+func (fake *FakeHandler) OnSubscribedTrackCodecUnmatchedArgsForCall(i int) livekit.TrackID {
+	fake.onSubscribedTrackCodecUnmatchedMutex.RLock()
+	defer fake.onSubscribedTrackCodecUnmatchedMutex.RUnlock()
+	argsForCall := fake.onSubscribedTrackCodecUnmatchedArgsForCall[i]
+	return argsForCall.Arg1
+}
+
+func (fake *FakeHandler) OnSubscribedTrackCodecUnmatchedArgs() []FakeHandlerOnSubscribedTrackCodecUnmatchedArgs {
+	fake.onSubscribedTrackCodecUnmatchedMutex.RLock()
+	defer fake.onSubscribedTrackCodecUnmatchedMutex.RUnlock()
+	args := make([]FakeHandlerOnSubscribedTrackCodecUnmatchedArgs, len(fake.onSubscribedTrackCodecUnmatchedArgsForCall))
+	copy(args, fake.onSubscribedTrackCodecUnmatchedArgsForCall)
+	return args
+}
+
 func (fake *FakeHandler) OnTrack(arg1 *webrtc.TrackRemote, arg2 *webrtc.RTPReceiver) {
 	fake.onTrackMutex.Lock()
-	fake.onTrackArgsForCall = append(fake.onTrackArgsForCall, struct {
-		arg1 *webrtc.TrackRemote
-		arg2 *webrtc.RTPReceiver
-	}{arg1, arg2})
+	fake.onTrackArgsForCall = append(fake.onTrackArgsForCall, FakeHandlerOnTrackArgs{arg1, arg2})
 	stub := fake.OnTrackStub
 	fake.recordInvocation("OnTrack", []interface{}{arg1, arg2})
 	fake.onTrackMutex.Unlock()
 	if stub != nil {
-		fake.OnTrackStub(arg1, arg2)
+		stub(arg1, arg2)
 	}
 }
 
@@ -717,16 +841,21 @@ func (fake *FakeHandler) OnTrackArgsForCall(i int) (*webrtc.TrackRemote, *webrtc
 	fake.onTrackMutex.RLock()
 	defer fake.onTrackMutex.RUnlock()
 	argsForCall := fake.onTrackArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.Arg1, argsForCall.Arg2
+}
+
+func (fake *FakeHandler) OnTrackArgs() []FakeHandlerOnTrackArgs {
+	fake.onTrackMutex.RLock()
+	defer fake.onTrackMutex.RUnlock()
+	args := make([]FakeHandlerOnTrackArgs, len(fake.onTrackArgsForCall))
+	copy(args, fake.onTrackArgsForCall)
+	return args
 }
 
 func (fake *FakeHandler) OnUnmatchedMedia(arg1 uint32, arg2 uint32) error {
 	fake.onUnmatchedMediaMutex.Lock()
 	ret, specificReturn := fake.onUnmatchedMediaReturnsOnCall[len(fake.onUnmatchedMediaArgsForCall)]
-	fake.onUnmatchedMediaArgsForCall = append(fake.onUnmatchedMediaArgsForCall, struct {
-		arg1 uint32
-		arg2 uint32
-	}{arg1, arg2})
+	fake.onUnmatchedMediaArgsForCall = append(fake.onUnmatchedMediaArgsForCall, FakeHandlerOnUnmatchedMediaArgs{arg1, arg2})
 	stub := fake.OnUnmatchedMediaStub
 	fakeReturns := fake.onUnmatchedMediaReturns
 	fake.recordInvocation("OnUnmatchedMedia", []interface{}{arg1, arg2})
@@ -756,7 +885,15 @@ func (fake *FakeHandler) OnUnmatchedMediaArgsForCall(i int) (uint32, uint32) {
 	fake.onUnmatchedMediaMutex.RLock()
 	defer fake.onUnmatchedMediaMutex.RUnlock()
 	argsForCall := fake.onUnmatchedMediaArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.Arg1, argsForCall.Arg2
+}
+
+func (fake *FakeHandler) OnUnmatchedMediaArgs() []FakeHandlerOnUnmatchedMediaArgs {
+	fake.onUnmatchedMediaMutex.RLock()
+	defer fake.onUnmatchedMediaMutex.RUnlock()
+	args := make([]FakeHandlerOnUnmatchedMediaArgs, len(fake.onUnmatchedMediaArgsForCall))
+	copy(args, fake.onUnmatchedMediaArgsForCall)
+	return args
 }
 
 func (fake *FakeHandler) OnUnmatchedMediaReturns(result1 error) {
@@ -792,9 +929,18 @@ func (fake *FakeHandler) Invocations() map[string][][]interface{} {
 	return copiedInvocations
 }
 
+func (fake *FakeHandler) CallOrder() []string {
+	fake.invocationsMutex.RLock()
+	defer fake.invocationsMutex.RUnlock()
+	order := make([]string, len(fake.callOrder))
+	copy(order, fake.callOrder)
+	return order
+}
+
 func (fake *FakeHandler) recordInvocation(key string, args []interface{}) {
 	fake.invocationsMutex.Lock()
 	defer fake.invocationsMutex.Unlock()
+	fake.callOrder = append(fake.callOrder, key)
 	if fake.invocations == nil {
 		fake.invocations = map[string][][]interface{}{}
 	}

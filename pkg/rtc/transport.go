@@ -45,7 +45,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe/remotebwe"
@@ -3380,11 +3379,9 @@ func (t *PCTransport) suppressCodecMismatchedSenders() {
 			t.params.Logger.Warnw("failed to park codec mismatched sender", err, "mid", mid)
 			continue
 		}
-		// report the failure after the answer is on the wire, so the subscription
-		// manager tears the subscription down without reentering negotiation here.
-		if dt, ok := local.(*sfu.DownTrack); ok {
-			go dt.FailBind(webrtc.ErrUnsupportedCodec)
-		}
+		// let the participant tear the subscription down, so transport does not
+		// reach into the downtrack to report the codec failure.
+		t.params.Handler.OnSubscribedTrackCodecUnmatched(livekit.TrackID(local.ID()))
 	}
 }
 
