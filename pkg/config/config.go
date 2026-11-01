@@ -83,6 +83,7 @@ var (
 type Config struct {
 	Port          uint32   `yaml:"port,omitempty"`
 	BindAddresses []string `yaml:"bind_addresses,omitempty"`
+	UnixSocket    string   `yaml:"unix_socket,omitempty"`
 	// PrometheusPort is deprecated
 	PrometheusPort uint32                   `yaml:"prometheus_port,omitempty"`
 	Prometheus     PrometheusConfig         `yaml:"prometheus,omitempty"`
@@ -317,6 +318,7 @@ type TURNConfig struct {
 	CertFile            string   `yaml:"cert_file,omitempty"`
 	KeyFile             string   `yaml:"key_file,omitempty"`
 	TLSPort             int      `yaml:"tls_port,omitempty"`
+	UnixSocket          string   `yaml:"unix_socket,omitempty"`
 	UDPPort             int      `yaml:"udp_port,omitempty"`
 	RelayPortRangeStart uint16   `yaml:"relay_range_start,omitempty"`
 	RelayPortRangeEnd   uint16   `yaml:"relay_range_end,omitempty"`
@@ -775,7 +777,7 @@ func NewConfig(confString string, strictMode bool, c *cli.Command, baseFlags []c
 }
 
 func (conf *Config) IsTURNSEnabled() bool {
-	if conf.TURN.Enabled && conf.TURN.TLSPort != 0 {
+	if conf.TURN.Enabled && conf.TURN.HasTLS() {
 		return true
 	}
 	for _, s := range conf.RTC.TURNServers {
@@ -1281,4 +1283,8 @@ func SetLogger(l logger.Logger) {
 
 func InitLoggerFromConfig(config *LoggingConfig) {
 	logger.InitFromConfig(&config.Config, "livekit")
+}
+
+func (c TURNConfig) HasTLS() bool {
+	return c.TLSPort > 0 || c.UnixSocket != ""
 }
