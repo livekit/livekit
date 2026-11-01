@@ -3394,22 +3394,15 @@ func midOffersCodec(parsed *sdp.SessionDescription, mid string, mimeType string)
 		want = want[i+1:]
 	}
 	for _, md := range parsed.MediaDescriptions {
-		if v, ok := md.Attribute("mid"); !ok || v != mid {
+		if lksdp.GetMidValue(md) != mid {
 			continue
 		}
-		for _, a := range md.Attributes {
-			if a.Key != "rtpmap" {
-				continue
-			}
-			fields := strings.Fields(a.Value)
-			if len(fields) < 2 {
-				continue
-			}
-			enc := fields[1]
-			if i := strings.Index(enc, "/"); i >= 0 {
-				enc = enc[:i]
-			}
-			if strings.EqualFold(enc, want) {
+		codecs, err := lksdp.CodecsFromMediaDescription(md)
+		if err != nil {
+			return true
+		}
+		for _, c := range codecs {
+			if strings.EqualFold(c.Name, want) {
 				return true
 			}
 		}
