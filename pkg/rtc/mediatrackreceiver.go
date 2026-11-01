@@ -1115,7 +1115,8 @@ func (t *MediaTrackReceiver) GetQualityForDimension(mimeType mime.MimeType, widt
 	// finds the highest layer with smallest dimensions that still satisfy client demands
 	requestedSize = uint32(float32(requestedSize) * layerSelectionTolerance)
 	for i, s := range layerSizes {
-		quality = livekit.VideoQuality(i)
+		// a publisher can list more layers than qualities, an index past HIGH would be OFF
+		quality = livekit.VideoQuality(min(i, int(livekit.VideoQuality_HIGH)))
 		if i == len(layerSizes)-1 {
 			break
 		} else if s >= requestedSize && s != layerSizes[i+1] {
