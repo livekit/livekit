@@ -968,3 +968,64 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
 	}
 	return rm
 }
+
+func TestParticipantEgressGuardOnRemove(t *testing.T) {
+	setGuards := func(rm *Room, identity livekit.ParticipantIdentity) {
+		rm.lock.Lock()
+		rm.hasPublished[identity] = true
+		rm.launchedParticipantEgress[identity] = true
+		rm.lock.Unlock()
+	}
+
+	t.Run("duplicate identity eviction keeps the egress guard and clears the publish guard", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
+		p := rm.GetParticipants()[0]
+		setGuards(rm, p.Identity())
+
+		rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonDuplicateIdentity)
+
+		rm.lock.RLock()
+		defer rm.lock.RUnlock()
+		require.True(t, rm.launchedParticipantEgress[p.Identity()])
+		require.False(t, rm.hasPublished[p.Identity()])
+	})
+
+	t.Run("a normal leave clears both guards", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
+		p := rm.GetParticipants()[0]
+		setGuards(rm, p.Identity())
+
+		rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonClientRequestLeave)
+
+		rm.lock.RLock()
+		defer rm.lock.RUnlock()
+		require.False(t, rm.launchedParticipantEgress[p.Identity()])
+		require.False(t, rm.hasPublished[p.Identity()])
+	})
+
+	t.Run("ClearLaunchedParticipantEgress releases a preserved guard", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
+		p := rm.GetParticipants()[0]
+		setGuards(rm, p.Identity())
+		rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonDuplicateIdentity)
+
+		rm.ClearLaunchedParticipantEgress(p.Identity())
+
+		rm.lock.RLock()
+		defer rm.lock.RUnlock()
+		require.False(t, rm.launchedParticipantEgress[p.Identity()])
+	})
+
+	t.Run("ClearLaunchedParticipantEgress keeps the guard when a session owns the identity", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
+		p := rm.GetParticipants()[0]
+		setGuards(rm, p.Identity())
+
+		// the identity is still held by a joined session, so a losing handoff must not release it
+		rm.ClearLaunchedParticipantEgress(p.Identity())
+
+		rm.lock.RLock()
+		defer rm.lock.RUnlock()
+		require.True(t, rm.launchedParticipantEgress[p.Identity()])
+	})
+}
