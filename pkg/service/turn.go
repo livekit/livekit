@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -68,9 +69,9 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 		return nil, nil
 	}
 
-	if turnConf.TLSPort <= 0 && turnConf.UDPPort <= 0 {
+	if !turnConf.HasTLS() && turnConf.UDPPort <= 0 {
 		return nil, errors.New("invalid TURN ports")
-	} else if turnConf.TLSPort > 0 {
+	} else if turnConf.HasTLS() {
 		if turnConf.Domain == "" {
 			return nil, errors.New("TURN domain required")
 		}
@@ -121,7 +122,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 		mediaPorts = getTURNMediaPorts(&conf.RTC)
 	}
 
-	for _, addr := range turnConf.BindAddresses {
+	for i, addr := range turnConf.BindAddresses {
 		var nodeIP string
 		if net.ParseIP(addr).To4() != nil {
 			nodeIP = conf.RTC.NodeIP.V4
@@ -173,8 +174,12 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 			relayAddrGen = newTURNRelayPolicy(relayAddrGen, localIPs, mediaPorts)
 		}
 
-		if turnConf.TLSPort > 0 {
-			listener, err := newTURNTCPListener(turnConf, net.JoinHostPort(addr, strconv.Itoa(turnConf.TLSPort)))
+		if turnConf.HasTLS() && (turnConf.UnixSocket == "" || i == 0) {
+			network, address := "tcp", net.JoinHostPort(addr, strconv.Itoa(turnConf.TLSPort))
+			if turnConf.UnixSocket != "" {
+				network, address = "unix", turnConf.UnixSocket
+			}
+			listener, err := newTURNTCPListener(turnConf, network, address)
 			if err != nil {
 				return nil, err
 			}
@@ -189,7 +194,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 			}
 			serverConfig.ListenerConfigs = append(serverConfig.ListenerConfigs, listenerConfig)
 
-			logValues = append(logValues, "turn.portTLS", turnConf.TLSPort, "turn.externalTLS", turnConf.ExternalTLS, "turn.proxyProtocol", turnConf.ProxyProtocol)
+			logValues = append(logValues, "turn.portTLS", turnConf.TLSPort, "turn.unixSocket", turnConf.UnixSocket, "turn.externalTLS", turnConf.ExternalTLS, "turn.proxyProtocol", turnConf.ProxyProtocol)
 		}
 
 		if turnConf.UDPPort > 0 {
@@ -219,7 +224,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 // newTURNTCPListener returns the TCP listener for TURN/TLS. The PROXY protocol
 // header, when enabled, is read before TLS so the client address is known to
 // the TLS layer and to TURN regardless of who terminates TLS.
-func newTURNTCPListener(turnConf config.TURNConfig, address string) (net.Listener, error) {
+func newTURNTCPListener(turnConf config.TURNConfig, network string, address string) (net.Listener, error) {
 	var tlsConfig *tls.Config
 	if !turnConf.ExternalTLS {
 		cert, err := tls.LoadX509KeyPair(turnConf.CertFile, turnConf.KeyFile)
@@ -244,7 +249,10 @@ func newTURNTCPListener(turnConf config.TURNConfig, address string) (net.Listene
 		proxyPolicy = proxyProtocolPolicy(trusted)
 	}
 
-	listener, err := net.Listen("tcp", address)
+	if network == "unix" {
+		_ = os.Remove(address)
+	}
+	listener, err := net.Listen(network, address)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not listen on TURN TCP port")
 	}
@@ -261,6 +269,9 @@ func newTURNTCPListener(turnConf config.TURNConfig, address string) (net.Listene
 // every other connection, so the header cannot be forged by a direct client.
 func proxyProtocolPolicy(trusted []*net.IPNet) proxyproto.ConnPolicyFunc {
 	return func(opts proxyproto.ConnPolicyOptions) (proxyproto.Policy, error) {
+		if _, unix := opts.Upstream.(*net.UnixAddr); unix {
+			return proxyproto.REQUIRE, nil
+		}
 		tcpAddr, ok := opts.Upstream.(*net.TCPAddr)
 		if !ok {
 			return proxyproto.REJECT, fmt.Errorf("%w: unexpected address %v", proxyproto.ErrInvalidUpstream, opts.Upstream)

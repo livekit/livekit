@@ -67,7 +67,7 @@ func printPorts(_ context.Context, c *cli.Command) error {
 	}
 
 	if conf.TURN.Enabled {
-		if conf.TURN.TLSPort > 0 {
+		if conf.TURN.TLSPort > 0 && conf.TURN.UnixSocket == "" {
 			tcpPorts = append(tcpPorts, fmt.Sprintf("%d - TURN/TLS", conf.TURN.TLSPort))
 		}
 		if conf.TURN.UDPPort > 0 {

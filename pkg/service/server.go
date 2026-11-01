@@ -23,6 +23,7 @@ import (
 	"net"
 	"net/http"
 	httppprof "net/http/pprof"
+	"os"
 	"runtime"
 	"runtime/pprof"
 	"strconv"
@@ -249,15 +250,25 @@ func (s *LivekitServer) Start() error {
 	listeners := make([]net.Listener, 0)
 	promListeners := make([]net.Listener, 0)
 	debugListeners := make([]net.Listener, 0)
-	for _, addr := range addresses {
-		ln, err := net.Listen("tcp", net.JoinHostPort(addr, strconv.Itoa(int(s.config.Port))))
+	if s.config.UnixSocket != "" {
+		_ = os.Remove(s.config.UnixSocket)
+		ln, err := net.Listen("unix", s.config.UnixSocket)
 		if err != nil {
 			return err
 		}
 		listeners = append(listeners, ln)
+	}
+	for _, addr := range addresses {
+		if s.config.UnixSocket == "" {
+			ln, err := net.Listen("tcp", net.JoinHostPort(addr, strconv.Itoa(int(s.config.Port))))
+			if err != nil {
+				return err
+			}
+			listeners = append(listeners, ln)
+		}
 
 		if s.promServer != nil {
-			ln, err = net.Listen("tcp", net.JoinHostPort(addr, strconv.Itoa(int(s.config.Prometheus.Port))))
+			ln, err := net.Listen("tcp", net.JoinHostPort(addr, strconv.Itoa(int(s.config.Prometheus.Port))))
 			if err != nil {
 				return err
 			}
@@ -265,7 +276,7 @@ func (s *LivekitServer) Start() error {
 		}
 
 		if s.debugServer != nil {
-			ln, err = net.Listen("tcp", net.JoinHostPort(addr, strconv.Itoa(int(s.config.DebugHandler.Port))))
+			ln, err := net.Listen("tcp", net.JoinHostPort(addr, strconv.Itoa(int(s.config.DebugHandler.Port))))
 			if err != nil {
 				return err
 			}
@@ -281,6 +292,7 @@ func (s *LivekitServer) Start() error {
 
 	values := []any{
 		"portHttp", s.config.Port,
+		"unixSocket", s.config.UnixSocket,
 		"nodeID", s.currentNode.NodeID(),
 		"nodeIP", s.currentNode.NodeIP(),
 		"version", version.Version,
