@@ -194,4 +194,40 @@ func TestGetQualityForDimension(t *testing.T) {
 		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(mime.MimeTypeH264, 1200, 800))
 	})
 
+	t.Run("more layers than qualities", func(t *testing.T) {
+		mt := NewMediaTrack(MediaTrackParams{
+			Logger: logger.GetLogger(),
+		}, &livekit.TrackInfo{
+			Type:   livekit.TrackType_VIDEO,
+			Width:  1920,
+			Height: 1080,
+			Layers: []*livekit.VideoLayer{
+				{
+					Quality: livekit.VideoQuality_LOW,
+					Width:   320,
+					Height:  180,
+				},
+				{
+					Quality: livekit.VideoQuality_LOW,
+					Width:   640,
+					Height:  360,
+				},
+				{
+					Quality: livekit.VideoQuality_MEDIUM,
+					Width:   1280,
+					Height:  720,
+				},
+				{
+					Quality: livekit.VideoQuality_HIGH,
+					Width:   1920,
+					Height:  1080,
+				},
+			},
+		})
+
+		require.Equal(t, livekit.VideoQuality_LOW, mt.GetQualityForDimension(mime.MimeTypeVP8, 320, 180))
+		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(mime.MimeTypeVP8, 1280, 720))
+		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(mime.MimeTypeVP8, 1920, 1080))
+		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(mime.MimeTypeVP8, 3840, 2160))
+	})
 }
