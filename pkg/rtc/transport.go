@@ -3336,11 +3336,10 @@ func (t *PCTransport) restrictReceiverCodecsToPublishList() {
 	}
 }
 
-// suppressCodecMismatchedSenders parks a subscribed downtrack when the client's
-// offer for its m-line carries no codec the downtrack can send. Without this the
-// answer still advertises the track msid, because DownTrack.Bind returns nil on a
-// mismatch so pion keeps the sender, and the subscriber briefly sees a spurious
-// TrackSubscribed before the bind failure tears it down. prototype.
+// suppressCodecMismatchedSenders parks a subscription when the client's offer for
+// its m-line carries no codec it can send. Without this the answer still advertises
+// the track msid, because Bind returns nil on a mismatch so pion keeps the sender,
+// and the subscriber briefly sees a spurious TrackSubscribed before it is torn down.
 func (t *PCTransport) suppressCodecMismatchedSenders() {
 	parsed := t.RemoteOfferParsed()
 	if parsed == nil {
@@ -3380,14 +3379,14 @@ func (t *PCTransport) suppressCodecMismatchedSenders() {
 			continue
 		}
 		// let the participant tear the subscription down, so transport does not
-		// reach into the downtrack to report the codec failure.
+		// reach into the subscription to report the codec failure.
 		t.params.Handler.OnSubscribedTrackCodecUnmatched(livekit.TrackID(local.ID()))
 	}
 }
 
 // midOffersCodec reports whether the remote offer m-line for mid lists a codec
 // whose encoding name matches mimeType, for example "video/H264". A missing mid
-// returns true, so an unmatched section is left alone. prototype.
+// returns true, so an unmatched section is left alone.
 func midOffersCodec(parsed *sdp.SessionDescription, mid string, mimeType string) bool {
 	want := mimeType
 	if i := strings.LastIndex(want, "/"); i >= 0 {
