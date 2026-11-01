@@ -38,6 +38,7 @@ import (
 	"github.com/pion/webrtc/v4"
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/protobuf/proto"
 
@@ -900,7 +901,7 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 
 func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 	dc.OnOpen(func() {
-		t.params.Logger.Debugw(dc.Label() + " data channel open")
+		t.params.Logger.Infow("data channel open", zap.Inline(dataChannelLogObject{dc}))
 		var kind livekit.DataPacket_Kind
 		var isDataTrack bool
 		var isUnlabeled bool
@@ -915,7 +916,6 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 			isDataTrack = true
 
 		default:
-			t.params.Logger.Infow("unlabeled datachannel added", "label", dc.Label())
 			isUnlabeled = true
 		}
 
@@ -1290,7 +1290,6 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 	switch dc.Label() {
 	default:
 		isUnlabeled = true
-		t.params.Logger.Infow("unlabeled datachannel added", "label", dc.Label())
 
 	case ReliableDataChannel:
 		dcPtr = &t.reliableDC
@@ -1342,7 +1341,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 			}
 		}
 		t.lock.Unlock()
-		t.params.Logger.Debugw(dc.Label() + " data channel open")
+		t.params.Logger.Infow("data channel open", zap.Inline(dataChannelLogObject{dc}))
 
 		go func() {
 			defer rawDC.Close()
@@ -3505,5 +3504,29 @@ func (r iceCandidatePairStats) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddTime("firstRequestReceivedAt", r.FirstRequestReceivedTimestamp.Time())
 	e.AddTime("lastRequestReceivedAt", r.LastRequestReceivedTimestamp.Time())
 
+	return nil
+}
+
+// ----------------------
+
+// dataChannelLogObject logs a data channel's negotiated options alongside its label
+type dataChannelLogObject struct {
+	dc *webrtc.DataChannel
+}
+
+func (d dataChannelLogObject) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddString("label", d.dc.Label())
+	if id := d.dc.ID(); id != nil {
+		e.AddUint16("id", *id)
+	}
+	e.AddBool("ordered", d.dc.Ordered())
+	if n := d.dc.MaxRetransmits(); n != nil {
+		e.AddUint16("maxRetransmits", *n)
+	}
+	if lifetime := d.dc.MaxPacketLifeTime(); lifetime != nil {
+		e.AddUint16("maxPacketLifeTime", *lifetime)
+	}
+	e.AddString("protocol", d.dc.Protocol())
+	e.AddBool("negotiated", d.dc.Negotiated())
 	return nil
 }
