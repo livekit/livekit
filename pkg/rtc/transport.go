@@ -45,6 +45,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe/remotebwe"
@@ -2846,6 +2847,7 @@ func (t *PCTransport) createAndSendAnswer() error {
 	t.lock.Unlock()
 
 	t.restrictReceiverCodecsToPublishList()
+	t.suppressCodecMismatchedSenders()
 
 	answer, err := t.pc.CreateAnswer(nil)
 	if err != nil {
@@ -3333,6 +3335,90 @@ func (t *PCTransport) restrictReceiverCodecsToPublishList() {
 			t.params.Logger.Warnw("failed to set recv codec preferences", err, "mid", tr.Mid())
 		}
 	}
+}
+
+// suppressCodecMismatchedSenders parks a subscribed downtrack when the client's
+// offer for its m-line carries no codec the downtrack can send. Without this the
+// answer still advertises the track msid, because DownTrack.Bind returns nil on a
+// mismatch so pion keeps the sender, and the subscriber briefly sees a spurious
+// TrackSubscribed before the bind failure tears it down. prototype.
+func (t *PCTransport) suppressCodecMismatchedSenders() {
+	parsed := t.RemoteOfferParsed()
+	if parsed == nil {
+		return
+	}
+	for _, tr := range t.pc.GetTransceivers() {
+		mid := tr.Mid()
+		if mid == "" {
+			continue
+		}
+		sender := tr.Sender()
+		if sender == nil {
+			continue
+		}
+		local := sender.Track()
+		if local == nil {
+			continue
+		}
+		codecer, ok := local.(interface {
+			Codec() webrtc.RTPCodecCapability
+		})
+		if !ok {
+			continue
+		}
+		if midOffersCodec(parsed, mid, codecer.Codec().MimeType) {
+			continue
+		}
+
+		t.params.Logger.Infow(
+			"suppressing codec mismatched sender from answer",
+			"mid", mid,
+			"trackID", local.ID(),
+			"codec", codecer.Codec().MimeType,
+		)
+		if err := t.pc.RemoveTrack(sender); err != nil {
+			t.params.Logger.Warnw("failed to park codec mismatched sender", err, "mid", mid)
+			continue
+		}
+		// report the failure after the answer is on the wire, so the subscription
+		// manager tears the subscription down without reentering negotiation here.
+		if dt, ok := local.(*sfu.DownTrack); ok {
+			go dt.FailBind(webrtc.ErrUnsupportedCodec)
+		}
+	}
+}
+
+// midOffersCodec reports whether the remote offer m-line for mid lists a codec
+// whose encoding name matches mimeType, for example "video/H264". A missing mid
+// returns true, so an unmatched section is left alone. prototype.
+func midOffersCodec(parsed *sdp.SessionDescription, mid string, mimeType string) bool {
+	want := mimeType
+	if i := strings.LastIndex(want, "/"); i >= 0 {
+		want = want[i+1:]
+	}
+	for _, md := range parsed.MediaDescriptions {
+		if v, ok := md.Attribute("mid"); !ok || v != mid {
+			continue
+		}
+		for _, a := range md.Attributes {
+			if a.Key != "rtpmap" {
+				continue
+			}
+			fields := strings.Fields(a.Value)
+			if len(fields) < 2 {
+				continue
+			}
+			enc := fields[1]
+			if i := strings.Index(enc, "/"); i >= 0 {
+				enc = enc[:i]
+			}
+			if strings.EqualFold(enc, want) {
+				return true
+			}
+		}
+		return false
+	}
+	return true
 }
 
 func configureReceiverCodecs(

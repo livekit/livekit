@@ -1720,6 +1720,19 @@ func (d *DownTrack) OnBinding(fn func(error)) {
 	d.onBinding = fn
 }
 
+// FailBind drives the same callback Bind uses on a codec mismatch, so a
+// subscription can be torn down before the answer advertises the track.
+// prototype: see PCTransport.suppressCodecMismatchedSenders.
+func (d *DownTrack) FailBind(err error) {
+	d.bindLock.Lock()
+	onBinding := d.onBinding
+	d.bindLock.Unlock()
+
+	if onBinding != nil {
+		onBinding(err)
+	}
+}
+
 func (d *DownTrack) AddReceiverReportListener(listener ReceiverReportListener) {
 	d.listenerLock.Lock()
 	defer d.listenerLock.Unlock()

@@ -333,3 +333,52 @@ func TestMediaSectionsAnswerEchoesOfferedVideoPayloadTypes(t *testing.T) {
 		require.Equal(t, codec, offered[pt], "answer payload type %d (%s) is not what the client offered", pt, codec)
 	}
 }
+
+// prototype: a subscribed track whose codec the client never offers must not be
+// advertised in the answer, or the subscriber briefly sees a spurious
+// TrackSubscribed before the bind failure tears it down.
+func TestSuppressCodecMismatchedSender(t *testing.T) {
+	serverCodecs := []*livekit.Codec{
+		{Mime: mime.MimeTypeOpus.String()},
+		{Mime: mime.MimeTypeVP8.String()},
+		{Mime: mime.MimeTypeH264.String()},
+	}
+	clientCodecs := []*livekit.Codec{
+		{Mime: mime.MimeTypeOpus.String()},
+		{Mime: mime.MimeTypeVP8.String()},
+	}
+	var clientME webrtc.MediaEngine
+	require.NoError(t, registerCodecs(&clientME, clientCodecs, RTCPFeedbackConfig{}, false))
+	h := newMediaSectionsHarnessWithClient(t, serverCodecs, &clientME)
+
+	_, err := h.client.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{
+		Direction: webrtc.RTPTransceiverDirectionSendonly,
+	})
+	require.NoError(t, err)
+	h.negotiate(nil)
+
+	// subscribe an H264 track the client never offers
+	track, err := webrtc.NewTrackLocalStaticRTP(
+		webrtc.RTPCodecCapability{MimeType: mime.MimeTypeH264.String(), ClockRate: 90000},
+		"vh264", "vh264",
+	)
+	require.NoError(t, err)
+	sender, _, err := h.server.AddTrack(
+		track,
+		types.AddTrackParams{},
+		[]*livekit.Codec{{Mime: mime.MimeTypeH264.String()}},
+		RTCPFeedbackConfig{},
+	)
+	require.NoError(t, err)
+
+	h.negotiate(nil)
+	h.negotiate(nil)
+	h.negotiate(nil)
+
+	require.Nil(t, sender.Track(), "codec mismatched sender was not parked")
+	h.mu.Lock()
+	answerSDP := h.answer.SDP
+	h.mu.Unlock()
+	require.NotContains(t, answerSDP, "vh264",
+		"answer advertises a track the subscriber cannot receive")
+}
