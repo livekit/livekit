@@ -38,6 +38,7 @@ import (
 	"github.com/pion/webrtc/v4"
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/protobuf/proto"
 
@@ -900,7 +901,7 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 
 func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 	dc.OnOpen(func() {
-		t.params.Logger.Infow("data channel open", dataChannelLogFields(dc)...)
+		t.params.Logger.Infow("data channel open", zap.Inline(dataChannelLogObject{dc}))
 		var kind livekit.DataPacket_Kind
 		var isDataTrack bool
 		var isUnlabeled bool
@@ -1340,7 +1341,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 			}
 		}
 		t.lock.Unlock()
-		t.params.Logger.Infow("data channel open", dataChannelLogFields(dc)...)
+		t.params.Logger.Infow("data channel open", zap.Inline(dataChannelLogObject{dc}))
 
 		go func() {
 			defer rawDC.Close()
@@ -3506,15 +3507,26 @@ func (r iceCandidatePairStats) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	return nil
 }
 
-// dataChannelLogFields reports a data channel's negotiated options alongside its label
-func dataChannelLogFields(dc *webrtc.DataChannel) []any {
-	return []any{
-		"label", dc.Label(),
-		"id", dc.ID(),
-		"ordered", dc.Ordered(),
-		"maxRetransmits", dc.MaxRetransmits(),
-		"maxPacketLifeTime", dc.MaxPacketLifeTime(),
-		"protocol", dc.Protocol(),
-		"negotiated", dc.Negotiated(),
+// ----------------------
+
+// dataChannelLogObject logs a data channel's negotiated options alongside its label
+type dataChannelLogObject struct {
+	dc *webrtc.DataChannel
+}
+
+func (d dataChannelLogObject) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddString("label", d.dc.Label())
+	if id := d.dc.ID(); id != nil {
+		e.AddUint16("id", *id)
 	}
+	e.AddBool("ordered", d.dc.Ordered())
+	if n := d.dc.MaxRetransmits(); n != nil {
+		e.AddUint16("maxRetransmits", *n)
+	}
+	if lifetime := d.dc.MaxPacketLifeTime(); lifetime != nil {
+		e.AddUint16("maxPacketLifeTime", *lifetime)
+	}
+	e.AddString("protocol", d.dc.Protocol())
+	e.AddBool("negotiated", d.dc.Negotiated())
+	return nil
 }
