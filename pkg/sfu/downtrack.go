@@ -465,27 +465,12 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	// so keep a copy of the codec parameters here to use it later
 	d.negotiatedCodecParameters = append([]webrtc.RTPCodecParameters{}, t.CodecParameters()...)
 	var codec, matchedUpstreamCodec webrtc.RTPCodecParameters
-	for _, c := range d.upstreamCodecs {
+	for _, c := range d.BindableCodecs() {
 		matchCodec, err := utils.CodecParametersFuzzySearch(c, d.negotiatedCodecParameters)
 		if err == nil {
 			codec = matchCodec
 			matchedUpstreamCodec = c
 			break
-		} else {
-			// for encrypyted tracks, should match on primary codec,
-			// i. e. codec at index 0 if the combination of upstream codecs is opus and RED
-			if d.params.IsEncrypted {
-				isRedAndOpus := true
-				for _, u := range d.upstreamCodecs {
-					if !mime.IsMimeTypeStringOpus(u.MimeType) || !mime.IsMimeTypeStringRED(u.MimeType) {
-						isRedAndOpus = false
-						break
-					}
-				}
-				if isRedAndOpus {
-					break
-				}
-			}
 		}
 	}
 
@@ -775,6 +760,21 @@ func (d *DownTrack) ID() string { return string(d.id) }
 // Codec returns current track codec capability
 func (d *DownTrack) Codec() webrtc.RTPCodecCapability {
 	return d.codec.Load().(webrtc.RTPCodecCapability)
+}
+
+// BindableCodecs returns the upstream codecs Bind can pick, in preference order
+func (d *DownTrack) BindableCodecs() []webrtc.RTPCodecParameters {
+	if !d.params.IsEncrypted {
+		return d.upstreamCodecs
+	}
+
+	// an encrypted payload cannot be converted between RED and Opus, so only the primary codec binds
+	for _, u := range d.upstreamCodecs {
+		if !mime.IsMimeTypeStringOpus(u.MimeType) && !mime.IsMimeTypeStringRED(u.MimeType) {
+			return d.upstreamCodecs
+		}
+	}
+	return d.upstreamCodecs[:1]
 }
 
 func (d *DownTrack) Mime() mime.MimeType {

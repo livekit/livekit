@@ -3358,13 +3358,15 @@ func (t *PCTransport) suppressCodecMismatchedSenders() {
 		if local == nil {
 			continue
 		}
+		// check every codec Bind can pick, not only the primary one
 		codecer, ok := local.(interface {
-			Codec() webrtc.RTPCodecCapability
+			BindableCodecs() []webrtc.RTPCodecParameters
 		})
 		if !ok {
 			continue
 		}
-		if midOffersCodec(parsed, mid, codecer.Codec().MimeType) {
+		codecs := codecer.BindableCodecs()
+		if midOffersAnyCodec(parsed, mid, codecs) {
 			continue
 		}
 
@@ -3372,7 +3374,7 @@ func (t *PCTransport) suppressCodecMismatchedSenders() {
 			"suppressing codec mismatched sender from answer",
 			"mid", mid,
 			"trackID", local.ID(),
-			"codec", codecer.Codec().MimeType,
+			"codecs", codecs,
 		)
 		if err := t.pc.RemoveTrack(sender); err != nil {
 			t.params.Logger.Warnw("failed to park codec mismatched sender", err, "mid", mid)
@@ -3384,25 +3386,23 @@ func (t *PCTransport) suppressCodecMismatchedSenders() {
 	}
 }
 
-// midOffersCodec reports whether the remote offer m-line for mid lists a codec
-// whose encoding name matches mimeType, for example "video/H264". A missing mid
-// returns true, so an unmatched section is left alone.
-func midOffersCodec(parsed *sdp.SessionDescription, mid string, mimeType string) bool {
-	want := mimeType
-	if i := strings.LastIndex(want, "/"); i >= 0 {
-		want = want[i+1:]
-	}
+// midOffersAnyCodec reports whether the remote offer m-line for mid lists a codec
+// whose encoding name matches one of codecs, the same mime match Bind falls back to.
+// A missing mid returns true, so an unmatched section is left alone.
+func midOffersAnyCodec(parsed *sdp.SessionDescription, mid string, codecs []webrtc.RTPCodecParameters) bool {
 	for _, md := range parsed.MediaDescriptions {
 		if lksdp.GetMidValue(md) != mid {
 			continue
 		}
-		codecs, err := lksdp.CodecsFromMediaDescription(md)
+		offered, err := lksdp.CodecsFromMediaDescription(md)
 		if err != nil {
 			return true
 		}
-		for _, c := range codecs {
-			if strings.EqualFold(c.Name, want) {
-				return true
+		for _, o := range offered {
+			for _, c := range codecs {
+				if mime.NormalizeMimeTypeCodec(o.Name) == mime.GetMimeTypeCodec(c.MimeType) {
+					return true
+				}
 			}
 		}
 		return false
