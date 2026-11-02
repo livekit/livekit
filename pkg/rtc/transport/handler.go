@@ -50,6 +50,7 @@ type Handler interface {
 	OnNegotiationFailed()
 	OnStreamStateChange(update *streamallocator.StreamStateUpdate) error
 	OnUnmatchedMedia(numAudios uint32, numVideos uint32) error
+	OnSubscribedTrackCodecUnmatched(trackID livekit.TrackID)
 }
 
 type UnimplementedHandler struct{}
@@ -80,3 +81,4 @@ func (h UnimplementedHandler) OnStreamStateChange(update *streamallocator.Stream
 func (h UnimplementedHandler) OnUnmatchedMedia(numAudios uint32, numVideos uint32) error {
 	return nil
 }
+func (h UnimplementedHandler) OnSubscribedTrackCodecUnmatched(trackID livekit.TrackID) {}

@@ -298,6 +298,23 @@ func (m *SubscriptionManager) ClearAllSubscriptions() {
 	m.ReconcileAll()
 }
 
+// FailTrackBind ends a subscription whose track cannot bind, the same way a bind error does
+func (m *SubscriptionManager) FailTrackBind(trackID livekit.TrackID, err error) {
+	m.lock.RLock()
+	sub := m.subscriptions[trackID]
+	m.lock.RUnlock()
+	if sub != nil {
+		m.handleBindFailure(sub, err)
+	}
+}
+
+func (m *SubscriptionManager) handleBindFailure(sub *mediaTrackSubscription, err error) {
+	sub.logger.Infow("failed to bind track", "err", err)
+	sub.maybeRecordError(m.params.Participant.GetTelemetryListener(), err, true)
+	m.UnsubscribeFromTrack(sub.trackID)
+	m.params.OnSubscriptionError(sub.trackID, false, err)
+}
+
 func (m *SubscriptionManager) GetSubscribedTracks() []types.SubscribedTrack {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
@@ -917,10 +934,7 @@ func (m *SubscriptionManager) addSubscriber(sub *mediaTrackSubscription, track t
 		})
 		subTrack.AddOnBind(func(err error) {
 			if err != nil {
-				sub.logger.Infow("failed to bind track", "err", err)
-				sub.maybeRecordError(m.params.Participant.GetTelemetryListener(), err, true)
-				m.UnsubscribeFromTrack(trackID)
-				m.params.OnSubscriptionError(trackID, false, err)
+				m.handleBindFailure(sub, err)
 				return
 			}
 			sub.setBound()

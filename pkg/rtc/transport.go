@@ -2846,6 +2846,7 @@ func (t *PCTransport) createAndSendAnswer() error {
 	t.lock.Unlock()
 
 	t.restrictReceiverCodecsToPublishList()
+	t.suppressCodecMismatchedSenders()
 
 	answer, err := t.pc.CreateAnswer(nil)
 	if err != nil {
@@ -3333,6 +3334,80 @@ func (t *PCTransport) restrictReceiverCodecsToPublishList() {
 			t.params.Logger.Warnw("failed to set recv codec preferences", err, "mid", tr.Mid())
 		}
 	}
+}
+
+// suppressCodecMismatchedSenders parks a subscription when the client's offer for
+// its m-line carries no codec it can send. Without this the answer still advertises
+// the track msid, because Bind returns nil on a mismatch so pion keeps the sender,
+// and the subscriber briefly sees a spurious TrackSubscribed before it is torn down.
+func (t *PCTransport) suppressCodecMismatchedSenders() {
+	parsed := t.RemoteOfferParsed()
+	if parsed == nil {
+		return
+	}
+	for _, tr := range t.pc.GetTransceivers() {
+		mid := tr.Mid()
+		if mid == "" {
+			continue
+		}
+		sender := tr.Sender()
+		if sender == nil {
+			continue
+		}
+		local := sender.Track()
+		if local == nil {
+			continue
+		}
+		// check every codec Bind can pick, not only the primary one
+		codecer, ok := local.(interface {
+			BindableCodecs() []webrtc.RTPCodecParameters
+		})
+		if !ok {
+			continue
+		}
+		codecs := codecer.BindableCodecs()
+		if midOffersAnyCodec(parsed, mid, codecs) {
+			continue
+		}
+
+		t.params.Logger.Infow(
+			"suppressing codec mismatched sender from answer",
+			"mid", mid,
+			"trackID", local.ID(),
+			"codecs", codecs,
+		)
+		if err := t.pc.RemoveTrack(sender); err != nil {
+			t.params.Logger.Warnw("failed to park codec mismatched sender", err, "mid", mid)
+			continue
+		}
+		// let the participant tear the subscription down, so transport does not
+		// reach into the subscription to report the codec failure.
+		t.params.Handler.OnSubscribedTrackCodecUnmatched(livekit.TrackID(local.ID()))
+	}
+}
+
+// midOffersAnyCodec reports whether the remote offer m-line for mid lists a codec
+// whose encoding name matches one of codecs, the same mime match Bind falls back to.
+// A missing mid returns true, so an unmatched section is left alone.
+func midOffersAnyCodec(parsed *sdp.SessionDescription, mid string, codecs []webrtc.RTPCodecParameters) bool {
+	for _, md := range parsed.MediaDescriptions {
+		if lksdp.GetMidValue(md) != mid {
+			continue
+		}
+		offered, err := lksdp.CodecsFromMediaDescription(md)
+		if err != nil {
+			return true
+		}
+		for _, o := range offered {
+			for _, c := range codecs {
+				if mime.NormalizeMimeTypeCodec(o.Name) == mime.GetMimeTypeCodec(c.MimeType) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return true
 }
 
 func configureReceiverCodecs(
