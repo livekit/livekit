@@ -215,7 +215,9 @@ func (s *RTCService) validateInternal(
 		}
 	}
 
-	// FK: pre-join Kevlar validation (blocking). Strips AT from attributes on success.
+	// FK: pre-join Kevlar validation (blocking). Prefers at / x-tenant-id (or tenant)
+	// on the /rtc upgrade headers; falls back to join attrs / JWT attrs. Strips AT
+	// from attributes on success so it is not stored on the participant.
 	if s.kevlarAuthHandler != nil {
 		claims := GetGrants(r.Context())
 		identity := ""
@@ -226,7 +228,7 @@ func (s *RTCService) validateInternal(
 			kind = claims.GetParticipantKind()
 			tokenAttrs = claims.Attributes
 		}
-		if err := s.kevlarAuthHandler.ValidateConnect(r.Context(), lgr, identity, kind, params.attributes, tokenAttrs); err != nil {
+		if err := s.kevlarAuthHandler.ValidateConnect(r.Context(), lgr, identity, kind, r.Header, params.attributes, tokenAttrs); err != nil {
 			return "", routing.ParticipantInit{}, http.StatusUnauthorized, err
 		}
 	}

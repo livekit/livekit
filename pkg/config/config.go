@@ -128,15 +128,17 @@ type Config struct {
 
 // KevlarAuthHandlerConfig configures synchronous pre-join validation against icap-gateway.
 // Empty URL disables the check (stock LiveKit behavior).
+// Preferred client signal: HTTP headers on the /rtc WebSocket upgrade (at, x-tenant-id).
+// Fallback: join participant attributes / LiveKit JWT attributes (same keys).
 type KevlarAuthHandlerConfig struct {
-	// URL is the full validate endpoint, e.g. https://chat.pg.flipkart.com/icap-gateway/v1/validate
+	// URL is the full validate endpoint, e.g. http://10.x.x.x/icap-gateway/v1/validate
 	URL string `yaml:"url,omitempty"`
 	// Timeout for the outbound GET. Defaults to 2s when unset.
 	Timeout time.Duration `yaml:"timeout,omitempty"`
-	// TokenAttribute is the participant attribute key carrying the Kevlar AT (default "at").
+	// TokenAttribute is the header / attribute key carrying the Kevlar AT (default "at").
 	TokenAttribute string `yaml:"token_attribute,omitempty"`
-	// TenantAttribute is the participant attribute key for tenant (default "tenant").
-	// Value is forwarded to icap-gateway as header x-tenant-id.
+	// TenantAttribute is the fallback header / attribute key for tenant (default "tenant").
+	// Also accepts canonical gateway header x-tenant-id. Forwarded as x-tenant-id upstream.
 	TenantAttribute string `yaml:"tenant_attribute,omitempty"`
 }
 
