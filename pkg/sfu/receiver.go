@@ -21,6 +21,7 @@ import (
 
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
@@ -47,6 +48,12 @@ type WebRTCReceiver struct {
 
 	connectionStats *connectionquality.ConnectionStats
 	onStatsUpdate   func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)
+
+	// isReady is set once ReceiverBase and connectionStats are assigned.
+	// NewReceiverBase starts the stream tracker manager, whose bitrate reporter
+	// calls the StreamTrackerManagerListener methods below on its own goroutine,
+	// possibly before NewWebRTCReceiver has assigned those fields.
+	isReady atomic.Bool
 }
 
 type ReceiverOpts func(w *WebRTCReceiver) *WebRTCReceiver
@@ -138,6 +145,8 @@ func NewWebRTCReceiver(
 			w.onStatsUpdate(w, stat)
 		}
 	})
+	w.isReady.Store(true)
+
 	codec := track.Codec()
 	w.connectionStats.Start(
 		mime.NormalizeMimeType(codec.MimeType),
@@ -255,6 +264,9 @@ func (w *WebRTCReceiver) SetMaxExpectedSpatialLayer(layer int32) {
 
 // StreamTrackerManagerListener.OnAvailableLayersChanged
 func (w *WebRTCReceiver) OnAvailableLayersChanged() {
+	if !w.isReady.Load() {
+		return
+	}
 	w.connectionStats.AddLayerTransition(w.ReceiverBase.StreamTrackerManager().DistanceToDesired())
 }
 
@@ -264,12 +276,18 @@ func (w *WebRTCReceiver) OnBitrateAvailabilityChanged() {
 
 // StreamTrackerManagerListener.OnMaxPublishedLayerChanged
 func (w *WebRTCReceiver) OnMaxPublishedLayerChanged(maxPublishedLayer int32) {
+	if !w.isReady.Load() {
+		return
+	}
 	w.notifyMaxExpectedLayer(maxPublishedLayer)
 	w.connectionStats.AddLayerTransition(w.ReceiverBase.StreamTrackerManager().DistanceToDesired())
 }
 
 // StreamTrackerManagerListener.OnMaxTemporalLayerSeenChanged
 func (w *WebRTCReceiver) OnMaxTemporalLayerSeenChanged(maxTemporalLayerSeen int32) {
+	if !w.isReady.Load() {
+		return
+	}
 	w.connectionStats.AddLayerTransition(w.ReceiverBase.StreamTrackerManager().DistanceToDesired())
 }
 
@@ -279,6 +297,9 @@ func (w *WebRTCReceiver) OnMaxAvailableLayerChanged(maxAvailableLayer int32) {
 
 // StreamTrackerManagerListener.OnBitrateReport
 func (w *WebRTCReceiver) OnBitrateReport(availableLayers []int32, bitrates Bitrates) {
+	if !w.isReady.Load() {
+		return
+	}
 	w.connectionStats.AddLayerTransition(w.ReceiverBase.StreamTrackerManager().DistanceToDesired())
 }
 

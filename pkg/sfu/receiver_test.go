@@ -36,6 +36,18 @@ import (
 	"github.com/livekit/protocol/utils/mono"
 )
 
+func TestWebRTCReceiver_TrackerCallbacksBeforeReady(t *testing.T) {
+	// the stream tracker manager's bitrate reporter can call these before
+	// NewWebRTCReceiver has assigned ReceiverBase and connectionStats
+	w := &WebRTCReceiver{}
+	require.NotPanics(t, func() {
+		w.OnAvailableLayersChanged()
+		w.OnMaxPublishedLayerChanged(0)
+		w.OnMaxTemporalLayerSeenChanged(0)
+		w.OnBitrateReport(nil, Bitrates{})
+	})
+}
+
 func TestWebRTCReceiver_OnCloseHandler(t *testing.T) {
 	type args struct {
 		fn func()
