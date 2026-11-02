@@ -537,8 +537,11 @@ func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels [
 	return nil
 }
 
+// GetUnmatchMediaForOffer returns the m-sections of mediaType whose mid the last answer does not have.
+// A new m-section is not always appended: when a client stops a transceiver, the browser recycles
+// its m-line for the next transceiver (JSEP 5.2.2), so a new mid can come before negotiated ones.
 func (t *TransportManager) GetUnmatchMediaForOffer(parsedOffer *sdp.SessionDescription, mediaType string) (unmatched []*sdp.MediaDescription, err error) {
-	var lastMatchedMid string
+	matchedMids := make(map[string]struct{})
 	if lastAnswer := t.publisher.CurrentLocalDescription(); lastAnswer != nil {
 		parsedAnswer, err1 := lastAnswer.Unmarshal()
 		if err1 != nil {
@@ -547,22 +550,20 @@ func (t *TransportManager) GetUnmatchMediaForOffer(parsedOffer *sdp.SessionDescr
 			return unmatched, err1
 		}
 
-		for i := len(parsedAnswer.MediaDescriptions) - 1; i >= 0; i-- {
-			media := parsedAnswer.MediaDescriptions[i]
-			if media.MediaName.Media == mediaType {
-				lastMatchedMid, _ = media.Attribute(sdp.AttrKeyMID)
-				break
+		for _, media := range parsedAnswer.MediaDescriptions {
+			if mid, ok := media.Attribute(sdp.AttrKeyMID); ok {
+				matchedMids[mid] = struct{}{}
 			}
 		}
 	}
 
 	for i := len(parsedOffer.MediaDescriptions) - 1; i >= 0; i-- {
 		media := parsedOffer.MediaDescriptions[i]
-		if media.MediaName.Media == mediaType {
-			mid, _ := media.Attribute(sdp.AttrKeyMID)
-			if mid == lastMatchedMid {
-				break
-			}
+		if media.MediaName.Media != mediaType {
+			continue
+		}
+		mid, _ := media.Attribute(sdp.AttrKeyMID)
+		if _, ok := matchedMids[mid]; !ok {
 			unmatched = append(unmatched, media)
 		}
 	}

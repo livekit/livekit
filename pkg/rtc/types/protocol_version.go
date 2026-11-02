@@ -16,7 +16,10 @@ package types
 
 type ProtocolVersion int
 
-const CurrentProtocol = 18
+// CurrentProtocol is sent to clients in ServerInfo.
+// 19: publisher offers may recycle the m-line of a stopped transceiver, so clients can stop the
+// transceivers of an unpublished track.
+const CurrentProtocol = 19
 
 func (v ProtocolVersion) SupportsPackedStreamId() bool {
 	return v > 0
