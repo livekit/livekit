@@ -537,9 +537,6 @@ func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels [
 	return nil
 }
 
-// GetUnmatchMediaForOffer returns the m-sections of mediaType whose mid the last answer does not have.
-// A new m-section is not always appended: when a client stops a transceiver, the browser recycles
-// its m-line for the next transceiver (JSEP 5.2.2), so a new mid can come before negotiated ones.
 func (t *TransportManager) GetUnmatchMediaForOffer(parsedOffer *sdp.SessionDescription, mediaType string) (unmatched []*sdp.MediaDescription, err error) {
 	matchedMids := make(map[string]struct{})
 	if lastAnswer := t.publisher.CurrentLocalDescription(); lastAnswer != nil {
