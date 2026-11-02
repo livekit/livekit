@@ -188,6 +188,10 @@ func NewReceiverBase(params ReceiverBaseParams, trackInfo *livekit.TrackInfo, co
 	return r
 }
 
+func (r *ReceiverBase) Start() {
+	r.streamTrackerManager.Start()
+}
+
 func (r *ReceiverBase) Close(reason string, clearBuffers bool) {
 	if r.isClosed.Swap(true) {
 		return

@@ -145,6 +145,10 @@ func NewWebRTCReceiver(
 		mime.IsMimeTypeStringRED(codec.MimeType) || strings.Contains(strings.ToLower(codec.SDPFmtpLine), "useinbandfec=1"),
 	)
 
+	// start this after setting up `connectionStats` as `streamTrackerManager` could send callbacks with bitrate report
+	// which needs to flow into `connectionStats` module
+	w.ReceiverBase.Start()
+
 	w.UpdateTrackInfo(trackInfo)
 
 	return w
