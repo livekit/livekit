@@ -1080,7 +1080,10 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 	redCodecParameters.RTPCodecCapability.RTCPFeedback = []webrtc.RTCPFeedback{{Type: webrtc.TypeRTCPFBNACK}}
 	require.NoError(t, me.RegisterCodec(redCodecParameters, webrtc.RTPCodecTypeAudio))
 
-	api := webrtc.NewAPI(webrtc.WithMediaEngine(&me))
+	// no host candidates: the test checks only SDP, and a stalled UDP write in an ICE check blocks every agent call
+	se := webrtc.SettingEngine{}
+	se.SetInterfaceFilter(func(string) bool { return false })
+	api := webrtc.NewAPI(webrtc.WithMediaEngine(&me), webrtc.WithSettingEngine(se))
 	pc, err := api.NewPeerConnection(webrtc.Configuration{})
 	require.NoError(t, err)
 	defer pc.Close()
