@@ -4141,12 +4141,11 @@ func (p *ParticipantImpl) onPublicationError(trackID livekit.TrackID) {
 	}
 }
 
-// onSubscribedTrackCodecUnmatched tears down a subscription whose downtrack codec
-// the subscriber did not offer. The transport parks the sender before the answer,
-// so the subscriber never sees the track, and this unsubscribes and reports it.
+// onSubscribedTrackCodecUnmatched tears down a subscription whose codecs the subscriber
+// did not offer. The transport parks the sender before the answer, so the subscriber
+// never sees the track, and this ends the subscription as a failed bind does.
 func (p *ParticipantImpl) onSubscribedTrackCodecUnmatched(trackID livekit.TrackID) {
-	p.UnsubscribeFromTrack(trackID)
-	p.onSubscriptionError(trackID, false, webrtc.ErrUnsupportedCodec)
+	p.SubscriptionManager.FailTrackBind(trackID, webrtc.ErrUnsupportedCodec)
 }
 
 func (p *ParticipantImpl) onSubscriptionError(trackID livekit.TrackID, fatal bool, err error) {

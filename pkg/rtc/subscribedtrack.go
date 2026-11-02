@@ -137,6 +137,7 @@ func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) 
 	stripPacketTrailer := params.MediaTrack.HasPacketTrailer() && !subSupportsPacketTrailer
 	downTrack, err := sfu.NewDownTrack(sfu.DownTrackParams{
 		Codecs:             codecs,
+		BindableCodecs:     params.WrappedReceiver.BindableCodecs(),
 		IsEncrypted:        isEncrypted,
 		Source:             params.MediaTrack.Source(),
 		Receiver:           params.WrappedReceiver,

@@ -157,6 +157,15 @@ func (r *WrappedReceiver) Codecs() []webrtc.RTPCodecParameters {
 	return slices.Clone(r.codecs)
 }
 
+// BindableCodecs returns the codecs a downtrack can bind. An encrypted source cannot
+// be converted between RED and Opus, so only its published codecs bind.
+func (r *WrappedReceiver) BindableCodecs() []webrtc.RTPCodecParameters {
+	if r.params.IsEncrypted {
+		return slices.Clone(r.params.UpstreamCodecs)
+	}
+	return slices.Clone(r.codecs)
+}
+
 func (r *WrappedReceiver) DeleteDownTrack(participantID livekit.ParticipantID) {
 	r.lock.Lock()
 	trackReceiver := r.TrackReceiver

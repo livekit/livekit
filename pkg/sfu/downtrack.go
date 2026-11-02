@@ -233,6 +233,7 @@ type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
 type DownTrackParams struct {
 	Codecs                         []webrtc.RTPCodecParameters
+	BindableCodecs                 []webrtc.RTPCodecParameters // subset of Codecs that Bind can pick, all of Codecs if empty
 	IsEncrypted                    bool
 	Source                         livekit.TrackSource
 	Receiver                       TrackReceiver
@@ -764,17 +765,10 @@ func (d *DownTrack) Codec() webrtc.RTPCodecCapability {
 
 // BindableCodecs returns the upstream codecs Bind can pick, in preference order
 func (d *DownTrack) BindableCodecs() []webrtc.RTPCodecParameters {
-	if !d.params.IsEncrypted {
-		return d.upstreamCodecs
+	if len(d.params.BindableCodecs) != 0 {
+		return d.params.BindableCodecs
 	}
-
-	// an encrypted payload cannot be converted between RED and Opus, so only the primary codec binds
-	for _, u := range d.upstreamCodecs {
-		if !mime.IsMimeTypeStringOpus(u.MimeType) && !mime.IsMimeTypeStringRED(u.MimeType) {
-			return d.upstreamCodecs
-		}
-	}
-	return d.upstreamCodecs[:1]
+	return d.upstreamCodecs
 }
 
 func (d *DownTrack) Mime() mime.MimeType {
