@@ -96,11 +96,8 @@ type Config struct {
 	TURN           TURNConfig               `yaml:"turn,omitempty"`
 	Ingress        IngressConfig            `yaml:"ingress,omitempty"`
 	SIP            SIPConfig                `yaml:"sip,omitempty"`
-	WebHook        webhook.WebHookConfig    `yaml:"webhook,omitempty"`
-	// KevlarAuthHandler is an FK fork option: when URL is set, RTC joins call icap-gateway
-	// GET /validate with the Kevlar AT before the WebSocket is accepted.
-	KevlarAuthHandler KevlarAuthHandlerConfig `yaml:"kevlar_auth_handler,omitempty"`
-	NodeSelector      NodeSelectorConfig      `yaml:"node_selector,omitempty"`
+	WebHook      webhook.WebHookConfig `yaml:"webhook,omitempty"`
+	NodeSelector NodeSelectorConfig    `yaml:"node_selector,omitempty"`
 	KeyFile           string                  `yaml:"key_file,omitempty"`
 	Keys              map[string]string       `yaml:"keys,omitempty"`
 	Region            string                  `yaml:"region,omitempty"`
@@ -124,22 +121,6 @@ type Config struct {
 	EnableParticipantDataBlob bool `yaml:"enable_participant_data_blob,omitempty"`
 
 	API APIConfig `yaml:"api,omitempty"`
-}
-
-// KevlarAuthHandlerConfig configures synchronous pre-join validation against icap-gateway.
-// Empty URL disables the check (stock LiveKit behavior).
-// Preferred client signal: HTTP headers on the /rtc WebSocket upgrade (at, x-tenant-id).
-// Fallback: join participant attributes / LiveKit JWT attributes (same keys).
-type KevlarAuthHandlerConfig struct {
-	// URL is the full validate endpoint, e.g. http://10.x.x.x/icap-gateway/v1/validate
-	URL string `yaml:"url,omitempty"`
-	// Timeout for the outbound GET. Defaults to 2s when unset.
-	Timeout time.Duration `yaml:"timeout,omitempty"`
-	// TokenAttribute is the header / attribute key carrying the Kevlar AT (default "at").
-	TokenAttribute string `yaml:"token_attribute,omitempty"`
-	// TenantAttribute is the fallback header / attribute key for tenant (default "tenant").
-	// Also accepts canonical gateway header x-tenant-id. Forwarded as x-tenant-id upstream.
-	TenantAttribute string `yaml:"tenant_attribute,omitempty"`
 }
 
 // WebTransportConfig is the node's HTTP/3 listener. QUIC has no plaintext mode,

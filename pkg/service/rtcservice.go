@@ -62,8 +62,7 @@ type RTCService struct {
 	config        *config.Config
 	isDev         bool
 	limits        config.LimitConfig
-	telemetry          telemetry.TelemetryService
-	kevlarAuthHandler  *KevlarAuthHandler
+	telemetry telemetry.TelemetryService
 
 	mu          sync.Mutex
 	connections map[*websocket.Conn]struct{}
@@ -81,9 +80,8 @@ func NewRTCService(
 		config:            conf,
 		isDev:             conf.Development,
 		limits:            conf.Limit,
-		telemetry:         telemetry,
-		kevlarAuthHandler: NewKevlarAuthHandler(conf.KevlarAuthHandler),
-		connections:       map[*websocket.Conn]struct{}{},
+		telemetry:   telemetry,
+		connections: map[*websocket.Conn]struct{}{},
 	}
 
 	s.upgrader = websocket.Upgrader{
@@ -215,20 +213,16 @@ func (s *RTCService) validateInternal(
 		}
 	}
 
-	// FK: pre-join Kevlar validation (blocking). Prefers at / x-tenant-id (or tenant)
-	// on the /rtc upgrade headers; falls back to join attrs / JWT attrs. Strips AT
-	// from attributes on success so it is not stored on the participant.
-	if s.kevlarAuthHandler != nil {
+	// FK: gateway authenticates AT and sets x-account-id; require identity user-{accountId}.
+	{
 		claims := GetGrants(r.Context())
 		identity := ""
 		kind := livekit.ParticipantInfo_STANDARD
-		var tokenAttrs map[string]string
 		if claims != nil {
 			identity = claims.Identity
 			kind = claims.GetParticipantKind()
-			tokenAttrs = claims.Attributes
 		}
-		if err := s.kevlarAuthHandler.ValidateConnect(r.Context(), lgr, identity, kind, r.Header, params.attributes, tokenAttrs); err != nil {
+		if err := ensureGatewayAccountMatchesIdentity(r.Header, identity, kind); err != nil {
 			return "", routing.ParticipantInit{}, http.StatusUnauthorized, err
 		}
 	}
