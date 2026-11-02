@@ -846,6 +846,56 @@ func TestAddTrackRejectsInvalidQuality(t *testing.T) {
 			},
 		})
 	})
+
+	// a repeated quality maps a fourth layer to OFF in GetQualityForDimension
+	repeatedQualityLayers := []*livekit.VideoLayer{
+		{Quality: livekit.VideoQuality_LOW, Width: 320, Height: 180},
+		{Quality: livekit.VideoQuality_LOW, Width: 640, Height: 360},
+		{Quality: livekit.VideoQuality_MEDIUM, Width: 1280, Height: 720},
+		{Quality: livekit.VideoQuality_HIGH, Width: 1920, Height: 1080},
+	}
+	t.Run("repeated quality on request layers", func(t *testing.T) {
+		assertRejected(t, &livekit.AddTrackRequest{
+			Cid:    "cid",
+			Type:   livekit.TrackType_VIDEO,
+			Layers: repeatedQualityLayers,
+		})
+	})
+
+	t.Run("repeated quality on simulcast codec layers", func(t *testing.T) {
+		assertRejected(t, &livekit.AddTrackRequest{
+			Cid:  "cid",
+			Type: livekit.TrackType_VIDEO,
+			SimulcastCodecs: []*livekit.SimulcastCodec{
+				{Cid: "cid", Codec: "vp8", Layers: repeatedQualityLayers},
+			},
+		})
+	})
+
+	// qualities are unique per layer list, the same qualities on the request and a codec are expected
+	t.Run("same qualities on request and simulcast codec layers", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+		layers := []*livekit.VideoLayer{
+			{Quality: livekit.VideoQuality_LOW, Width: 320, Height: 180},
+			{Quality: livekit.VideoQuality_MEDIUM, Width: 640, Height: 360},
+			{Quality: livekit.VideoQuality_HIGH, Width: 1280, Height: 720},
+		}
+		p.AddTrack(&livekit.AddTrackRequest{
+			Cid:    "cid",
+			Type:   livekit.TrackType_VIDEO,
+			Layers: layers,
+			SimulcastCodecs: []*livekit.SimulcastCodec{
+				{Cid: "cid", Codec: "vp8", Layers: layers},
+			},
+		})
+
+		for i := range sink.WriteMessageCallCount() {
+			res := sink.WriteMessageArgsForCall(i).(*livekit.SignalResponse)
+			require.IsType(t, &livekit.SignalResponse_TrackPublished{}, res.Message)
+		}
+		require.Len(t, p.pendingTracks, 1)
+	})
 }
 
 func TestPreferMediaCodecForPublisher(t *testing.T) {
