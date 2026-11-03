@@ -790,7 +790,7 @@ func stampJoinRequestTime(pi *routing.ParticipantInit, at time.Time) {
 	if pi.Grants.Attributes == nil {
 		pi.Grants.Attributes = make(map[string]string, 1)
 	}
-	pi.Grants.Attributes[livekit.AttrJoinRequestTime] = strconv.FormatInt(at.UnixMilli(), 10)
+	pi.Grants.Attributes[livekit.AttrRTCJoinRequestTime] = strconv.FormatInt(at.UnixMilli(), 10)
 }
 
 func readInitialResponse(source routing.MessageSource, timeout time.Duration) (*livekit.SignalResponse, error) {

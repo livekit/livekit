@@ -118,7 +118,7 @@ func TestStampJoinRequestTime(t *testing.T) {
 
 	t.Run("new user", func(t *testing.T) {
 		attrs := stamped(routing.ParticipantInit{Grants: &auth.ClaimGrants{Attributes: map[string]string{"a": "b"}}})
-		require.Equal(t, map[string]string{"a": "b", livekit.AttrJoinRequestTime: "1700000000123"}, attrs)
+		require.Equal(t, map[string]string{"a": "b", livekit.AttrRTCJoinRequestTime: "1700000000123"}, attrs)
 	})
 
 	t.Run("reconnect", func(t *testing.T) {
