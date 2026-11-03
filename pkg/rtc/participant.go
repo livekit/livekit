@@ -745,7 +745,8 @@ func (p *ParticipantImpl) UpdateMetadata(update *livekit.UpdateParticipantMetada
 		return sendRequestResponse()
 	}
 
-	if err = p.checkMetadataLimits(update.Name, update.Metadata, update.Attributes); err != nil {
+	// shortcut: two concurrent updates can each pass before either is stored, serialize check and store if that matters
+	if err = p.checkMetadataLimits(update.Name, update.Metadata, p.mergedAttributes(update.Attributes)); err != nil {
 		switch err {
 		case signalling.ErrNameExceedsLimits:
 			requestResponse.Reason = livekit.RequestResponse_LIMIT_EXCEEDED
@@ -825,6 +826,26 @@ func (p *ParticipantImpl) SetMetadata(metadata string) {
 	if onClaimsChanged != nil {
 		onClaimsChanged(p)
 	}
+}
+
+// mergedAttributes returns the attributes that SetAttributes(update) would store, so limits check the result
+func (p *ParticipantImpl) mergedAttributes(update map[string]string) map[string]string {
+	if len(update) == 0 {
+		return nil
+	}
+
+	merged := maps.Clone(p.grants.Load().Attributes)
+	if merged == nil {
+		merged = make(map[string]string, len(update))
+	}
+	for k, v := range update {
+		if v == "" {
+			delete(merged, k)
+		} else {
+			merged[k] = v
+		}
+	}
+	return merged
 }
 
 func (p *ParticipantImpl) SetAttributes(attrs map[string]string) {
