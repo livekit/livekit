@@ -980,6 +980,11 @@ func (t *MediaTrackReceiver) UpdateVideoSize(mimeType mime.MimeType, sizes []cod
 	var changed bool
 	t.lock.Lock()
 	trackInfo := t.TrackInfo()
+	if announced := buffer.GetVideoLayersForMimeType(mimeType, trackInfo); len(announced) > len(sizes) {
+		t.lock.Unlock()
+		return
+	}
+
 	clonedInfo := proto.CloneOf(trackInfo)
 	var maxWidth, maxHeight uint32
 	for _, size := range sizes {

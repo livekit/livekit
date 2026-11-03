@@ -19,9 +19,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/mediatransportutil/pkg/codec"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
 
 func TestTrackInfo(t *testing.T) {
@@ -194,4 +197,54 @@ func TestGetQualityForDimension(t *testing.T) {
 		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(mime.MimeTypeH264, 1200, 800))
 	})
 
+}
+
+func TestUpdateVideoSize(t *testing.T) {
+	newTrack := func() *MediaTrack {
+		return NewMediaTrack(MediaTrackParams{
+			Logger:            logger.GetLogger(),
+			ParticipantID:     func() livekit.ParticipantID { return "PA_test" },
+			TelemetryListener: func() types.ParticipantTelemetryListener { return types.NullParticipantTelemetryListener{} },
+		}, &livekit.TrackInfo{
+			Type:   livekit.TrackType_VIDEO,
+			Source: livekit.TrackSource_SCREEN_SHARE,
+			Width:  1920,
+			Height: 1080,
+			Codecs: []*livekit.SimulcastCodecInfo{
+				{
+					MimeType: mime.MimeTypeVP8.String(),
+					Layers: []*livekit.VideoLayer{
+						{Quality: livekit.VideoQuality_LOW, Width: 960, Height: 540},
+						{Quality: livekit.VideoQuality_HIGH, Width: 1920, Height: 1080},
+					},
+				},
+			},
+		})
+	}
+
+	t.Run("measured sizes replace the announced ones", func(t *testing.T) {
+		mt := newTrack()
+		require.Equal(t, livekit.VideoQuality_LOW, mt.GetQualityForDimension(mime.MimeTypeVP8, 889, 500))
+
+		mt.UpdateVideoSize(mime.MimeTypeVP8, []codec.VideoSize{{Width: 834, Height: 407}, {Width: 1668, Height: 814}})
+
+		info := mt.ToProto()
+		require.Equal(t, uint32(1668), info.Width)
+		require.Equal(t, uint32(814), info.Height)
+		require.Equal(t, uint32(834), info.Codecs[0].Layers[0].Width)
+		require.Equal(t, uint32(407), info.Codecs[0].Layers[0].Height)
+		require.Equal(t, livekit.VideoQuality_MEDIUM, mt.GetQualityForDimension(mime.MimeTypeVP8, 889, 500))
+	})
+
+	t.Run("fewer measured sizes than announced layers change nothing", func(t *testing.T) {
+		mt := newTrack()
+
+		mt.UpdateVideoSize(mime.MimeTypeVP8, []codec.VideoSize{{Width: 834, Height: 407}})
+
+		info := mt.ToProto()
+		require.Equal(t, uint32(1920), info.Width)
+		require.Equal(t, uint32(1080), info.Height)
+		require.Equal(t, uint32(960), info.Codecs[0].Layers[0].Width)
+		require.Equal(t, uint32(540), info.Codecs[0].Layers[0].Height)
+	})
 }
