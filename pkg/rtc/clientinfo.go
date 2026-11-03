@@ -34,6 +34,18 @@ func (c ClientInfo) isSafari() bool {
 	return c.ClientInfo != nil && strings.EqualFold(c.ClientInfo.Browser, "safari")
 }
 
+// isWebKit - Safari on any platform (incl. iOS "Mobile Safari" and WKWebView), and any browser on iOS,
+// as every iOS browser (Chrome, Firefox, Edge, in-app browsers) runs on WebKit
+func (c ClientInfo) isWebKit() bool {
+	if c.ClientInfo == nil {
+		return false
+	}
+	if strings.Contains(strings.ToLower(c.ClientInfo.Browser), "safari") {
+		return true
+	}
+	return c.ClientInfo.Sdk == livekit.ClientInfo_JS && strings.EqualFold(c.ClientInfo.Os, "ios")
+}
+
 func (c ClientInfo) isGo() bool {
 	return c.ClientInfo != nil && c.ClientInfo.Sdk == livekit.ClientInfo_GO
 }
@@ -116,7 +128,7 @@ func (c ClientInfo) SupportsSctpZeroChecksum() bool {
 }
 
 func (c ClientInfo) SupportsTransceiverReuse() bool {
-	return !c.isSafari()
+	return !c.isWebKit()
 }
 
 func (c ClientInfo) HasCapability(cap livekit.ClientInfo_Capability) bool {
