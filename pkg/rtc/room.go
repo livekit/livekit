@@ -515,7 +515,9 @@ func (r *Room) Join(
 		// initiates sub connection as primary
 		if participant.ProtocolVersion().SupportFastStart() {
 			go func() {
-				r.subscribeToExistingTracks(participant, false)
+				// Sync subscribe so existing tracks (e.g. agent audio) are in offer #1.
+				// Async subscribe raced Negotiate and triggered mid-ICE offer #2 (RETRY).
+				r.subscribeToExistingTracks(participant, true)
 				participant.Negotiate(true)
 			}()
 		} else {
