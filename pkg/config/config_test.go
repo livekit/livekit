@@ -66,6 +66,29 @@ func TestConfig_SignalMessageSizeLimitOverride(t *testing.T) {
 	require.Equal(t, int64(0), conf.Limit.AgentSignalMessageSizeLimit)
 }
 
+func TestCheckAttributesSize(t *testing.T) {
+	conf, err := NewConfig("", true, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, uint32(1024), conf.Limit.MaxLKAttributesSize)
+
+	l := LimitConfig{MaxAttributesSize: 5, MaxLKAttributesSize: 10}
+	// "k"+"vvvv" is 5 bytes, "lk.k"+"vvvvvv" is 10 bytes, each at its own limit
+	attrs := map[string]string{"k": "vvvv", "lk.k": "vvvvvv"}
+	require.True(t, l.CheckAttributesSize(attrs))
+	require.True(t, l.CheckLKAttributesSize(attrs))
+
+	attrs["k"] = "vvvvv"
+	require.False(t, l.CheckAttributesSize(attrs))
+	require.True(t, l.CheckLKAttributesSize(attrs))
+
+	attrs["k"] = "vvvv"
+	attrs["lk.k"] = "vvvvvvv"
+	require.True(t, l.CheckAttributesSize(attrs))
+	require.False(t, l.CheckLKAttributesSize(attrs))
+
+	require.True(t, LimitConfig{}.CheckLKAttributesSize(attrs))
+}
+
 func TestConfig_PSRPCCompressionDefaults(t *testing.T) {
 	conf, err := NewConfig("", true, nil, nil)
 	require.NoError(t, err)

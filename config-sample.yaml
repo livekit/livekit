@@ -440,8 +440,11 @@ keys:
 #   subscription_limit_audio: 0
 #   # limit size of room and participant's metadata, 0 for no limit
 #   max_metadata_size: 0
-#   # limit size of participant attributes, 0 for no limit
+#   # limit size of participant attributes without the lk. prefix, 0 for no limit
 #   max_attributes_size: 0
+#   # limit size of participant attributes with the lk. prefix, which LiveKit services set.
+#   # defaults to 1 KiB, 0 for no limit
+#   max_lk_attributes_size: 1024
 #   # limit length of room names
 #   max_room_name_length: 0
 #   # limit length of participant identity
