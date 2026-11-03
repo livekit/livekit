@@ -98,6 +98,9 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		if !s.limitConf.CheckAttributesSize(ad.Attributes) {
 			return nil, twirp.InvalidArgumentError(ErrAttributeExceedsLimits.Error(), strconv.Itoa(int(s.limitConf.MaxAttributesSize)))
 		}
+		if !s.limitConf.CheckLKAttributesSize(ad.Attributes) {
+			return nil, twirp.InvalidArgumentError(ErrAttributeExceedsLimits.Error(), "lk. attributes max size "+strconv.Itoa(int(s.limitConf.MaxLKAttributesSize)))
+		}
 		if err := agent.ValidateThreadID(ad.GetThreadId()); err != nil {
 			return nil, twirp.InvalidArgumentError("thread_id", err.Error())
 		}
@@ -278,6 +281,9 @@ func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.Update
 
 	if !s.limitConf.CheckAttributesSize(req.Attributes) {
 		return nil, twirp.InvalidArgumentError(ErrAttributeExceedsLimits.Error(), strconv.Itoa(int(s.limitConf.MaxAttributesSize)))
+	}
+	if !s.limitConf.CheckLKAttributesSize(req.Attributes) {
+		return nil, twirp.InvalidArgumentError(ErrAttributeExceedsLimits.Error(), "lk. attributes max size "+strconv.Itoa(int(s.limitConf.MaxLKAttributesSize)))
 	}
 
 	if err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room)); err != nil {

@@ -95,6 +95,8 @@ const (
 
 var (
 	ErrMoveOldClientVersion = psrpc.NewErrorf(psrpc.FailedPrecondition, "participant client version does not support moving")
+
+	errLKAttributesExceedsLimits = fmt.Errorf("%w: lk. attributes", signalling.ErrAttributesExceedsLimits)
 )
 
 // -------------------------------------------------
@@ -712,6 +714,10 @@ func (p *ParticipantImpl) checkMetadataLimits(
 		return signalling.ErrAttributesExceedsLimits
 	}
 
+	if !p.params.LimitConfig.CheckLKAttributesSize(attributes) {
+		return errLKAttributesExceedsLimits
+	}
+
 	return nil
 }
 
@@ -759,6 +765,10 @@ func (p *ParticipantImpl) UpdateMetadata(update *livekit.UpdateParticipantMetada
 		case signalling.ErrAttributesExceedsLimits:
 			requestResponse.Reason = livekit.RequestResponse_LIMIT_EXCEEDED
 			requestResponse.Message = "exceeds attributes size limit"
+
+		case errLKAttributesExceedsLimits:
+			requestResponse.Reason = livekit.RequestResponse_LIMIT_EXCEEDED
+			requestResponse.Message = "exceeds lk. attributes size limit"
 		}
 		return sendRequestResponse()
 	}

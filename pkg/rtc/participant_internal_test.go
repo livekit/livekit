@@ -47,6 +47,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
+	rtcsignalling "github.com/livekit/livekit-server/pkg/rtc/signalling"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 	"github.com/livekit/livekit-server/pkg/testutils"
@@ -669,6 +670,17 @@ func TestCloseDone(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("close not done after its callbacks finished")
 	}
+}
+
+func TestCheckMetadataLimitsLKAttributes(t *testing.T) {
+	p := newParticipantForTest("test")
+	p.params.LimitConfig = config.LimitConfig{MaxAttributesSize: 5, MaxLKAttributesSize: 10}
+
+	require.NoError(t, p.checkMetadataLimits("", "", map[string]string{"k": "vvvv", "lk.k": "vvvvvv"}))
+
+	err := p.checkMetadataLimits("", "", map[string]string{"lk.k": "vvvvvvv"})
+	require.Equal(t, errLKAttributesExceedsLimits, err)
+	require.ErrorIs(t, err, rtcsignalling.ErrAttributesExceedsLimits)
 }
 
 func TestCorrectJoinedAt(t *testing.T) {
