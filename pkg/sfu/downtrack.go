@@ -1078,7 +1078,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 
 	trailerStripped := 0
 	if d.params.StripPacketTrailer {
-		if trailerStripped = packettrailer.StripTrailer(payload, tp.marker || tp.isEndOfLayerFrame); trailerStripped > 0 {
+		if trailerStripped = packettrailer.StripTrailer(payload, d.Mime(), tp.marker || tp.isEndOfLayerFrame); trailerStripped > 0 {
 			payload = payload[:len(payload)-trailerStripped]
 		}
 	}
@@ -2346,6 +2346,12 @@ func (d *DownTrack) retransmitPacket(epm *extPacketMeta, sourcePkt []byte, isPro
 		if int(epm.trailerStripped) > len(payload)-rtxOffset {
 			d.params.Logger.Warnw(
 				"recorded packet trailer size overflows payload", errPayloadOverflow,
+				"trailerStripped", epm.trailerStripped,
+				"payloadSize", len(payload)-rtxOffset,
+			)
+		} else if !packettrailer.ShrinkLastAggregatedNALU(payload[rtxOffset:], d.Mime(), int(epm.trailerStripped)) {
+			d.params.Logger.Warnw(
+				"could not shrink aggregated NAL unit for packet trailer", nil,
 				"trailerStripped", epm.trailerStripped,
 				"payloadSize", len(payload)-rtxOffset,
 			)
