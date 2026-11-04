@@ -62,6 +62,18 @@ func parsePeerCIDRs(field string, cidrs []string) ([]*net.IPNet, error) {
 	return parsed, nil
 }
 
+// hasIPv6BindAddress reports whether any TURN bind address is IPv6, the only
+// kind that can open an IPv6 relay. It classifies addresses the same way
+// NewTurnServer picks the node IP for each one.
+func hasIPv6BindAddress(addrs []string) bool {
+	for _, addr := range addrs {
+		if net.ParseIP(addr).To4() == nil {
+			return true
+		}
+	}
+	return false
+}
+
 func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone bool) (*turn.Server, error) {
 	turnConf := conf.TURN
 	if !turnConf.Enabled {
@@ -95,6 +107,11 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 		Realm:         LivekitRealm,
 		AuthHandler:   authHandler,
 		LoggerFactory: pionlogger.NewLoggerFactory(logger.GetLogger()),
+		// without REQUESTED-ADDRESS-FAMILY, pion picks the relay family from the
+		// address the client reached, so an IPv6 client of a dual-stack 0.0.0.0
+		// listener would be refused (508) an IPv6 relay that no IPv4 bind address
+		// can open. With no IPv6 bind address, keep the RFC 8656 default of IPv4.
+		StrictAddressFamily: !hasIPv6BindAddress(turnConf.BindAddresses),
 	}
 
 	// cap concurrent relay allocations per participant so one credential cannot

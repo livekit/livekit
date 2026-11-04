@@ -414,3 +414,93 @@ func TestNewTURNTCPListener_ProxyProtocolRequiresTrustedCIDRs(t *testing.T) {
 	_, err = newTURNTCPListener(proxyProtocolTURNConfig("not-a-cidr"), "127.0.0.1:0")
 	require.Error(t, err)
 }
+
+// allocateTURNRelay allocates a UDP relay on the TURN server at address the way
+// a browser does, without REQUESTED-ADDRESS-FAMILY.
+func allocateTURNRelay(t *testing.T, h *TURNAuthHandler, address string) (net.Addr, error) {
+	t.Helper()
+	conn, err := net.Dial("tcp", address)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	pID := livekit.ParticipantID("PA_" + address)
+	username, expiry := h.CreateUsername(turnTestAPIKey, pID, 60)
+	password, err := h.CreatePassword(turnTestAPIKey, pID, expiry)
+	require.NoError(t, err)
+
+	client, err := turn.NewClient(&turn.ClientConfig{
+		Conn:     turn.NewSTUNConn(conn),
+		Username: username,
+		Password: password,
+		Realm:    LivekitRealm,
+		// the client sends REQUESTED-ADDRESS-FAMILY only for IPv6, so this
+		// keeps it from inferring IPv6 from an IPv6 connection
+		RequestedAddressFamily: turn.RequestedAddressFamilyIPv4,
+	})
+	require.NoError(t, err)
+	defer client.Close()
+	require.NoError(t, client.Listen())
+
+	relay, err := client.Allocate()
+	if err != nil {
+		return nil, err
+	}
+	defer relay.Close()
+	return relay.LocalAddr(), nil
+}
+
+func TestNewTurnServer_RelayAddressFamily(t *testing.T) {
+	if l, err := net.Listen("tcp", "[::1]:0"); err != nil {
+		t.Skip("IPv6 loopback not available")
+	} else {
+		_ = l.Close()
+	}
+
+	for _, tc := range []struct {
+		name          string
+		bindAddress   string
+		clientHost    string
+		expectedRelay string
+	}{
+		// an IPv4-only node must relay an IPv6 client over IPv4, not refuse it
+		{name: "IPv4 bind, IPv4 client", bindAddress: "0.0.0.0", clientHost: "127.0.0.1", expectedRelay: "127.0.0.1"},
+		{name: "IPv4 bind, IPv6 client", bindAddress: "0.0.0.0", clientHost: "::1", expectedRelay: "127.0.0.1"},
+		// a node with an IPv6 bind address keeps relaying IPv6 clients over IPv6
+		{name: "IPv6 bind, IPv6 client", bindAddress: "::", clientHost: "::1", expectedRelay: "::1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			l, err := net.Listen("tcp", ":0")
+			require.NoError(t, err)
+			port := l.Addr().(*net.TCPAddr).Port
+			require.NoError(t, l.Close())
+
+			conf := &config.Config{}
+			conf.TURN.Enabled = true
+			conf.TURN.Domain = "turn.example.com"
+			conf.TURN.TLSPort = port
+			conf.TURN.ExternalTLS = true
+			conf.TURN.BindAddresses = []string{tc.bindAddress}
+			conf.TURN.RelayPortRangeStart = 30000
+			conf.TURN.RelayPortRangeEnd = 40000
+			conf.RTC.NodeIP.V4 = "127.0.0.1"
+			conf.RTC.NodeIP.V6 = "::1"
+			h := newTestTurnAuthHandler()
+
+			server, err := NewTurnServer(conf, h.HandleAuth, true)
+			require.NoError(t, err)
+			defer server.Close()
+
+			relayAddr, err := allocateTURNRelay(t, h, net.JoinHostPort(tc.clientHost, fmt.Sprint(port)))
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedRelay, relayAddr.(*net.UDPAddr).IP.String())
+		})
+	}
+}
+
+func TestHasIPv6BindAddress(t *testing.T) {
+	require.False(t, hasIPv6BindAddress(nil))
+	require.False(t, hasIPv6BindAddress([]string{"0.0.0.0"}))
+	require.False(t, hasIPv6BindAddress([]string{"0.0.0.0", "10.0.0.1"}))
+	require.True(t, hasIPv6BindAddress([]string{"::"}))
+	require.True(t, hasIPv6BindAddress([]string{"0.0.0.0", "2001:db8::1"}))
+}
