@@ -19,6 +19,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"reflect"
@@ -864,7 +865,12 @@ func TestSingleNodeAttributes(t *testing.T) {
 				if pubRemote == nil {
 					return "could not find remote publisher"
 				}
-				attrs := pubRemote.Attributes
+				attrs := maps.Clone(pubRemote.Attributes)
+				// the server stamps when it received the join request
+				if attrs[livekit.AttrRTCJoinRequestTime] == "" {
+					return fmt.Sprintf("did not receive the join request time: %v", attrs)
+				}
+				delete(attrs, livekit.AttrRTCJoinRequestTime)
 				if !reflect.DeepEqual(attrs, map[string]string{
 					"a": "0",
 					"b": "2",
