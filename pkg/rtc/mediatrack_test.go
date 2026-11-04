@@ -210,6 +210,10 @@ func TestUpdateVideoSize(t *testing.T) {
 			Source: livekit.TrackSource_SCREEN_SHARE,
 			Width:  1920,
 			Height: 1080,
+			Layers: []*livekit.VideoLayer{
+				{Quality: livekit.VideoQuality_LOW, Width: 960, Height: 540},
+				{Quality: livekit.VideoQuality_HIGH, Width: 1920, Height: 1080},
+			},
 			Codecs: []*livekit.SimulcastCodecInfo{
 				{
 					MimeType: mime.MimeTypeVP8.String(),
@@ -233,6 +237,10 @@ func TestUpdateVideoSize(t *testing.T) {
 		require.Equal(t, uint32(814), info.Height)
 		require.Equal(t, uint32(834), info.Codecs[0].Layers[0].Width)
 		require.Equal(t, uint32(407), info.Codecs[0].Layers[0].Height)
+		require.Equal(t, uint32(834), info.Layers[0].Width)
+		require.Equal(t, uint32(407), info.Layers[0].Height)
+		require.Equal(t, uint32(1668), info.Layers[1].Width)
+		require.Equal(t, uint32(814), info.Layers[1].Height)
 		require.Equal(t, livekit.VideoQuality_MEDIUM, mt.GetQualityForDimension(mime.MimeTypeVP8, 889, 500))
 	})
 

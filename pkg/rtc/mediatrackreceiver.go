@@ -1000,7 +1000,7 @@ func (t *MediaTrackReceiver) UpdateVideoSize(mimeType mime.MimeType, sizes []cod
 		changed = true
 	}
 
-	for _, c := range clonedInfo.Codecs {
+	for ci, c := range clonedInfo.Codecs {
 		if mime.NormalizeMimeType(c.MimeType) == mimeType {
 			for i, l := range c.Layers {
 				if i < len(sizes) && (sizes[i].Width != 0 || sizes[i].Height != 0) &&
@@ -1009,6 +1009,11 @@ func (t *MediaTrackReceiver) UpdateVideoSize(mimeType mime.MimeType, sizes []cod
 					l.Height = sizes[i].Height
 					changed = true
 				}
+			}
+
+			// for clients that don't use simulcast codecs (old client version or single codec)
+			if ci == 0 {
+				clonedInfo.Layers = c.Layers
 			}
 		}
 	}
