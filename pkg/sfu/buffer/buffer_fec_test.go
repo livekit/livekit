@@ -25,7 +25,7 @@ import (
 	pionflexfec "github.com/pion/interceptor/pkg/flexfec"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
-	"github.com/pion/transport/v4/packetio"
+	"github.com/pion/transport/v5/packetio"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

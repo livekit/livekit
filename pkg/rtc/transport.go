@@ -27,7 +27,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pion/dtls/v3/pkg/crypto/elliptic"
+	"github.com/pion/dtls/v4/pkg/crypto/elliptic"
 	"github.com/pion/ice/v4"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/cc"
@@ -422,6 +422,7 @@ func newPeerConnection(
 		// As Firefox does not support migration, ICE Lite can be disabled.
 		se.SetLite(false)
 	}
+	se.SetAnsweringDTLSRole(webrtc.DTLSRoleServer)
 	// ICE checks already prove the remote address, so the HelloVerifyRequest cookie only adds a round trip.
 	// pion applies this only when this side ends up as the DTLS server.
 	se.SetDTLSInsecureSkipHelloVerify(true)
