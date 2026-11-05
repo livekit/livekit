@@ -239,6 +239,7 @@ type PCTransport struct {
 	lastNegotiate      time.Time
 
 	onNegotiationStateChanged func(state transport.NegotiationState)
+	onICEConnected            func()
 
 	rtxInfoExtractorFactory *sfuinterceptor.RTXInfoExtractorFactory
 
@@ -729,7 +730,14 @@ func (t *PCTransport) setICEStartedAt(at time.Time) {
 	t.lock.Unlock()
 }
 
+func (t *PCTransport) OnICEConnected(f func()) {
+	t.lock.Lock()
+	t.onICEConnected = f
+	t.lock.Unlock()
+}
+
 func (t *PCTransport) setICEConnectedAt(at time.Time) {
+	var onICEConnected func()
 	t.lock.Lock()
 	if t.iceFirstConnectedAt.IsZero() {
 		//
@@ -737,6 +745,7 @@ func (t *PCTransport) setICEConnectedAt(at time.Time) {
 		// This prevents reset of iceFirstConnectedAt if ICE goes `Connected` -> `Disconnected` -> `Connected`.
 		//
 		t.iceFirstConnectedAt = at
+		onICEConnected = t.onICEConnected
 
 		// set failure timer for dtls handshake
 		iceDuration := at.Sub(t.iceFirstStartedAt)
@@ -766,6 +775,10 @@ func (t *PCTransport) setICEConnectedAt(at time.Time) {
 	}
 	t.mayFailedICEStats = nil
 	t.lock.Unlock()
+
+	if onICEConnected != nil {
+		onICEConnected()
+	}
 }
 
 func (t *PCTransport) logMayFailedICEStats() {
@@ -841,9 +854,29 @@ func (t *PCTransport) setPeerConnectionConnectedAt(at time.Time) bool {
 	}
 
 	t.peerConnectionFirstConnectedAt = at
+	iceAt := t.iceFirstConnectedAt
 	prometheus.RecordServiceOperationSuccess("peer_connection")
 	prometheus.RecordPeerConnectionState(t.params.Transport, "connected")
 	t.lock.Unlock()
+
+	// PeerConnection Connected ⇒ DTLS handshake finished (WebRTC).
+	if !iceAt.IsZero() {
+		dtlsMs := at.Sub(iceAt)
+		sdk := livekit.ClientInfo_UNKNOWN
+		if t.params.ClientInfo.ClientInfo != nil {
+			sdk = t.params.ClientInfo.GetSdk()
+		}
+		prometheus.RecordSessionICEToDTLS(
+			int(t.params.ProtocolVersion),
+			sdk,
+			t.params.Transport.String(),
+			dtlsMs,
+		)
+		t.params.Logger.Infow("dtls_handshake_complete",
+			"transport", t.params.Transport.String(),
+			"iceToDtlsMs", dtlsMs.Milliseconds(),
+		)
+	}
 	return true
 }
 
@@ -1495,6 +1528,13 @@ func (t *PCTransport) PeerConnectionFirstConnectedAt() time.Time {
 	defer t.lock.RUnlock()
 
 	return t.peerConnectionFirstConnectedAt
+}
+
+func (t *PCTransport) ICEFirstConnectedAt() time.Time {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.iceFirstConnectedAt
 }
 
 func (t *PCTransport) GetICEConnectionInfo() *types.ICEConnectionInfo {
@@ -3059,7 +3099,8 @@ func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription, 
 	if t.negotiationState == transport.NegotiationStateRetry {
 		t.setNegotiationState(transport.NegotiationStateNone)
 
-		t.params.Logger.Debugw("re-negotiate after receiving answer")
+		t.params.Logger.Infow("re-negotiate after receiving answer")
+		prometheus.RecordSessionJoinPathEvent("renegotiate_after_answer", 0, livekit.ClientInfo_UNKNOWN)
 		return t.createAndSendOffer(nil)
 	}
 
