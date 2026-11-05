@@ -30,7 +30,7 @@ import (
 
 	"github.com/jxskiss/base62"
 	"github.com/pion/sdp/v3"
-	"github.com/pion/stun/v3"
+	"github.com/pion/stun/v4"
 	"github.com/pion/turn/v5"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"

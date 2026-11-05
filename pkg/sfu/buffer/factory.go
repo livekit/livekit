@@ -18,7 +18,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/pion/transport/v4/packetio"
+	"github.com/pion/transport/v5/packetio"
 )
 
 type FactoryOfBufferFactory struct {

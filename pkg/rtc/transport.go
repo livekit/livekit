@@ -27,7 +27,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pion/dtls/v3/pkg/crypto/elliptic"
+	"github.com/pion/dtls/v4/pkg/crypto/elliptic"
 	"github.com/pion/ice/v4"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/cc"

@@ -20,7 +20,7 @@ require (
 	github.com/jellydator/ttlcache/v3 v3.4.1
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
-	github.com/livekit/mediatransportutil v0.0.0-20261104100146-15eb7544ee38
+	github.com/livekit/mediatransportutil v0.0.0-20261104095513-c341f61ad457
 	github.com/livekit/protocol v1.53.2
 	github.com/livekit/psrpc v0.8.2
 	github.com/mackerelio/go-osstat v0.2.8
@@ -30,14 +30,16 @@ require (
 	github.com/olekukonko/tablewriter v1.1.4
 	github.com/ory/dockertest/v4 v4.0.0
 	github.com/pion/datachannel v1.6.3
-	github.com/pion/dtls/v3 v3.1.10
-	github.com/pion/ice/v4 v4.4.7
+	github.com/pion/dtls/v4 v4.0.0-rc.8
+	github.com/pion/ice/v4 v4.4.8
 	github.com/pion/interceptor v0.1.49
-	github.com/pion/rtcp v1.2.19
-	github.com/pion/rtp v1.10.5
+	github.com/pion/rtcp v1.2.20
+	github.com/pion/rtp v1.10.6
 	github.com/pion/sctp v1.12.0
 	github.com/pion/sdp/v3 v3.0.20
+	github.com/pion/stun/v4 v4.0.1
 	github.com/pion/transport/v4 v4.1.3
+	github.com/pion/transport/v5 v5.1.4
 	github.com/pion/turn/v5 v5.1.2
 	github.com/pion/webrtc/v4 v4.2.23
 	github.com/pires/go-proxyproto v0.15.0
@@ -88,7 +90,7 @@ require (
 	github.com/olekukonko/errors v1.3.0 // indirect
 	github.com/olekukonko/ll v0.1.8 // indirect
 	github.com/petermattis/goid v0.0.0-20260918085751-abfca077860b // indirect
-	github.com/pion/transport/v5 v5.1.1 // indirect
+	github.com/pion/dtls/v3 v3.1.15 // indirect
 	github.com/puzpuzpuz/xsync/v4 v4.5.0 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
@@ -167,13 +169,6 @@ tool (
 	golang.org/x/tools/cmd/goimports
 )
 
-replace github.com/pion/webrtc/v4 => github.com/livekit/webrtc-pion/v4 v4.2.18-warp.7
+replace github.com/pion/webrtc/v4 => github.com/livekit/webrtc-pion/v4 v4.2.25-warp.1
 
-replace github.com/pion/dtls/v3 => github.com/livekit/dtls/v3 v3.1.5-warp.3
-
-replace github.com/pion/ice/v4 => github.com/livekit/ice/v4 v4.4.0-warp.3
-
-// turn and srtp moved to pion/transport/v5; the warp forks above are still on v4
-replace github.com/pion/turn/v5 => github.com/pion/turn/v5 v5.0.13
-
-replace github.com/pion/srtp/v3 => github.com/pion/srtp/v3 v3.0.13
+replace github.com/pion/ice/v4 => github.com/livekit/ice/v4 v4.4.8-warp.2

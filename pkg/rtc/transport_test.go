@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pion/dtls/v3/pkg/protocol/handshake"
+	"github.com/pion/dtls/v4/pkg/protocol/handshake"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
