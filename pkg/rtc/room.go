@@ -634,8 +634,8 @@ func (r *Room) onSyncState(participant types.LocalParticipant, state *livekit.Sy
 			break
 		}
 
-		// a track only moves from pending to published, so looking at pending first
-		// cannot miss one that moves between the two lookups
+		// pending first cannot miss a track moving to published; one published then closed in between reads as unknown,
+		// which is fine since signals are handled sequentially per participant, so only participant close can do that
 		trackID := livekit.TrackID(ti.Sid)
 		if participant.GetPendingTrack(trackID) == nil && participant.GetPublishedTrack(trackID) == nil {
 			pLogger.Warnw("unknown track during resume", nil, "trackID", ti.Sid)
