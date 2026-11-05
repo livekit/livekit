@@ -16,6 +16,7 @@ package rtc
 
 import (
 	"fmt"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -1609,61 +1610,60 @@ func newParticipantWithPendingTrack(t *testing.T, kind livekit.TrackType) (*Part
 	return p, pti.trackInfos[0].Sid
 }
 
-// the same move mediaTrackReceived performs under the write lock
-func publishPendingTrack(p *ParticipantImpl, kind livekit.TrackType) *MediaTrack {
-	p.pendingTracksLock.Lock()
-	defer p.pendingTracksLock.Unlock()
+// the same move mediaTrackReceived performs, with pendingTracksLock held
+func publishPendingTrackLocked(p *ParticipantImpl, kind livekit.TrackType) *MediaTrack {
 	signalCid, ti, _, _, _ := p.getPendingTrack(pendingTrackCid, kind, true)
 	return p.addMediaTrack(signalCid, ti)
 }
 
-// a reader blocked in RLock carries the wait reason [sync.RWMutex.RLock] in its
-// runtime.Stack header; frame names the function it blocked from
-func waitForParkedReader(t *testing.T, frame string) {
+func publishPendingTrack(p *ParticipantImpl, kind livekit.TrackType) *MediaTrack {
+	p.pendingTracksLock.Lock()
+	defer p.pendingTracksLock.Unlock()
+	return publishPendingTrackLocked(p, kind)
+}
+
+// CI rewrites sync mutexes under ./pkg, string literals included, so this matches frames
+// of pendingTracksLock, a protocol utils.RWMutex the rewrite leaves alone
+func waitForPendingTracksLockWaiter(t *testing.T, method string, returned <-chan struct{}) {
+	waiter := regexp.MustCompile(`protocol/utils\.\(\*RWMutex\)\.R?Lock\(.*\n.*\n.*\.\(\*ParticipantImpl\)\.` + method + `\(`)
 	deadline := time.Now().Add(parkDeadline)
 	buf := make([]byte, 1<<20)
 	for {
-		n := runtime.Stack(buf, true)
-		for _, g := range strings.Split(string(buf[:n]), "\n\n") {
-			header, _, _ := strings.Cut(g, "\n")
-			if strings.Contains(header, "[sync.RWMutex.RLock]") && strings.Contains(g, frame) {
-				return
-			}
+		select {
+		case <-returned:
+			require.FailNow(t, method+" returned without waiting on pendingTracksLock")
+		default:
 		}
-		require.Less(t, time.Now(), deadline, "no goroutine parked in RLock under %s", frame)
+		if waiter.Match(buf[:runtime.Stack(buf, true)]) {
+			return
+		}
+		require.Less(t, time.Now(), deadline, "%s never waited on pendingTracksLock", method)
 		runtime.Gosched()
 	}
 }
 
-// parks request in its published lookup and starts the move, so code that does not
-// hold pendingTracksLock across both lookups lets the move slip between them
-func requestDuringPublish(t *testing.T, p *ParticipantImpl, kind livekit.TrackType, request func()) *MediaTrack {
-	p.UpTrackManager.lock.Lock()
-	requested := make(chan struct{})
-	go func() {
-		defer close(requested)
-		request()
+// publishes while request waits on pendingTracksLock, so a request that looks up
+// published tracks before taking the lock misses the track in both places
+func requestDuringPublish(t *testing.T, p *ParticipantImpl, kind livekit.TrackType, method string, request func()) *MediaTrack {
+	returned := make(chan struct{})
+	mt := func() *MediaTrack {
+		p.pendingTracksLock.Lock()
+		defer p.pendingTracksLock.Unlock()
+		go func() {
+			defer close(returned)
+			request()
+		}()
+		waitForPendingTracksLockWaiter(t, method, returned)
+		return publishPendingTrackLocked(p, kind)
 	}()
-	waitForParkedReader(t, "(*UpTrackManager).GetPublishedTrack")
-
-	published := make(chan *MediaTrack, 1)
-	go func() { published <- publishPendingTrack(p, kind) }()
-	deadline := time.Now().Add(parkDeadline)
-	for p.pendingTracksLock.RWMutex.TryRLock() {
-		p.pendingTracksLock.RWMutex.RUnlock()
-		require.Less(t, time.Now(), deadline, "move never took pendingTracksLock")
-		runtime.Gosched()
-	}
-	p.UpTrackManager.lock.Unlock()
-
-	<-requested
-	return <-published
+	<-returned
+	return mt
 }
 
 func TestSetTrackMutedWhileTrackMovesToPublished(t *testing.T) {
 	p, sid := newParticipantWithPendingTrack(t, livekit.TrackType_AUDIO)
 	var info *livekit.TrackInfo
-	mt := requestDuringPublish(t, p, livekit.TrackType_AUDIO, func() {
+	mt := requestDuringPublish(t, p, livekit.TrackType_AUDIO, "setTrackMuted", func() {
 		info = p.SetTrackMuted(&livekit.MuteTrackRequest{Sid: sid, Muted: true}, false)
 	})
 	require.NotNil(t, info, "mute answered NOT_FOUND")
@@ -1673,7 +1673,7 @@ func TestSetTrackMutedWhileTrackMovesToPublished(t *testing.T) {
 func TestUpdateAudioTrackWhileTrackMovesToPublished(t *testing.T) {
 	p, sid := newParticipantWithPendingTrack(t, livekit.TrackType_AUDIO)
 	var err error
-	mt := requestDuringPublish(t, p, livekit.TrackType_AUDIO, func() {
+	mt := requestDuringPublish(t, p, livekit.TrackType_AUDIO, "UpdateAudioTrack", func() {
 		err = p.UpdateAudioTrack(&livekit.UpdateLocalAudioTrack{
 			TrackSid: sid,
 			Features: []livekit.AudioTrackFeature{livekit.AudioTrackFeature_TF_STEREO},
@@ -1686,7 +1686,7 @@ func TestUpdateAudioTrackWhileTrackMovesToPublished(t *testing.T) {
 func TestUpdateVideoTrackWhileTrackMovesToPublished(t *testing.T) {
 	p, sid := newParticipantWithPendingTrack(t, livekit.TrackType_VIDEO)
 	var err error
-	mt := requestDuringPublish(t, p, livekit.TrackType_VIDEO, func() {
+	mt := requestDuringPublish(t, p, livekit.TrackType_VIDEO, "UpdateVideoTrack", func() {
 		err = p.UpdateVideoTrack(&livekit.UpdateLocalVideoTrack{TrackSid: sid, Width: 1280, Height: 720})
 	})
 	require.NoError(t, err)
@@ -1796,4 +1796,35 @@ func TestUpdateVideoTrackLeavesSentTrackInfoUnshared(t *testing.T) {
 	updateWhileTrackPublishedMarshals(t, livekit.TrackType_VIDEO, func(p *ParticipantImpl, sid string) error {
 		return p.UpdateVideoTrack(&livekit.UpdateLocalVideoTrack{TrackSid: sid, Width: 1280, Height: 720})
 	})
+}
+
+// a second AddTrack for a pending cid queues a replacement that reuses the SID,
+// so it is still pending once the first one publishes
+func newParticipantWithQueuedReplacement(t *testing.T, kind livekit.TrackType) (*ParticipantImpl, string) {
+	p, sid := newParticipantWithPendingTrack(t, kind)
+	p.AddTrack(&livekit.AddTrackRequest{Cid: pendingTrackCid, Name: "track", Type: kind, Width: 640, Height: 360})
+	require.NotNil(t, publishPendingTrack(p, kind))
+	require.Equal(t, sid, p.pendingTracks[pendingTrackCid].trackInfos[0].Sid)
+	return p, sid
+}
+
+func TestSetTrackMutedReachesQueuedReplacement(t *testing.T) {
+	p, sid := newParticipantWithQueuedReplacement(t, livekit.TrackType_AUDIO)
+	require.NotNil(t, p.SetTrackMuted(&livekit.MuteTrackRequest{Sid: sid, Muted: true}, false))
+	require.True(t, p.pendingTracks[pendingTrackCid].trackInfos[0].Muted)
+}
+
+func TestUpdateAudioTrackReachesQueuedReplacement(t *testing.T) {
+	p, sid := newParticipantWithQueuedReplacement(t, livekit.TrackType_AUDIO)
+	require.NoError(t, p.UpdateAudioTrack(&livekit.UpdateLocalAudioTrack{
+		TrackSid: sid,
+		Features: []livekit.AudioTrackFeature{livekit.AudioTrackFeature_TF_STEREO},
+	}))
+	require.True(t, p.pendingTracks[pendingTrackCid].trackInfos[0].Stereo)
+}
+
+func TestUpdateVideoTrackReachesQueuedReplacement(t *testing.T) {
+	p, sid := newParticipantWithQueuedReplacement(t, livekit.TrackType_VIDEO)
+	require.NoError(t, p.UpdateVideoTrack(&livekit.UpdateLocalVideoTrack{TrackSid: sid, Width: 1280, Height: 720}))
+	require.EqualValues(t, 1280, p.pendingTracks[pendingTrackCid].trackInfos[0].Width)
 }

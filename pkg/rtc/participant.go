@@ -3439,8 +3439,6 @@ func (p *ParticipantImpl) setTrackMuted(mute *livekit.MuteTrackRequest, fromAdmi
 	var trackInfo *livekit.TrackInfo
 	changed := false
 	p.pendingTracksLock.Lock()
-	// checked under the lock that guards the pending-to-published move
-	isPublished := p.UpTrackManager.GetPublishedTrack(trackID) != nil
 	// update mute status in any pending/queued add track requests too
 	for _, pti := range p.pendingTracks {
 		for i, ti := range pti.trackInfos {
@@ -3458,11 +3456,10 @@ func (p *ParticipantImpl) setTrackMuted(mute *livekit.MuteTrackRequest, fromAdmi
 	}
 	p.pendingTracksLock.Unlock()
 
-	if isPublished {
-		if track, muteChanged := p.UpTrackManager.SetPublishedTrackMuted(trackID, mute.Muted); track != nil {
-			trackInfo = track.ToProto()
-			changed = changed || muteChanged
-		}
+	// after the pending pass, so a publish that moves the track in between is still found
+	if track, muteChanged := p.UpTrackManager.SetPublishedTrackMuted(trackID, mute.Muted); track != nil {
+		trackInfo = track.ToProto()
+		changed = changed || muteChanged
 	}
 
 	if trackInfo != nil && changed {
@@ -4423,11 +4420,9 @@ func (p *ParticipantImpl) GetEnabledPublishCodecs() []*livekit.Codec {
 func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack) error {
 	isPending := false
 	p.pendingTracksLock.Lock()
-	// checked under the lock that guards the pending-to-published move
-	isPublished := p.UpTrackManager.GetPublishedTrack(livekit.TrackID(update.TrackSid)) != nil
 	for _, pti := range p.pendingTracks {
 		for i, ti := range pti.trackInfos {
-			if !isPublished && ti.Sid == update.TrackSid {
+			if ti.Sid == update.TrackSid {
 				isPending = true
 
 				ti = proto.CloneOf(ti)
@@ -4450,10 +4445,8 @@ func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack
 	}
 	p.pendingTracksLock.Unlock()
 
-	if isPublished && p.UpTrackManager.UpdatePublishedAudioTrack(update) != nil {
-		return nil
-	}
-	if isPending {
+	// after the pending pass, so a publish that moves the track in between is still found
+	if p.UpTrackManager.UpdatePublishedAudioTrack(update) != nil || isPending {
 		return nil
 	}
 
@@ -4470,11 +4463,9 @@ func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack
 func (p *ParticipantImpl) UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack) error {
 	isPending := false
 	p.pendingTracksLock.Lock()
-	// checked under the lock that guards the pending-to-published move
-	isPublished := p.UpTrackManager.GetPublishedTrack(livekit.TrackID(update.TrackSid)) != nil
 	for _, pti := range p.pendingTracks {
 		for i, ti := range pti.trackInfos {
-			if !isPublished && ti.Sid == update.TrackSid {
+			if ti.Sid == update.TrackSid {
 				isPending = true
 
 				ti = proto.CloneOf(ti)
@@ -4486,10 +4477,8 @@ func (p *ParticipantImpl) UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack
 	}
 	p.pendingTracksLock.Unlock()
 
-	if isPublished && p.UpTrackManager.UpdatePublishedVideoTrack(update) != nil {
-		return nil
-	}
-	if isPending {
+	// after the pending pass, so a publish that moves the track in between is still found
+	if p.UpTrackManager.UpdatePublishedVideoTrack(update) != nil || isPending {
 		return nil
 	}
 
