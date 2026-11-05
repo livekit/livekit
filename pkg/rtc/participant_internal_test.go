@@ -16,6 +16,7 @@ package rtc
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -1591,4 +1592,28 @@ func TestLeaveJoinSession(t *testing.T) {
 	p.JoinSession(nil)
 	require.Equal(t, 2, tl.OnTrackUnpublishedCallCount())
 	require.Equal(t, 2, tl.OnTrackPublishedCallCount())
+}
+
+const parkDeadline = 5 * time.Second
+
+// a reader parked in RLock has wait reason RWMutex.RLock in its runtime.Stack header, also
+// under CI's deadlock wrapper; the match omits the package so CI's rewrite cannot edit it
+func waitForParkedReader(t *testing.T, frame string) {
+	deadline := time.Now().Add(parkDeadline)
+	buf := make([]byte, 1<<20)
+	for {
+		n := runtime.Stack(buf, true)
+		for n == len(buf) {
+			buf = make([]byte, 2*len(buf))
+			n = runtime.Stack(buf, true)
+		}
+		for _, g := range strings.Split(string(buf[:n]), "\n\n") {
+			header, _, _ := strings.Cut(g, "\n")
+			if strings.Contains(header, "RWMutex.RLock]") && strings.Contains(g, frame) {
+				return
+			}
+		}
+		require.Less(t, time.Now(), deadline, "no goroutine parked in RLock under %s", frame)
+		runtime.Gosched()
+	}
 }

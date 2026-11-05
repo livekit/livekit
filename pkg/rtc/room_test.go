@@ -16,6 +16,8 @@ package rtc
 
 import (
 	"fmt"
+	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -967,4 +969,41 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
 		})
 	}
 	return rm
+}
+
+// a track that moves from pending to published between the resume check's two
+// lookups must not read as unknown
+func TestSyncStateWhileTrackMovesToPublished(t *testing.T) {
+	const cid = "C"
+	p := newParticipantForTest("test")
+	p.AddTrack(&livekit.AddTrackRequest{Cid: cid, Name: "mic", Type: livekit.TrackType_AUDIO})
+	sid := p.pendingTracks[cid].trackInfos[0].Sid
+
+	// the mover takes pendingTracksLock, then parks in AddPublishedTrack on the lock held here
+	p.UpTrackManager.lock.Lock()
+	release := sync.OnceFunc(p.UpTrackManager.lock.Unlock)
+	defer release()
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		p.pendingTracksLock.Lock()
+		defer p.pendingTracksLock.Unlock()
+		signalCid, ti, _, _, _ := p.getPendingTrack(cid, livekit.TrackType_AUDIO, true)
+		p.addMediaTrack(signalCid, ti)
+	})
+	deadline := time.Now().Add(parkDeadline)
+	for p.pendingTracksLock.RWMutex.TryRLock() {
+		p.pendingTracksLock.RWMutex.RUnlock()
+		require.Less(t, time.Now(), deadline, "move never took pendingTracksLock")
+		runtime.Gosched()
+	}
+
+	wg.Go(func() {
+		(&Room{}).onSyncState(p, &livekit.SyncState{
+			PublishTracks: []*livekit.TrackPublishedResponse{{Track: &livekit.TrackInfo{Sid: sid}}},
+		})
+	})
+	waitForParkedReader(t, "(*Room).onSyncState")
+	release()
+	wg.Wait()
+	require.False(t, p.IsClosed(), "resume forced a full reconnect for a track that moved to published")
 }
