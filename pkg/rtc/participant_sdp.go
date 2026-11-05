@@ -222,15 +222,7 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 			continue
 		}
 
-		p.pendingTracksLock.RLock()
-		mt := p.getPublishedTrackBySdpCid(streamID)
-		if mt != nil {
-			ti = mt.ToProto()
-		} else {
-			_, ti, _, _, _ = p.getPendingTrack(streamID, trackType, false)
-		}
-		p.pendingTracksLock.RUnlock()
-
+		ti = p.getTrackInfoBySdpCid(streamID, trackType)
 		if ti == nil {
 			unprocessed = append(unprocessed, unmatch)
 			continue
@@ -361,14 +353,7 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 					if !ok {
 						continue
 					}
-					track, _ := p.getPublishedTrackBySdpCid(streamID).(*MediaTrack)
-					if track == nil {
-						p.pendingTracksLock.RLock()
-						_, ti, _, _, _ = p.getPendingTrack(streamID, livekit.TrackType_AUDIO, false)
-						p.pendingTracksLock.RUnlock()
-					} else {
-						ti = track.ToProto()
-					}
+					ti = p.getTrackInfoBySdpCid(streamID, livekit.TrackType_AUDIO)
 					break
 				}
 			}
