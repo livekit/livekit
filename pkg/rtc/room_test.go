@@ -17,6 +17,7 @@ package rtc
 import (
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -971,8 +972,30 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
 	return rm
 }
 
-// a track that moves from pending to published between the resume check's two
-// lookups must not read as unknown
+const parkedReaderDeadline = 5 * time.Second
+
+// a reader parked in RLock has wait reason RWMutex.RLock in its runtime.Stack header, also
+// under CI's deadlock wrapper; the match omits the package so CI's rewrite cannot edit it
+func waitForParkedReader(t *testing.T, frame string) {
+	deadline := time.Now().Add(parkedReaderDeadline)
+	buf := make([]byte, 1<<20)
+	for {
+		n := runtime.Stack(buf, true)
+		for n == len(buf) {
+			buf = make([]byte, 2*len(buf))
+			n = runtime.Stack(buf, true)
+		}
+		for _, g := range strings.Split(string(buf[:n]), "\n\n") {
+			header, _, _ := strings.Cut(g, "\n")
+			if strings.Contains(header, "RWMutex.RLock]") && strings.Contains(g, frame) {
+				return
+			}
+		}
+		require.Less(t, time.Now(), deadline, "no goroutine parked in RLock under %s", frame)
+		runtime.Gosched()
+	}
+}
+
 func TestSyncStateWhileTrackMovesToPublished(t *testing.T) {
 	const cid = "C"
 	p := newParticipantForTest("test")
@@ -990,7 +1013,7 @@ func TestSyncStateWhileTrackMovesToPublished(t *testing.T) {
 		signalCid, ti, _, _, _ := p.getPendingTrack(cid, livekit.TrackType_AUDIO, true)
 		p.addMediaTrack(signalCid, ti)
 	})
-	deadline := time.Now().Add(parkDeadline)
+	deadline := time.Now().Add(parkedReaderDeadline)
 	for p.pendingTracksLock.RWMutex.TryRLock() {
 		p.pendingTracksLock.RWMutex.RUnlock()
 		require.Less(t, time.Now(), deadline, "move never took pendingTracksLock")
