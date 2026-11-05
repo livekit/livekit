@@ -115,6 +115,11 @@ func (c ClientInfo) SupportsSctpZeroChecksum() bool {
 		(!c.isGo() || c.compareVersion("2.4.0") >= 0)
 }
 
+func (c ClientInfo) SupportsAnswerDTLSRoleServer() bool {
+	sdk := c.ClientInfo.GetSdk()
+	return sdk != livekit.ClientInfo_UNKNOWN && sdk != livekit.ClientInfo_ESP32
+}
+
 func (c ClientInfo) SupportsTransceiverReuse() bool {
 	return !c.isSafari()
 }
