@@ -30,7 +30,7 @@ require (
 	github.com/olekukonko/tablewriter v1.1.4
 	github.com/ory/dockertest/v4 v4.0.0
 	github.com/pion/datachannel v1.6.3
-	github.com/pion/dtls/v4 v4.0.0-rc.7
+	github.com/pion/dtls/v4 v4.0.0-rc.8
 	github.com/pion/ice/v4 v4.4.8
 	github.com/pion/interceptor v0.1.49
 	github.com/pion/rtcp v1.2.20
@@ -39,7 +39,7 @@ require (
 	github.com/pion/sdp/v3 v3.0.20
 	github.com/pion/stun/v4 v4.0.1
 	github.com/pion/transport/v4 v4.1.3
-	github.com/pion/transport/v5 v5.1.1
+	github.com/pion/transport/v5 v5.1.4
 	github.com/pion/turn/v5 v5.1.2
 	github.com/pion/webrtc/v4 v4.2.22
 	github.com/pires/go-proxyproto v0.15.0
@@ -169,6 +169,6 @@ tool (
 	golang.org/x/tools/cmd/goimports
 )
 
-replace github.com/pion/webrtc/v4 => github.com/livekit/webrtc-pion/v4 v4.0.0-20261104034416-6a50ba898a0e
+replace github.com/pion/webrtc/v4 => github.com/livekit/webrtc-pion/v4 v4.2.25-warp.1
 
-replace github.com/pion/ice/v4 => github.com/livekit/ice/v4 v4.4.8-warp.1
+replace github.com/pion/ice/v4 => github.com/livekit/ice/v4 v4.4.8-warp.2
