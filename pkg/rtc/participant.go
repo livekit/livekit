@@ -3987,6 +3987,19 @@ func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) types.Media
 	return nil
 }
 
+// The move from pending to published in mediaTrackReceived happens under this lock, so holding it
+// across both lookups keeps a moving track from being missed by both.
+func (p *ParticipantImpl) getTrackInfoBySdpCid(sdpCid string, kind livekit.TrackType) *livekit.TrackInfo {
+	p.pendingTracksLock.RLock()
+	defer p.pendingTracksLock.RUnlock()
+
+	if mt := p.getPublishedTrackBySdpCid(sdpCid); mt != nil {
+		return mt.ToProto()
+	}
+	_, ti, _, _, _ := p.getPendingTrack(sdpCid, kind, false)
+	return ti
+}
+
 func (p *ParticipantImpl) DebugInfo() map[string]any {
 	info := map[string]any{
 		"ID":    p.ID(),
