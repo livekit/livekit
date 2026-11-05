@@ -125,7 +125,7 @@ func TestAgent(t *testing.T) {
 			Type:       livekit.JobType_JT_ROOM,
 			Room:       &livekit.Room{},
 			AgentName:  testAgentName,
-			State:      &livekit.JobState{StartedAt: previous, UpdatedAt: previous},
+			State:      &livekit.JobState{StartedAt: previous, UpdatedAt: previous, AcceptedAt: previous, AssignedAt: previous},
 		}
 		var res *rpc.JobRequestResponse
 		require.EventuallyWithT(t, func(c *assert.CollectT) {
@@ -135,6 +135,8 @@ func TestAgent(t *testing.T) {
 		}, 5*time.Second, 50*time.Millisecond)
 		require.Greater(t, res.State.StartedAt, previous)
 		require.Greater(t, res.State.UpdatedAt, previous, "the assignment is a later version of the job's state")
+		require.Greater(t, res.State.AcceptedAt, res.State.StartedAt, "the accept is this attempt's")
+		require.GreaterOrEqual(t, res.State.AssignedAt, res.State.AcceptedAt)
 
 		var a *livekit.JobAssignment
 		select {

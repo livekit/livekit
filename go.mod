@@ -10,7 +10,7 @@ require (
 	github.com/elliotchance/orderedmap/v3 v3.1.1
 	github.com/florianl/go-tc v0.4.8
 	github.com/frostbyte73/core v0.1.1
-	github.com/gammazero/deque v1.2.1
+	github.com/gammazero/deque v1.2.2
 	github.com/gammazero/workerpool v1.2.1
 	github.com/google/uuid v1.6.0
 	github.com/google/wire v0.7.0
@@ -20,8 +20,8 @@ require (
 	github.com/jellydator/ttlcache/v3 v3.4.1
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
-	github.com/livekit/mediatransportutil v0.0.0-20261103164426-a2ee44bcc302
-	github.com/livekit/protocol v1.53.2-0.20261029173217-b8c797a0e8f3
+	github.com/livekit/mediatransportutil v0.0.0-20261104095513-c341f61ad457
+	github.com/livekit/protocol v1.53.2
 	github.com/livekit/psrpc v0.8.2
 	github.com/mackerelio/go-osstat v0.2.8
 	github.com/magefile/mage v1.17.2
@@ -41,10 +41,10 @@ require (
 	github.com/pion/transport/v4 v4.1.3
 	github.com/pion/transport/v5 v5.1.4
 	github.com/pion/turn/v5 v5.1.2
-	github.com/pion/webrtc/v4 v4.2.22
+	github.com/pion/webrtc/v4 v4.2.23
 	github.com/pires/go-proxyproto v0.15.0
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_golang v1.24.1
+	github.com/prometheus/client_golang v1.25.0
 	github.com/quic-go/quic-go v0.63.0
 	github.com/quic-go/webtransport-go v0.12.0
 	github.com/redis/go-redis/v9 v9.22.0
@@ -58,8 +58,8 @@ require (
 	go.uber.org/atomic v1.12.0
 	go.uber.org/multierr v1.11.0
 	go.uber.org/zap v1.28.0
-	golang.org/x/mod v0.41.0
-	golang.org/x/sync v0.23.0
+	golang.org/x/mod v0.42.0
+	golang.org/x/sync v0.24.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -104,8 +104,8 @@ require (
 	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/exp v0.0.0-20261005173118-76772065c9b0 // indirect
-	golang.org/x/telemetry v0.0.0-20260924152758-ed294f943157 // indirect
+	golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e // indirect
+	golang.org/x/telemetry v0.0.0-20261009151841-97e8ea77aa2a // indirect
 	golang.org/x/time v0.16.0 // indirect
 )
 
@@ -152,11 +152,11 @@ require (
 	github.com/wlynxg/anet v0.0.5 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.uber.org/zap/exp v0.3.0 // indirect
-	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/net v0.59.0
-	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/text v0.42.0 // indirect
-	golang.org/x/tools v0.51.0 // indirect
+	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/net v0.61.0
+	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/tools v0.52.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261005182115-fad411399dd8 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261005182115-fad411399dd8 // indirect
 	google.golang.org/grpc v1.84.0 // indirect
