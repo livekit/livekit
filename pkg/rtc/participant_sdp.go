@@ -15,7 +15,6 @@
 package rtc
 
 import (
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -368,22 +367,24 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 				continue
 			}
 
-			for i, attr := range m.Attributes {
-				if strings.HasPrefix(attr.String(), fmt.Sprintf("fmtp:%d", opusPT)) {
-					if !slices.Contains(ti.AudioFeatures, livekit.AudioTrackFeature_TF_NO_DTX) {
-						attr.Value += ";usedtx=1"
-					} else {
-						attr.Value = strings.ReplaceAll(attr.Value, ";usedtx=1", "")
-					}
-					if slices.Contains(ti.AudioFeatures, livekit.AudioTrackFeature_TF_STEREO) {
-						attr.Value += ";stereo=1;maxaveragebitrate=510000"
-					} else {
-						attr.Value = strings.ReplaceAll(attr.Value, ";stereo=1", "")
-					}
-					m.Attributes[i] = attr
+			opusFmtpPT := strconv.Itoa(int(opusPT))
+			attrs := m.Attributes[:0]
+			for _, attr := range m.Attributes {
+				if pt, _, _ := strings.Cut(attr.Value, " "); attr.Key == "fmtp" && pt == opusFmtpPT {
 					changed = true
+					var ok bool
+					attr.Value, ok = rewriteOpusFmtp(
+						attr.Value,
+						!slices.Contains(ti.AudioFeatures, livekit.AudioTrackFeature_TF_NO_DTX),
+						slices.Contains(ti.AudioFeatures, livekit.AudioTrackFeature_TF_STEREO),
+					)
+					if !ok {
+						continue
+					}
 				}
+				attrs = append(attrs, attr)
 			}
+			m.Attributes = attrs
 
 		default:
 			continue
@@ -401,4 +402,30 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 	}
 	answer.SDP = string(bytes)
 	return answer
+}
+
+// rewrites by key, so a leading stereo=1 or usedtx=1 is replaced too and the rest keep their order;
+// false means nothing remains and the caller drops the line, since libwebrtc rejects a bare a=fmtp:<pt>
+func rewriteOpusFmtp(value string, dtx, stereo bool) (string, bool) {
+	payloadType, params, _ := strings.Cut(value, " ")
+	var kept []string
+	for _, param := range strings.Split(params, ";") {
+		key, _, _ := strings.Cut(param, "=")
+		switch strings.ToLower(strings.TrimSpace(key)) {
+		case "", "usedtx", "stereo":
+			continue
+		case "maxaveragebitrate":
+			if stereo {
+				continue
+			}
+		}
+		kept = append(kept, param)
+	}
+	if dtx {
+		kept = append(kept, "usedtx=1")
+	}
+	if stereo {
+		kept = append(kept, "stereo=1", "maxaveragebitrate=510000")
+	}
+	return payloadType + " " + strings.Join(kept, ";"), len(kept) > 0
 }
