@@ -17,6 +17,8 @@ package utils
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/pion/interceptor"
 	"github.com/pion/rtp"
@@ -47,12 +49,17 @@ func CodecParametersFuzzySearch(needle webrtc.RTPCodecParameters, haystack []web
 	return webrtc.RTPCodecParameters{}, webrtc.ErrCodecNotFound
 }
 
-// Given a CodecParameters find the RTX CodecParameters if one exists
+// Given a CodecParameters find the RTX CodecParameters if one exists.
+// The RTX fmtp line can carry other parameters next to apt, for example
+// "apt=96;rtx-time=3000" (RFC 4588), so only the apt value is compared.
 func FindRTXPayloadType(needle webrtc.PayloadType, haystack []webrtc.RTPCodecParameters) webrtc.PayloadType {
-	aptStr := fmt.Sprintf("apt=%d", needle)
+	aptStr := strconv.Itoa(int(needle))
 	for _, c := range haystack {
-		if aptStr == c.SDPFmtpLine {
-			return c.PayloadType
+		for param := range strings.SplitSeq(c.SDPFmtpLine, ";") {
+			key, value, found := strings.Cut(param, "=")
+			if found && strings.EqualFold(strings.TrimSpace(key), "apt") && strings.TrimSpace(value) == aptStr {
+				return c.PayloadType
+			}
 		}
 	}
 
