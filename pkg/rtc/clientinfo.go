@@ -58,7 +58,7 @@ func (c ClientInfo) isOBS() bool {
 }
 
 func (c ClientInfo) SupportsAudioRED() bool {
-	return !c.isFirefox() && !c.isSafari()
+	return !c.isFirefox() && !c.isWebKit()
 }
 
 func (c ClientInfo) SupportsPrflxOverRelay() bool {
