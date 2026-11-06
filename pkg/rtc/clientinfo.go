@@ -34,6 +34,13 @@ func (c ClientInfo) isSafari() bool {
 	return c.ClientInfo != nil && strings.EqualFold(c.ClientInfo.Browser, "safari")
 }
 
+func (c ClientInfo) isWebKit() bool {
+	if c.isSafari() {
+		return true
+	}
+	return c.ClientInfo != nil && c.ClientInfo.Sdk == livekit.ClientInfo_JS && strings.EqualFold(c.ClientInfo.Os, "ios")
+}
+
 func (c ClientInfo) isGo() bool {
 	return c.ClientInfo != nil && c.ClientInfo.Sdk == livekit.ClientInfo_GO
 }
@@ -51,7 +58,7 @@ func (c ClientInfo) isOBS() bool {
 }
 
 func (c ClientInfo) SupportsAudioRED() bool {
-	return !c.isFirefox() && !c.isSafari()
+	return !c.isFirefox() && !c.isWebKit()
 }
 
 func (c ClientInfo) SupportsPrflxOverRelay() bool {
@@ -121,7 +128,7 @@ func (c ClientInfo) SupportsAnswerDTLSRoleServer() bool {
 }
 
 func (c ClientInfo) SupportsTransceiverReuse() bool {
-	return !c.isSafari()
+	return !c.isWebKit()
 }
 
 func (c ClientInfo) HasCapability(cap livekit.ClientInfo_Capability) bool {
