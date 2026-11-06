@@ -17,7 +17,9 @@
 #
 # Pinned by digest so the build is reproducible even if the tag is republished.
 # The tag is kept alongside it for readability; Renovate updates both together.
-FROM golang:1.27.3-alpine3.24@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd AS builder
+# --platform=$BUILDPLATFORM runs the builder natively and cross-compiles via
+# GOARCH below, rather than compiling under QEMU; see the repo-root Dockerfile.
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine3.24@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd AS builder
 
 ARG TARGETARCH
 
