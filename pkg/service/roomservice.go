@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -243,7 +244,7 @@ func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomPa
 
 	res, err := s.participantClient.RemoveParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
 	RecordResponse(ctx, res)
-	return res, err
+	return res, participantRPCError(ctx, err)
 }
 
 func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteRoomTrackRequest) (*livekit.MuteRoomTrackResponse, error) {
@@ -256,7 +257,7 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 
 	res, err := s.participantClient.MutePublishedTrack(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
 	RecordResponse(ctx, res)
-	return res, err
+	return res, participantRPCError(ctx, err)
 }
 
 func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.UpdateParticipantRequest) (*livekit.ParticipantInfo, error) {
@@ -291,7 +292,7 @@ func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.Update
 
 	res, err := s.participantClient.UpdateParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
 	RecordResponse(ctx, res)
-	return res, err
+	return res, participantRPCError(ctx, err)
 }
 
 func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.UpdateSubscriptionsRequest) (*livekit.UpdateSubscriptionsResponse, error) {
@@ -309,7 +310,7 @@ func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.Upda
 
 	res, err := s.participantClient.UpdateSubscriptions(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
 	RecordResponse(ctx, res)
-	return res, err
+	return res, participantRPCError(ctx, err)
 }
 
 func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest) (*livekit.SendDataResponse, error) {
@@ -426,4 +427,12 @@ func performRpcRequestTimeout(req *livekit.PerformRpcRequest) time.Duration {
 		responseTimeout = utils.DataChannelRpcDefaultResponseTimeout
 	}
 	return responseTimeout + utils.DataChannelRpcMaxRoundTripLatency
+}
+
+// no node claims the topic of a participant that isn't connected
+func participantRPCError(ctx context.Context, err error) error {
+	if errors.Is(err, psrpc.ErrNoResponse) && ctx.Err() == nil {
+		return ErrParticipantNotFound
+	}
+	return err
 }
