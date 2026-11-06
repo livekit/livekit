@@ -3436,14 +3436,10 @@ func (p *ParticipantImpl) setTrackMuted(mute *livekit.MuteTrackRequest, fromAdmi
 		p.supervisor.SetPublicationMute(trackID, mute.Muted)
 	}
 
-	track, changed := p.UpTrackManager.SetPublishedTrackMuted(trackID, mute.Muted)
 	var trackInfo *livekit.TrackInfo
-	if track != nil {
-		trackInfo = track.ToProto()
-	}
-
+	changed := false
+	p.pendingTracksLock.Lock()
 	// update mute status in any pending/queued add track requests too
-	p.pendingTracksLock.RLock()
 	for _, pti := range p.pendingTracks {
 		for i, ti := range pti.trackInfos {
 			if livekit.TrackID(ti.Sid) == trackID {
@@ -3452,12 +3448,19 @@ func (p *ParticipantImpl) setTrackMuted(mute *livekit.MuteTrackRequest, fromAdmi
 				ti.Muted = mute.Muted
 				pti.trackInfos[i] = ti
 				if trackInfo == nil {
-					trackInfo = ti
+					// callers marshal it unlocked, and updateRidsFromSDP writes the stored one in place
+					trackInfo = proto.CloneOf(ti)
 				}
 			}
 		}
 	}
-	p.pendingTracksLock.RUnlock()
+	p.pendingTracksLock.Unlock()
+
+	// after the pending pass, so a publish that moves the track in between is still found
+	if track, muteChanged := p.UpTrackManager.SetPublishedTrackMuted(trackID, mute.Muted); track != nil {
+		trackInfo = track.ToProto()
+		changed = changed || muteChanged
+	}
 
 	if trackInfo != nil && changed {
 		if mute.Muted {
@@ -4428,17 +4431,14 @@ func (p *ParticipantImpl) GetEnabledPublishCodecs() []*livekit.Codec {
 }
 
 func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack) error {
-	if track := p.UpTrackManager.UpdatePublishedAudioTrack(update); track != nil {
-		return nil
-	}
-
 	isPending := false
-	p.pendingTracksLock.RLock()
+	p.pendingTracksLock.Lock()
 	for _, pti := range p.pendingTracks {
-		for _, ti := range pti.trackInfos {
+		for i, ti := range pti.trackInfos {
 			if ti.Sid == update.TrackSid {
 				isPending = true
 
+				ti = proto.CloneOf(ti)
 				ti.AudioFeatures = sutils.DedupeSlice(update.Features)
 				ti.Stereo = false
 				ti.DisableDtx = false
@@ -4450,13 +4450,16 @@ func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack
 						ti.DisableDtx = true
 					}
 				}
+				pti.trackInfos[i] = ti
 
 				p.pubLogger.Debugw("updated pending track", "trackID", ti.Sid, "trackInfo", logger.Proto(ti))
 			}
 		}
 	}
-	p.pendingTracksLock.RUnlock()
-	if isPending {
+	p.pendingTracksLock.Unlock()
+
+	// after the pending pass, so a publish that moves the track in between is still found
+	if p.UpTrackManager.UpdatePublishedAudioTrack(update) != nil || isPending {
 		return nil
 	}
 
@@ -4471,24 +4474,24 @@ func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack
 }
 
 func (p *ParticipantImpl) UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack) error {
-	if track := p.UpTrackManager.UpdatePublishedVideoTrack(update); track != nil {
-		return nil
-	}
-
 	isPending := false
-	p.pendingTracksLock.RLock()
+	p.pendingTracksLock.Lock()
 	for _, pti := range p.pendingTracks {
-		for _, ti := range pti.trackInfos {
+		for i, ti := range pti.trackInfos {
 			if ti.Sid == update.TrackSid {
 				isPending = true
 
+				ti = proto.CloneOf(ti)
 				ti.Width = update.Width
 				ti.Height = update.Height
+				pti.trackInfos[i] = ti
 			}
 		}
 	}
-	p.pendingTracksLock.RUnlock()
-	if isPending {
+	p.pendingTracksLock.Unlock()
+
+	// after the pending pass, so a publish that moves the track in between is still found
+	if p.UpTrackManager.UpdatePublishedVideoTrack(update) != nil || isPending {
 		return nil
 	}
 
