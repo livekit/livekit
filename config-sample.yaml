@@ -88,7 +88,7 @@ rtc:
   # # might cause connect issue if server running behind NAT.
   # use_ice_lite: true
   # # optional STUN servers for LiveKit clients to use. Clients will be configured to use these STUN servers automatically.
-  # # by default LiveKit clients use Google's public STUN servers
+  # # by default LiveKit clients use public STUN servers (one of Twilio's and two of Google's)
   # stun_servers:
   #   - server1
   # # optional TURN servers for clients. This isn't necessary if using embedded TURN server (see below).
@@ -336,10 +336,11 @@ keys:
 #   # - using cert_file and key_file below
 #   # defaults to false
 #   enabled: false
-#   # defaults to 3478 - recommended to 443 if not running HTTP3/QUIC server
+#   # no default; 3478 is the standard port - recommended to 443 if not running HTTP3/QUIC server
 #   # only 53/80/443 are allowed if less than 1024
 #   udp_port: 3478
-#   # defaults to 5349 - if not using a load balancer, this must be set to 443
+#   # no default; 5349 is the standard port - if not using a load balancer, this must be set to 443
+#   # at least one of udp_port and tls_port must be set when TURN is enabled
 #   tls_port: 5349
 #   # set UDP port range for TURN relay to connect to LiveKit SFU, by default it uses a any available port
 #   relay_range_start: 1024
