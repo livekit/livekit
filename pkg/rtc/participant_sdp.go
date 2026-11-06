@@ -15,7 +15,6 @@
 package rtc
 
 import (
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -368,9 +367,10 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 				continue
 			}
 
+			opusFmtpPT := strconv.Itoa(int(opusPT))
 			attrs := m.Attributes[:0]
 			for _, attr := range m.Attributes {
-				if strings.HasPrefix(attr.String(), fmt.Sprintf("fmtp:%d", opusPT)) {
+				if pt, _, _ := strings.Cut(attr.Value, " "); attr.Key == "fmtp" && pt == opusFmtpPT {
 					changed = true
 					var ok bool
 					attr.Value, ok = rewriteOpusFmtp(

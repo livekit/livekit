@@ -74,6 +74,43 @@ func publisherAnswerFmtp(t *testing.T, p *ParticipantImpl, answerFmtp string) st
 	return fmtp
 }
 
+// opus at 11 prefixes RED's 111, and RED's fmtp must not go through the opus rewrite
+func TestConfigurePublisherAnswerMatchesOpusPayloadTypeExactly(t *testing.T) {
+	p := newParticipantWithOpusOffer(t, "C")
+	answer := p.configurePublisherAnswer(webrtc.SessionDescription{
+		Type: webrtc.SDPTypeAnswer,
+		SDP: strings.Join([]string{
+			"v=0",
+			"o=- 0 0 IN IP4 127.0.0.1",
+			"s=-",
+			"t=0 0",
+			"m=audio 9 UDP/TLS/RTP/SAVPF 11 111",
+			"c=IN IP4 0.0.0.0",
+			"a=mid:0",
+			"a=recvonly",
+			"a=rtpmap:11 opus/48000/2",
+			"a=fmtp:11 useinbandfec=1",
+			"a=rtpmap:111 red/48000/2",
+			"a=fmtp:111 11/11",
+			"",
+		}, "\r\n"),
+	})
+	parsed, err := answer.Unmarshal()
+	require.NoError(t, err)
+	var attrs []string
+	for _, attr := range parsed.MediaDescriptions[0].Attributes {
+		attrs = append(attrs, attr.String())
+	}
+	require.Equal(t, []string{
+		"mid:0",
+		"recvonly",
+		"rtpmap:11 opus/48000/2",
+		"fmtp:11 useinbandfec=1;usedtx=1",
+		"rtpmap:111 red/48000/2",
+		"fmtp:111 11/11",
+	}, attrs)
+}
+
 func TestConfigurePublisherAnswerWhileTrackMovesToPublished(t *testing.T) {
 	const cid = "C"
 	p := newParticipantWithOpusOffer(t, cid)
