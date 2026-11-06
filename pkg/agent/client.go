@@ -233,12 +233,10 @@ func (c *agentClient) getDispatcher(agName string, jobType livekit.JobType) *ser
 	}
 	c.mu.Unlock()
 
-	if agName == "" {
-		// if no agent name is given, we would need to dispatch backwards compatible mode
-		// which means dispatching to each of the namespaces
-		return target
-	}
-
+	// An unnamed dispatch is the backwards compatible mode, where the job goes to each of the
+	// namespaces. It is only worth sending when an unnamed worker is registered, otherwise nobody
+	// answers and the request holds a dispatch slot until it times out. Unnamed workers report
+	// an empty agent name, so the lookup below covers that case too.
 	done := make(chan *serverutils.IncrementalDispatcher[string], 1)
 	go func() {
 		agentNames.ForEach(func(ag string) {
