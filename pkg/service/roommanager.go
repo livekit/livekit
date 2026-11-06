@@ -323,6 +323,15 @@ func (r *RoomManager) StartSession(
 	// since this is used for TURN server credentials, we don't want to fail the request even if there's no TURN for the session
 	apiKey, _, _ := r.getFirstKeyPair()
 
+	// a duplicate identity eviction keeps the identity scoped participant egress guard for the
+	// session that is about to join; release it if that session never gets there
+	evictedDuplicate, handoffComplete := false, false
+	defer func() {
+		if evictedDuplicate && !handoffComplete {
+			room.ClearLaunchedParticipantEgress(pi.Identity)
+		}
+	}()
+
 	participant := room.GetParticipant(pi.Identity)
 	if participant != nil {
 		// When reconnecting, it means WS has interrupted but underlying peer connection is still ok in this state,
@@ -398,6 +407,7 @@ func (r *RoomManager) StartSession(
 		// we need to clean up the existing participant, so a new one can join
 		participant.GetLogger().Infow("removing duplicate participant")
 		room.RemoveParticipant(participant.Identity(), participant.ID(), types.ParticipantCloseReasonDuplicateIdentity)
+		evictedDuplicate = true
 	} else if pi.Reconnect {
 		// send leave request if participant is trying to reconnect without keep subscribe state
 		// but missing from the room
@@ -570,6 +580,7 @@ func (r *RoomManager) StartSession(
 		prometheus.IncrementParticipantRtcCanceled(1, enableWarp, pi.Client.GetSdk())
 		return err
 	}
+	handoffComplete = true
 
 	var participantServerClosers utils.Closers
 	participantTopic := rpc.FormatParticipantTopic(room.Name(), participant.Identity())
