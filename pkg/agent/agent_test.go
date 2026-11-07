@@ -222,6 +222,78 @@ func TestAgent(t *testing.T) {
 		}, 2*agent.CheckEnabledTimeout, 10*time.Millisecond)
 		require.Less(t, time.Since(start), 2*time.Second)
 	})
+
+	t.Run("unnamed dispatch is skipped when every worker has a name", func(t *testing.T) {
+		bus := psrpc.NewLocalMessageBus()
+		server := testutils.NewTestServer(bus)
+		t.Cleanup(server.Close)
+
+		rpcClient := must.Get(rpc.NewAgentInternalClient(bus))
+		registered := must.Get(rpcClient.SubscribeWorkerRegistered(context.Background(), agent.DefaultHandlerNamespace))
+		defer registered.Close()
+
+		worker := server.SimulateAgentWorker(testutils.WithJobLoad(testutils.NewStableJobLoad(0)))
+		worker.Register(testAgentName, livekit.JobType_JT_ROOM)
+		select {
+		case <-registered.Channel():
+		case <-time.After(time.Second):
+			require.Fail(t, "registration timeout")
+		}
+
+		client := must.Get(agent.NewAgentClient(bus, agent.Config{}))
+		t.Cleanup(func() { _ = client.Stop() })
+
+		// nobody answers an unnamed request, so without the skip each one holds one of the client's
+		// 50 pool workers for the request timeout and the named dispatch has to wait behind them
+		for range 60 {
+			go client.LaunchJob(context.Background(), &agent.JobRequest{
+				JobType: livekit.JobType_JT_ROOM,
+				Room:    &livekit.Room{},
+			})
+		}
+		time.Sleep(100 * time.Millisecond)
+
+		start := time.Now()
+		go client.LaunchJob(context.Background(), &agent.JobRequest{
+			JobType:   livekit.JobType_JT_ROOM,
+			Room:      &livekit.Room{},
+			AgentName: testAgentName,
+		})
+		require.Eventually(t, func() bool {
+			return len(worker.Jobs()) == 1
+		}, 2*time.Second, 10*time.Millisecond)
+		require.Less(t, time.Since(start), 500*time.Millisecond)
+	})
+
+	t.Run("unnamed dispatch still reaches an unnamed worker", func(t *testing.T) {
+		bus := psrpc.NewLocalMessageBus()
+		server := testutils.NewTestServer(bus)
+		t.Cleanup(server.Close)
+
+		rpcClient := must.Get(rpc.NewAgentInternalClient(bus))
+		registered := must.Get(rpcClient.SubscribeWorkerRegistered(context.Background(), agent.DefaultHandlerNamespace))
+		defer registered.Close()
+
+		worker := server.SimulateAgentWorker(testutils.WithJobLoad(testutils.NewStableJobLoad(0)))
+		worker.Register("", livekit.JobType_JT_ROOM)
+		select {
+		case <-registered.Channel():
+		case <-time.After(time.Second):
+			require.Fail(t, "registration timeout")
+		}
+
+		client := must.Get(agent.NewAgentClient(bus, agent.Config{}))
+		t.Cleanup(func() { _ = client.Stop() })
+
+		jobs := client.LaunchJob(context.Background(), &agent.JobRequest{
+			JobType: livekit.JobType_JT_ROOM,
+			Room:    &livekit.Room{},
+		})
+		jobs.ForEach(func(*livekit.Job) {})
+		require.Eventually(t, func() bool {
+			return len(worker.Jobs()) == 1
+		}, 2*time.Second, 10*time.Millisecond)
+	})
 }
 
 func testBatchJobRequest(t require.TestingT, batchSize int, totalJobs int, client rpc.AgentInternalClient, workers []*testutils.AgentWorker) <-chan struct{} {
