@@ -24,10 +24,6 @@ import (
 // whipSessionNotifyInterval is a var (rather than a const) so tests can shorten it.
 var whipSessionNotifyInterval = 10 * time.Second
 
-// whipSubscribeWaitInterval is how often a participant's subscriptions are checked while waiting
-// for the tracks of a one-shot WHIP request. It is a var so tests can shorten it.
-var whipSubscribeWaitInterval = 50 * time.Millisecond
-
 type whipService struct {
 	*RoomManager
 
@@ -45,41 +41,6 @@ func newWhipService(rm *RoomManager) (*whipService, error) {
 		RoomManager:   rm,
 		ingressRpcCli: cli,
 	}, nil
-}
-
-// waitForSubscribedTracks blocks until the participant is subscribed to every listed track. It gives
-// up when ctx is done or the participant has closed: a track that never appears (a wrong name, a
-// publisher that left) would otherwise be waited on forever.
-func (s whipService) waitForSubscribedTracks(
-	ctx context.Context,
-	lp types.LocalParticipant,
-	tracks map[string]*rpc.WHIPCreateRequest_TrackList,
-) error {
-	eg, egCtx := errgroup.WithContext(ctx)
-	for publisherIdentity, trackList := range tracks {
-		for _, trackName := range trackList.GetTrackNames() {
-			eg.Go(func() error {
-				ticker := time.NewTicker(whipSubscribeWaitInterval)
-				defer ticker.Stop()
-
-				for {
-					if lp.IsTrackNameSubscribed(livekit.ParticipantIdentity(publisherIdentity), trackName) {
-						return nil
-					}
-					if lp.IsClosed() {
-						return ErrParticipantNotFound
-					}
-
-					select {
-					case <-egCtx.Done():
-						return egCtx.Err()
-					case <-ticker.C:
-					}
-				}
-			})
-		}
-	}
-	return eg.Wait()
 }
 
 func (s whipService) Create(ctx context.Context, req *rpc.WHIPCreateRequest) (*rpc.WHIPCreateResponse, error) {
@@ -127,7 +88,20 @@ func (s whipService) Create(ctx context.Context, req *rpc.WHIPCreateRequest) (*r
 	// NOTE: this is outside the WHIP spec, but added as a convenience for clients doing
 	// one-shot signalling (i. e. send an offer and get an answer once) to publish and subscribe to
 	// well-known tracks (i. e. remote participant identity and track names are well known)
-	err = s.waitForSubscribedTracks(ctx, lp, req.SubscribedParticipantTracks)
+	eg, _ := errgroup.WithContext(ctx)
+	for publisherIdentity, trackList := range req.SubscribedParticipantTracks {
+		for _, trackName := range trackList.TrackNames {
+			eg.Go(func() error {
+				for {
+					if lp.IsTrackNameSubscribed(livekit.ParticipantIdentity(publisherIdentity), trackName) {
+						return nil
+					}
+					time.Sleep(50 * time.Millisecond)
+				}
+			})
+		}
+	}
+	err = eg.Wait()
 	if err != nil {
 		lp.GetLogger().Errorw("whip service: could not subscribe to tracks", err)
 		return nil, err
