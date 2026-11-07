@@ -1828,3 +1828,23 @@ func TestUpdateVideoTrackReachesQueuedReplacement(t *testing.T) {
 	require.NoError(t, p.UpdateVideoTrack(&livekit.UpdateLocalVideoTrack{TrackSid: sid, Width: 1280, Height: 720}))
 	require.EqualValues(t, 1280, p.pendingTracks[pendingTrackCid].trackInfos[0].Width)
 }
+
+func TestRpcRequestTimeoutMs(t *testing.T) {
+	cases := []struct {
+		name     string
+		timeout  uint32
+		rtt      uint32
+		expected uint32
+	}{
+		{"no rtt", 15000, 0, 15000},
+		{"rtt taken off", 15000, 150, 14850},
+		{"rtt just under the timeout", 100, 99, 1},
+		{"rtt equal to the timeout", 100, 100, 100},
+		{"rtt above the timeout", 100, 150, 100},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			require.Equal(t, c.expected, rpcRequestTimeoutMs(c.timeout, c.rtt))
+		})
+	}
+}
