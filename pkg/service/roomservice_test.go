@@ -30,6 +30,7 @@ import (
 	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/service/servicefakes"
@@ -46,6 +47,37 @@ func TestDeleteRoom(t *testing.T) {
 			Room: "testroom",
 		})
 		require.Error(t, err)
+	})
+
+	createCtx := func() context.Context {
+		return service.WithGrants(context.Background(), &auth.ClaimGrants{Video: &auth.VideoGrant{RoomCreate: true}}, "")
+	}
+
+	t.Run("reassigns the room before deleting it", func(t *testing.T) {
+		svc := newTestRoomService(config.LimitConfig{})
+		svc.store.RoomExistsReturns(true, nil)
+		svc.router.CreateRoomCalls(func(context.Context, *livekit.CreateRoomRequest) (*livekit.Room, error) {
+			// the room is located only once it has been assigned to a live node
+			require.Equal(t, 1, svc.allocator.SelectRoomNodeCallCount())
+			return &livekit.Room{Name: "testroom"}, nil
+		})
+
+		_, err := svc.DeleteRoom(createCtx(), &livekit.DeleteRoomRequest{Room: "testroom"})
+		require.NoError(t, err)
+		_, roomName, nodeID := svc.allocator.SelectRoomNodeArgsForCall(0)
+		require.Equal(t, livekit.RoomName("testroom"), roomName)
+		require.Empty(t, nodeID)
+		require.Equal(t, 1, svc.router.CreateRoomCallCount())
+	})
+
+	t.Run("deletes a room on a node at its limits", func(t *testing.T) {
+		svc := newTestRoomService(config.LimitConfig{})
+		svc.store.RoomExistsReturns(true, nil)
+		svc.allocator.SelectRoomNodeReturns(routing.ErrNodeLimitReached)
+
+		_, err := svc.DeleteRoom(createCtx(), &livekit.DeleteRoomRequest{Room: "testroom"})
+		require.NoError(t, err)
+		require.Equal(t, 1, svc.router.CreateRoomCallCount())
 	})
 }
 
