@@ -4438,6 +4438,11 @@ func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack
 			if ti.Sid == update.TrackSid {
 				isPending = true
 
+				// ignored, as MediaTrackReceiver does for a published track
+				if ti.Type != livekit.TrackType_AUDIO {
+					continue
+				}
+
 				ti = proto.CloneOf(ti)
 				ti.AudioFeatures = sutils.DedupeSlice(update.Features)
 				ti.Stereo = false
@@ -4480,6 +4485,11 @@ func (p *ParticipantImpl) UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack
 		for i, ti := range pti.trackInfos {
 			if ti.Sid == update.TrackSid {
 				isPending = true
+
+				// ignored, as MediaTrackReceiver does for a published track
+				if ti.Type != livekit.TrackType_VIDEO {
+					continue
+				}
 
 				ti = proto.CloneOf(ti)
 				ti.Width = update.Width
