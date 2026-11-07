@@ -46,6 +46,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
+	rtcsignalling "github.com/livekit/livekit-server/pkg/rtc/signalling"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 	"github.com/livekit/livekit-server/pkg/testutils"
@@ -525,6 +526,38 @@ func TestDisconnectTiming(t *testing.T) {
 		// close channel and then try to Negotiate
 		msg.Close()
 	})
+}
+
+func TestCheckMetadataLimitsLKAttributes(t *testing.T) {
+	p := newParticipantForTest("test")
+	p.params.LimitConfig = config.LimitConfig{MaxAttributesSize: 5, MaxLKAttributesSize: 10}
+
+	require.NoError(t, p.checkMetadataLimits("", "", map[string]string{"k": "vvvv", "lk.k": "vvvvvv"}))
+
+	err := p.checkMetadataLimits("", "", map[string]string{"lk.k": "vvvvvvv"})
+	require.Equal(t, errLKAttributesExceedsLimits, err)
+	require.ErrorIs(t, err, rtcsignalling.ErrAttributesExceedsLimits)
+}
+
+func TestUpdateMetadataChecksMergedAttributes(t *testing.T) {
+	p := newParticipantForTest("test")
+	p.params.LimitConfig = config.LimitConfig{MaxAttributesSize: 5, MaxLKAttributesSize: 10}
+
+	// each update fits the lk. limit alone, but the stored total would not
+	require.NoError(t, p.UpdateMetadata(&livekit.UpdateParticipantMetadata{Attributes: map[string]string{"lk.a": "vvvv"}}, true))
+	err := p.UpdateMetadata(&livekit.UpdateParticipantMetadata{Attributes: map[string]string{"lk.b": "vvvv"}}, true)
+	require.ErrorIs(t, err, rtcsignalling.ErrAttributesExceedsLimits)
+	require.Equal(t, map[string]string{"lk.a": "vvvv"}, p.ClaimGrants().Attributes)
+
+	// replacing a key counts its new value only, and an empty value deletes the key
+	require.NoError(t, p.UpdateMetadata(&livekit.UpdateParticipantMetadata{Attributes: map[string]string{"lk.a": "vvvvvv"}}, true))
+	require.NoError(t, p.UpdateMetadata(&livekit.UpdateParticipantMetadata{Attributes: map[string]string{"lk.a": "", "lk.b": "vvvvvv"}}, true))
+	require.Equal(t, map[string]string{"lk.b": "vvvvvv"}, p.ClaimGrants().Attributes)
+
+	// customer attributes accumulate against their own limit the same way
+	require.NoError(t, p.UpdateMetadata(&livekit.UpdateParticipantMetadata{Attributes: map[string]string{"a": "vv"}}, true))
+	err = p.UpdateMetadata(&livekit.UpdateParticipantMetadata{Attributes: map[string]string{"b": "vv"}}, true)
+	require.Equal(t, rtcsignalling.ErrAttributesExceedsLimits, err)
 }
 
 func TestCorrectJoinedAt(t *testing.T) {

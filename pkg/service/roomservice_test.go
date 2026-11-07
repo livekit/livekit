@@ -105,6 +105,24 @@ func TestMetaDataLimits(t *testing.T) {
 		requireInvalidArg(t, err)
 	})
 
+	t.Run("lk attributes exceed lk limit", func(t *testing.T) {
+		svc := newTestRoomService(config.LimitConfig{MaxAttributesSize: 100, MaxLKAttributesSize: 5})
+		attrs := map[string]string{"lk.key": "abcdefg"}
+
+		_, err := svc.UpdateParticipant(adminCtx(), &livekit.UpdateParticipantRequest{
+			Room:       "testroom",
+			Identity:   "123",
+			Attributes: attrs,
+		})
+		requireInvalidArg(t, err)
+
+		_, err = svc.CreateRoom(createCtx(), &livekit.CreateRoomRequest{
+			Name:   "testroom",
+			Agents: []*livekit.RoomAgentDispatch{{AgentName: "bot", Attributes: attrs}},
+		})
+		requireInvalidArg(t, err)
+	})
+
 	notExceedsLimitsSvc := map[string]*TestRoomService{
 		"metadata exceeds limits": newTestRoomService(config.LimitConfig{
 			MaxMetadataSize:   5,
@@ -167,6 +185,15 @@ func TestAgentDispatchMetadataLimits(t *testing.T) {
 		_, err := svc.CreateDispatch(ctx, &livekit.CreateAgentDispatchRequest{
 			Room:       "testroom",
 			Attributes: map[string]string{"key": "abcdefg"},
+		})
+		require.ErrorIs(t, err, service.ErrAttributeExceedsLimits)
+	})
+
+	t.Run("lk attributes exceeds limits", func(t *testing.T) {
+		svc := newTestAgentDispatchService(config.LimitConfig{MaxAttributesSize: 100, MaxLKAttributesSize: 5})
+		_, err := svc.CreateDispatch(ctx, &livekit.CreateAgentDispatchRequest{
+			Room:       "testroom",
+			Attributes: map[string]string{"lk.key": "abcdefg"},
 		})
 		require.ErrorIs(t, err, service.ErrAttributeExceedsLimits)
 	})

@@ -478,6 +478,9 @@ func CheckConnectLimits(limitConfig config.LimitConfig, identity string, roomNam
 	if !limitConfig.CheckAttributesSize(grants.Attributes) {
 		return fmt.Errorf("%w: max size %d", ErrAttributeExceedsLimits, limitConfig.MaxAttributesSize)
 	}
+	if !limitConfig.CheckLKAttributesSize(grants.Attributes) {
+		return fmt.Errorf("%w: lk. attributes max size %d", ErrAttributeExceedsLimits, limitConfig.MaxLKAttributesSize)
+	}
 	return nil
 }
 

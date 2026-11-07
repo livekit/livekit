@@ -81,6 +81,12 @@ func ConnectLimitCases() []ConnectLimitCase {
 			Grant: grantWith(func(g *auth.ClaimGrants) { g.Attributes = map[string]string{"k": "abcdefg"} }),
 			Err:   ErrAttributeExceedsLimits,
 		},
+		{
+			Name:  "lk attributes exceeds",
+			Limit: config.LimitConfig{MaxAttributesSize: 100, MaxLKAttributesSize: 5},
+			Grant: grantWith(func(g *auth.ClaimGrants) { g.Attributes = map[string]string{"lk.k": "abcdefg"} }),
+			Err:   ErrAttributeExceedsLimits,
+		},
 	}
 }
 
@@ -132,6 +138,15 @@ func TestConnectLimits(t *testing.T) {
 	t.Run("within limits", func(t *testing.T) {
 		limit := config.LimitConfig{MaxParticipantIdentityLength: 5, MaxRoomNameLength: 10, MaxParticipantNameLength: 5, MaxMetadataSize: 5, MaxAttributesSize: 5}
 		_, code, err := ValidateConnectRequest(logger.GetLogger(), grantRequest(baseGrant()), limit, ValidateConnectRequestParams{}, nil, stubRoomAllocator{})
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, code)
+	})
+
+	t.Run("lk attributes do not count against attributes limit", func(t *testing.T) {
+		g := baseGrant()
+		g.Attributes = map[string]string{"k": "abcd", "lk.k": "abcdefg"}
+		limit := config.LimitConfig{MaxAttributesSize: 5, MaxLKAttributesSize: 11}
+		_, code, err := ValidateConnectRequest(logger.GetLogger(), grantRequest(g), limit, ValidateConnectRequestParams{}, nil, stubRoomAllocator{})
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, code)
 	})
