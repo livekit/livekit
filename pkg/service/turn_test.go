@@ -17,6 +17,8 @@ package service
 import (
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -284,7 +286,7 @@ func proxyProtocolTURNConfig(trustedCIDRs ...string) config.TURNConfig {
 }
 
 func TestNewTURNTCPListener_ProxyProtocol(t *testing.T) {
-	listener, err := newTURNTCPListener(proxyProtocolTURNConfig("127.0.0.0/8"), "127.0.0.1:0")
+	listener, err := newTURNTCPListener(proxyProtocolTURNConfig("127.0.0.0/8"), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer listener.Close()
 
@@ -318,7 +320,7 @@ func TestNewTURNTCPListener_ProxyProtocol(t *testing.T) {
 }
 
 func TestNewTURNTCPListener_ProxyProtocolRejectsBareConnection(t *testing.T) {
-	listener, err := newTURNTCPListener(proxyProtocolTURNConfig("127.0.0.0/8"), "127.0.0.1:0")
+	listener, err := newTURNTCPListener(proxyProtocolTURNConfig("127.0.0.0/8"), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer listener.Close()
 
@@ -350,7 +352,7 @@ func TestNewTURNTCPListener_ProxyProtocolRejectsBareConnection(t *testing.T) {
 }
 
 func TestNewTURNTCPListener_WithoutProxyProtocol(t *testing.T) {
-	listener, err := newTURNTCPListener(config.TURNConfig{ExternalTLS: true}, "127.0.0.1:0")
+	listener, err := newTURNTCPListener(config.TURNConfig{ExternalTLS: true}, "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer listener.Close()
 
@@ -379,7 +381,7 @@ func TestNewTURNTCPListener_WithoutProxyProtocol(t *testing.T) {
 }
 
 func TestNewTURNTCPListener_ProxyProtocolClosesUntrustedProxy(t *testing.T) {
-	listener, err := newTURNTCPListener(proxyProtocolTURNConfig("203.0.113.0/24"), "127.0.0.1:0")
+	listener, err := newTURNTCPListener(proxyProtocolTURNConfig("203.0.113.0/24"), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer listener.Close()
 
@@ -408,9 +410,101 @@ func TestNewTURNTCPListener_ProxyProtocolClosesUntrustedProxy(t *testing.T) {
 }
 
 func TestNewTURNTCPListener_ProxyProtocolRequiresTrustedCIDRs(t *testing.T) {
-	_, err := newTURNTCPListener(proxyProtocolTURNConfig(), "127.0.0.1:0")
+	_, err := newTURNTCPListener(proxyProtocolTURNConfig(), "tcp", "127.0.0.1:0")
 	require.Error(t, err)
 
-	_, err = newTURNTCPListener(proxyProtocolTURNConfig("not-a-cidr"), "127.0.0.1:0")
+	_, err = newTURNTCPListener(proxyProtocolTURNConfig("not-a-cidr"), "tcp", "127.0.0.1:0")
 	require.Error(t, err)
+}
+
+func TestNewTURNTCPListener_UnixSocketTrustsPeerAndReadsProxyHeader(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "turn.socket")
+	listener, err := newTURNTCPListener(proxyProtocolTURNConfig("127.0.0.0/8"), "unix", path)
+	require.NoError(t, err)
+	defer listener.Close()
+
+	accepted := make(chan net.Addr, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			accepted <- nil
+			return
+		}
+		defer conn.Close()
+		buf := make([]byte, 1)
+		_, _ = conn.Read(buf)
+		accepted <- conn.RemoteAddr()
+	}()
+
+	conn, err := net.Dial("unix", path)
+	require.NoError(t, err)
+	defer conn.Close()
+	_, err = conn.Write([]byte("PROXY TCP4 203.0.113.9 127.0.0.1 40123 443\r\nx"))
+	require.NoError(t, err)
+
+	select {
+	case addr := <-accepted:
+		require.NotNil(t, addr)
+		require.Equal(t, "203.0.113.9:40123", addr.String())
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the accepted connection")
+	}
+}
+
+func TestNewTURNTCPListener_UnixSocketReplacesStaleFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "turn.socket")
+	require.NoError(t, os.WriteFile(path, nil, 0600))
+	listener, err := newTURNTCPListener(config.TURNConfig{ExternalTLS: true}, "unix", path)
+	require.NoError(t, err)
+	require.NoError(t, listener.Close())
+}
+
+func TestTURNConfig_HasTLS(t *testing.T) {
+	require.False(t, config.TURNConfig{}.HasTLS())
+	require.True(t, config.TURNConfig{TLSPort: 5349}.HasTLS())
+	require.True(t, config.TURNConfig{UnixSocket: "/run/turn.socket"}.HasTLS())
+}
+
+func TestNewTurnServer_UnixSocketAllocatesIPv4RelayBehindIPv6Proxy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "turn.socket")
+	conf := &config.Config{}
+	conf.TURN = proxyProtocolTURNConfig("127.0.0.0/8")
+	conf.TURN.Enabled = true
+	conf.TURN.Domain = "turn.example.com"
+	conf.TURN.UnixSocket = path
+	conf.TURN.BindAddresses = []string{"127.0.0.1"}
+	conf.TURN.RelayPortRangeStart = 30000
+	conf.TURN.RelayPortRangeEnd = 40000
+	conf.RTC.NodeIP.V4 = "127.0.0.1"
+	h := newTestTurnAuthHandler()
+
+	server, err := NewTurnServer(conf, h.HandleAuth, false)
+	require.NoError(t, err)
+	defer server.Close()
+
+	conn, err := net.Dial("unix", path)
+	require.NoError(t, err)
+	defer conn.Close()
+	_, err = conn.Write([]byte("PROXY TCP6 2001:db8::7 2001:db8::1 40123 443\r\n"))
+	require.NoError(t, err)
+
+	pID := livekit.ParticipantID("PA_unix_v6")
+	username, expiry := h.CreateUsername(turnTestAPIKey, pID, 60)
+	password, err := h.CreatePassword(turnTestAPIKey, pID, expiry)
+	require.NoError(t, err)
+
+	client, err := turn.NewClient(&turn.ClientConfig{
+		Conn:     turn.NewSTUNConn(conn),
+		Username: username,
+		Password: password,
+		Realm:    LivekitRealm,
+	})
+	require.NoError(t, err)
+	defer client.Close()
+	require.NoError(t, client.Listen())
+
+	relay, err := client.Allocate()
+	require.NoError(t, err)
+	defer relay.Close()
+	require.Equal(t, "127.0.0.1", relay.LocalAddr().(*net.UDPAddr).IP.String())
 }
