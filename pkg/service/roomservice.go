@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -152,6 +153,17 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 
 	// ensure at least one node is available to handle the request
 	room, err := s.router.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: req.Room})
+	if errors.Is(err, routing.ErrNotFound) || errors.Is(err, psrpc.ErrNoResponse) {
+		// the node hosting the room may have left the cluster without closing it. reassign it the
+		// same way a join would, which keeps a node that is still available, so that a live node can close it
+		if selectErr := s.roomAllocator.SelectRoomNode(ctx, livekit.RoomName(req.Room), ""); selectErr != nil {
+			if errors.Is(selectErr, routing.ErrNodeLimitReached) {
+				return nil, err
+			}
+			return nil, selectErr
+		}
+		room, err = s.router.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: req.Room})
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -16,6 +16,7 @@ package service_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -30,7 +31,9 @@ import (
 	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
+	"github.com/livekit/livekit-server/pkg/routing/selector"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/service/servicefakes"
 )
@@ -46,6 +49,74 @@ func TestDeleteRoom(t *testing.T) {
 			Room: "testroom",
 		})
 		require.Error(t, err)
+	})
+
+	createCtx := func() context.Context {
+		return service.WithGrants(context.Background(), &auth.ClaimGrants{Video: &auth.VideoGrant{RoomCreate: true}}, "")
+	}
+
+	t.Run("deletes the room on its node without reassigning it", func(t *testing.T) {
+		svc := newTestRoomService(config.LimitConfig{})
+		svc.store.RoomExistsReturns(true, nil)
+		svc.router.CreateRoomReturns(&livekit.Room{Name: "testroom"}, nil)
+
+		_, err := svc.DeleteRoom(createCtx(), &livekit.DeleteRoomRequest{Room: "testroom"})
+		require.NoError(t, err)
+		require.Zero(t, svc.allocator.SelectRoomNodeCallCount())
+		require.Equal(t, 1, svc.router.CreateRoomCallCount())
+	})
+
+	for name, nodeErr := range map[string]error{
+		"gone":                    routing.ErrNotFound,
+		"not responding":          psrpc.ErrNoResponse,
+		"not responding, wrapped": fmt.Errorf("could not create room: %w", psrpc.ErrNoResponse),
+	} {
+		t.Run("reassigns a room whose node is "+name, func(t *testing.T) {
+			svc := newTestRoomService(config.LimitConfig{})
+			svc.store.RoomExistsReturns(true, nil)
+			svc.router.CreateRoomReturnsOnCall(0, nil, nodeErr)
+			svc.router.CreateRoomReturnsOnCall(1, &livekit.Room{Name: "testroom"}, nil)
+
+			_, err := svc.DeleteRoom(createCtx(), &livekit.DeleteRoomRequest{Room: "testroom"})
+			require.NoError(t, err)
+			require.Equal(t, 1, svc.allocator.SelectRoomNodeCallCount())
+			_, roomName, nodeID := svc.allocator.SelectRoomNodeArgsForCall(0)
+			require.Equal(t, livekit.RoomName("testroom"), roomName)
+			require.Empty(t, nodeID)
+			require.Equal(t, 2, svc.router.CreateRoomCallCount())
+		})
+	}
+
+	t.Run("returns other errors of locating the room", func(t *testing.T) {
+		svc := newTestRoomService(config.LimitConfig{})
+		svc.store.RoomExistsReturns(true, nil)
+		svc.router.CreateRoomReturns(nil, psrpc.ErrRequestTimedOut)
+
+		_, err := svc.DeleteRoom(createCtx(), &livekit.DeleteRoomRequest{Room: "testroom"})
+		require.ErrorIs(t, err, psrpc.ErrRequestTimedOut)
+		require.Zero(t, svc.allocator.SelectRoomNodeCallCount())
+	})
+
+	t.Run("returns the error of reassigning the room", func(t *testing.T) {
+		svc := newTestRoomService(config.LimitConfig{})
+		svc.store.RoomExistsReturns(true, nil)
+		svc.router.CreateRoomReturns(nil, routing.ErrNotFound)
+		svc.allocator.SelectRoomNodeReturns(selector.ErrNoAvailableNodes)
+
+		_, err := svc.DeleteRoom(createCtx(), &livekit.DeleteRoomRequest{Room: "testroom"})
+		require.ErrorIs(t, err, selector.ErrNoAvailableNodes)
+		require.Equal(t, 1, svc.router.CreateRoomCallCount())
+	})
+
+	t.Run("does not retry a room whose node is available but at its limits", func(t *testing.T) {
+		svc := newTestRoomService(config.LimitConfig{})
+		svc.store.RoomExistsReturns(true, nil)
+		svc.router.CreateRoomReturns(nil, psrpc.ErrNoResponse)
+		svc.allocator.SelectRoomNodeReturns(routing.ErrNodeLimitReached)
+
+		_, err := svc.DeleteRoom(createCtx(), &livekit.DeleteRoomRequest{Room: "testroom"})
+		require.ErrorIs(t, err, psrpc.ErrNoResponse)
+		require.Equal(t, 1, svc.router.CreateRoomCallCount())
 	})
 }
 
