@@ -12,6 +12,14 @@ Audit the server on `master`: signalling (`pkg/service`, `pkg/rtc/signalling`),
 room and participant state (`pkg/rtc`), media forwarding (`pkg/sfu`), routing
 (`pkg/routing`), the agent endpoint (`pkg/agent`), WHIP, WebTransport, and TURN.
 
+The server runs LiveKit's own Go modules in the same process, and they are in
+scope on the same terms: `github.com/livekit/protocol`,
+`github.com/livekit/mediatransportutil`, `github.com/livekit/psrpc`, and the forks
+that `go.mod` substitutes for pion (`livekit/webrtc-pion`, `livekit/dtls`,
+`livekit/ice`). Their source is in the Go module cache. Third-party dependencies,
+including the rest of pion, are in scope only where untrusted input reaches them
+through the server.
+
 Untrusted parties:
 
 - Unauthenticated network clients, against every HTTP, WebSocket, WebTransport,
@@ -25,8 +33,8 @@ Untrusted parties:
 Trusted: the operator, the server config file, the API secret, and redis.
 Treat a compromised redis or a leaked API secret as out of scope.
 
-`pion/dtls` is enrolled separately. Report DTLS bugs there, unless LiveKit
-misuses the library.
+Upstream `pion/webrtc` and `pion/dtls` are enrolled separately. A bug present in
+upstream goes there; a bug only in LiveKit's forks belongs here.
 
 ## Security properties
 
@@ -57,6 +65,9 @@ misuses the library.
 - **Low / not a finding:** a participant degrading their own session; behavior
   needing the API secret, operator config, or redis access; bandwidth estimation
   or quality tuning; packet loss and reordering handled as designed.
+- **Low:** a bug in a LiveKit module that is not reachable from the server's
+  entry points today. State this explicitly so it can be fixed before a caller
+  exposes it.
 
 ## Testing
 
@@ -82,3 +93,5 @@ the affected package for parsing bugs.
 State the attacker's required access (none, any valid token, or a specific
 grant), the entry point, and the demonstrated impact. Provide a minimal
 reproducer, preferably a Go test.
+For findings in dependencies, name the module and version, and say whether the
+bug is reachable from the server.
