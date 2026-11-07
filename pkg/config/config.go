@@ -288,6 +288,9 @@ type RoomConfig struct {
 	SyncStreams        bool               `yaml:"sync_streams,omitempty"`
 	CreateRoomTimeout  time.Duration      `yaml:"create_room_timeout,omitempty"`
 	CreateRoomAttempts int                `yaml:"create_room_attempts,omitempty"`
+	// when the router maps a room hosted on this node to another node, ask the room's
+	// participants to reconnect so that they join the room on that node
+	ReconnectMovedRooms bool `yaml:"reconnect_moved_rooms,omitempty"`
 	// include room metadata in track webhook events instead of just room SID and name
 	EnableFullRoomInWebhooks bool `yaml:"enable_full_room_in_webhooks,omitempty"`
 	// target room participant update batch chunk size in bytes

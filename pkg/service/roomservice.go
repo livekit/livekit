@@ -156,17 +156,15 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 		return nil, err
 	}
 
+	// the RTC node deletes the room state, only while the room is mapped to it
 	_, err = s.roomClient.DeleteRoom(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
 	if err != nil {
 		return nil, err
 	}
 
-	if os, ok := s.roomStore.(OSSServiceStore); ok {
-		err = os.DeleteRoom(ctx, livekit.RoomName(req.Room))
-	}
 	res := &livekit.DeleteRoomResponse{}
 	RecordResponse(ctx, room)
-	return res, err
+	return res, nil
 }
 
 func (s *RoomService) ListParticipants(ctx context.Context, req *livekit.ListParticipantsRequest) (res *livekit.ListParticipantsResponse, err error) {
