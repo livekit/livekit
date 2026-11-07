@@ -41,6 +41,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/datachannel"
 	"github.com/livekit/livekit-server/pkg/sfu/interceptor"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 const (
@@ -129,6 +130,11 @@ type TransportManager struct {
 
 	dataChannelSendErrorDroppedBySlowReaderCount atomic.Uint32
 	dataChannelSendErrorCount                    atomic.Uint32
+
+	// After first subscriber offer, defer non-forced Negotiate until ICE connects once
+	// so late tracks (e.g. agent publish) do not trigger mid-ICE offer #2.
+	subscriberOfferSent          atomic.Bool
+	pendingSubscriberNegotiate   atomic.Bool
 }
 
 func NewTransportManager(params TransportManagerParams) (*TransportManager, error) {
@@ -208,6 +214,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 			return nil, err
 		}
 		t.subscriber = subscriber
+		subscriber.OnICEConnected(t.flushPendingSubscriberNegotiate)
 	}
 	if t.useNegotiatedDataChannels() {
 		if err := t.createNegotiatedDataChannelsForPublisher(); err != nil {
@@ -303,6 +310,42 @@ func (t *TransportManager) SubscriberFirstConnectedAt() time.Time {
 	} else {
 		return t.subscriber.PeerConnectionFirstConnectedAt()
 	}
+}
+
+// PrimaryICEFirstConnectedAt is first ICE Connected on the primary transport
+// (subscriber when SubscriberAsPrimary, else publisher / single PC).
+func (t *TransportManager) PrimaryICEFirstConnectedAt() time.Time {
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
+		if t.publisher != nil {
+			return t.publisher.ICEFirstConnectedAt()
+		}
+		return time.Time{}
+	}
+	if t.params.SubscriberAsPrimary && t.subscriber != nil {
+		return t.subscriber.ICEFirstConnectedAt()
+	}
+	if t.publisher != nil {
+		return t.publisher.ICEFirstConnectedAt()
+	}
+	return time.Time{}
+}
+
+// PrimaryPeerConnectionFirstConnectedAt is first PC Connected on the primary
+// transport (ICE + DTLS done).
+func (t *TransportManager) PrimaryPeerConnectionFirstConnectedAt() time.Time {
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
+		if t.publisher != nil {
+			return t.publisher.PeerConnectionFirstConnectedAt()
+		}
+		return time.Time{}
+	}
+	if t.params.SubscriberAsPrimary && t.subscriber != nil {
+		return t.subscriber.PeerConnectionFirstConnectedAt()
+	}
+	if t.publisher != nil {
+		return t.publisher.PeerConnectionFirstConnectedAt()
+	}
+	return time.Time{}
 }
 
 func (t *TransportManager) AddTrackLocal(
@@ -648,9 +691,48 @@ func (t *TransportManager) AddICECandidate(candidate webrtc.ICECandidateInit, ta
 
 func (t *TransportManager) NegotiateSubscriber(force bool) {
 	if t.subscriber != nil {
+		// First offer always proceeds (FastStart uses force=true). Later Negotiate(false)
+		// while ICE has not connected yet is queued and flushed on ICE connected.
+		if !force && t.subscriberOfferSent.Load() && !t.subscriber.ICEHasEverConnected() {
+			if t.pendingSubscriberNegotiate.CompareAndSwap(false, true) {
+				t.params.Logger.Infow("deferring subscriber negotiate until ICE connected")
+				prometheus.RecordSessionJoinPathEvent(
+					"deferred_negotiate",
+					int(t.params.ProtocolVersion),
+					t.clientSdk(),
+				)
+			}
+			return
+		}
+		t.subscriberOfferSent.Store(true)
+		if force {
+			t.pendingSubscriberNegotiate.Store(false)
+		}
 		t.subscriber.Negotiate(force)
-	} else {
-		t.publisher.Negotiate(force)
+		return
+	}
+	t.publisher.Negotiate(force)
+}
+
+func (t *TransportManager) clientSdk() livekit.ClientInfo_SDK {
+	if t.params.ClientInfo.ClientInfo != nil {
+		return t.params.ClientInfo.GetSdk()
+	}
+	return livekit.ClientInfo_UNKNOWN
+}
+
+func (t *TransportManager) flushPendingSubscriberNegotiate() {
+	if !t.pendingSubscriberNegotiate.CompareAndSwap(true, false) {
+		return
+	}
+	t.params.Logger.Infow("flushing deferred subscriber negotiate after ICE connected")
+	prometheus.RecordSessionJoinPathEvent(
+		"flush_deferred_negotiate",
+		int(t.params.ProtocolVersion),
+		t.clientSdk(),
+	)
+	if t.subscriber != nil {
+		t.subscriber.Negotiate(true)
 	}
 }
 

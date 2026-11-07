@@ -240,6 +240,7 @@ type PCTransport struct {
 	lastNegotiate      time.Time
 
 	onNegotiationStateChanged func(state transport.NegotiationState)
+	onICEConnected            func()
 
 	rtxInfoExtractorFactory *sfuinterceptor.RTXInfoExtractorFactory
 
@@ -435,6 +436,14 @@ func newPeerConnection(
 		return context.WithTimeout(context.Background(), dtlsHandshakeTimeout)
 	})
 	se.SetICETimeouts(iceDisconnectedTimeout, iceFailedTimeout, iceKeepaliveInterval)
+
+	// pion's controlling selector refuses to nominate a candidate until a per-type
+	// minimum wait elapses (prflx 1s, relay 2s), so that a better path still trickling
+	// in can win. Behind a forced TURN relay there is only ever one viable path, so the
+	// wait is dead time. It lands on the subscriber PeerConnection because the SFU
+	// offers that one and is therefore the controlling agent; the publisher is unaffected.
+	se.SetPrflxAcceptanceMinWait(0)
+	se.SetRelayAcceptanceMinWait(0)
 
 	// if client don't support prflx over relay, we should not expose private address to it, use single external ip as host candidate
 	if !params.ClientInfo.SupportsPrflxOverRelay() && len(params.Config.NAT1To1IPs) > 0 {
@@ -727,7 +736,14 @@ func (t *PCTransport) setICEStartedAt(at time.Time) {
 	t.lock.Unlock()
 }
 
+func (t *PCTransport) OnICEConnected(f func()) {
+	t.lock.Lock()
+	t.onICEConnected = f
+	t.lock.Unlock()
+}
+
 func (t *PCTransport) setICEConnectedAt(at time.Time) {
+	var onICEConnected func()
 	t.lock.Lock()
 	if t.iceFirstConnectedAt.IsZero() {
 		//
@@ -735,6 +751,7 @@ func (t *PCTransport) setICEConnectedAt(at time.Time) {
 		// This prevents reset of iceFirstConnectedAt if ICE goes `Connected` -> `Disconnected` -> `Connected`.
 		//
 		t.iceFirstConnectedAt = at
+		onICEConnected = t.onICEConnected
 
 		// set failure timer for dtls handshake
 		iceDuration := at.Sub(t.iceFirstStartedAt)
@@ -764,6 +781,10 @@ func (t *PCTransport) setICEConnectedAt(at time.Time) {
 	}
 	t.mayFailedICEStats = nil
 	t.lock.Unlock()
+
+	if onICEConnected != nil {
+		onICEConnected()
+	}
 }
 
 func (t *PCTransport) logMayFailedICEStats() {
@@ -839,9 +860,29 @@ func (t *PCTransport) setPeerConnectionConnectedAt(at time.Time) bool {
 	}
 
 	t.peerConnectionFirstConnectedAt = at
+	iceAt := t.iceFirstConnectedAt
 	prometheus.RecordServiceOperationSuccess("peer_connection")
 	prometheus.RecordPeerConnectionState(t.params.Transport, "connected")
 	t.lock.Unlock()
+
+	// PeerConnection Connected ⇒ DTLS handshake finished (WebRTC).
+	if !iceAt.IsZero() {
+		dtlsMs := at.Sub(iceAt)
+		sdk := livekit.ClientInfo_UNKNOWN
+		if t.params.ClientInfo.ClientInfo != nil {
+			sdk = t.params.ClientInfo.GetSdk()
+		}
+		prometheus.RecordSessionICEToDTLS(
+			int(t.params.ProtocolVersion),
+			sdk,
+			t.params.Transport.String(),
+			dtlsMs,
+		)
+		t.params.Logger.Infow("dtls_handshake_complete",
+			"transport", t.params.Transport.String(),
+			"iceToDtlsMs", dtlsMs.Milliseconds(),
+		)
+	}
 	return true
 }
 
@@ -1491,6 +1532,13 @@ func (t *PCTransport) PeerConnectionFirstConnectedAt() time.Time {
 	defer t.lock.RUnlock()
 
 	return t.peerConnectionFirstConnectedAt
+}
+
+func (t *PCTransport) ICEFirstConnectedAt() time.Time {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.iceFirstConnectedAt
 }
 
 func (t *PCTransport) GetICEConnectionInfo() *types.ICEConnectionInfo {
@@ -3032,7 +3080,8 @@ func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription, 
 	if t.negotiationState == transport.NegotiationStateRetry {
 		t.setNegotiationState(transport.NegotiationStateNone)
 
-		t.params.Logger.Debugw("re-negotiate after receiving answer")
+		t.params.Logger.Infow("re-negotiate after receiving answer")
+		prometheus.RecordSessionJoinPathEvent("renegotiate_after_answer", 0, livekit.ClientInfo_UNKNOWN)
 		return t.createAndSendOffer(nil)
 	}
 

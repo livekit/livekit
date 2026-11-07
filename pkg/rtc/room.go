@@ -515,7 +515,19 @@ func (r *Room) Join(
 		// initiates sub connection as primary
 		if participant.ProtocolVersion().SupportFastStart() {
 			go func() {
-				r.subscribeToExistingTracks(participant, false)
+				// Sync subscribe so existing tracks (e.g. agent audio) are in offer #1.
+				// Async subscribe raced Negotiate and triggered mid-ICE offer #2 (RETRY).
+				n := r.subscribeToExistingTracks(participant, true)
+				sdk := livekit.ClientInfo_UNKNOWN
+				if ci := participant.GetClientInfo(); ci != nil {
+					sdk = ci.GetSdk()
+				}
+				proto := int(participant.ProtocolVersion())
+				if n == 0 {
+					prometheus.RecordSessionJoinPathEvent("faststart_empty_tracks", proto, sdk)
+				} else {
+					prometheus.RecordSessionJoinPathEvent("faststart_with_tracks", proto, sdk)
+				}
 				participant.Negotiate(true)
 			}()
 		} else {
@@ -523,7 +535,20 @@ func (r *Room) Join(
 		}
 	} else {
 		if participant.IsUsingSinglePeerConnection() {
-			go r.subscribeToExistingTracks(participant, false)
+			go func() {
+				// Single PC: sync-attach existing tracks before any later renegotiate.
+				n := r.subscribeToExistingTracks(participant, true)
+				sdk := livekit.ClientInfo_UNKNOWN
+				if ci := participant.GetClientInfo(); ci != nil {
+					sdk = ci.GetSdk()
+				}
+				proto := int(participant.ProtocolVersion())
+				if n == 0 {
+					prometheus.RecordSessionJoinPathEvent("singlepc_empty_tracks", proto, sdk)
+				} else {
+					prometheus.RecordSessionJoinPathEvent("singlepc_with_tracks", proto, sdk)
+				}
+			}()
 		}
 	}
 
@@ -1235,8 +1260,19 @@ func (r *Room) onStateChange(p types.LocalParticipant) {
 
 	switch p.State() {
 	case livekit.ParticipantInfo_ACTIVE:
-		// subscribe participant to existing published tracks
-		r.subscribeToExistingTracks(p, false)
+		// Late tracks only — Negotiate(false) is deferred until ICE connected (TransportManager).
+		// Skip entirely when FastStart/single-PC already attached every published track.
+		sdk := livekit.ClientInfo_UNKNOWN
+		if ci := p.GetClientInfo(); ci != nil {
+			sdk = ci.GetSdk()
+		}
+		proto := int(p.ProtocolVersion())
+		if r.hasUnsubscribedExistingTracks(p) {
+			r.subscribeToExistingTracks(p, false)
+			prometheus.RecordSessionJoinPathEvent("active_first_subscribe", proto, sdk)
+		} else {
+			prometheus.RecordSessionJoinPathEvent("active_resubscribe_skip", proto, sdk)
+		}
 
 		connectTime := time.Since(p.ConnectedAt())
 		meta := &livekit.AnalyticsClientMeta{
@@ -1492,7 +1528,34 @@ func (r *Room) RemoveParticipant(
 	}
 }
 
-func (r *Room) subscribeToExistingTracks(p types.LocalParticipant, isSync bool) {
+// hasUnsubscribedExistingTracks is true when auto-subscribe media tracks exist that
+// p has not yet attached (ACTIVE path should subscribe; otherwise skip).
+func (r *Room) hasUnsubscribedExistingTracks(p types.LocalParticipant) bool {
+	r.lock.RLock()
+	autoSubscribe := r.autoSubscribe(p)
+	r.lock.RUnlock()
+	if !autoSubscribe {
+		return false
+	}
+	subscribed := make(map[livekit.TrackID]struct{})
+	for _, st := range p.GetSubscribedTracks() {
+		subscribed[st.ID()] = struct{}{}
+	}
+	for _, op := range r.GetParticipants() {
+		if p.ID() == op.ID() {
+			continue
+		}
+		for _, track := range op.GetPublishedTracks() {
+			if _, ok := subscribed[track.ID()]; !ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// subscribeToExistingTracks returns the number of media tracks requested for subscribe.
+func (r *Room) subscribeToExistingTracks(p types.LocalParticipant, isSync bool) int {
 	r.lock.RLock()
 	autoSubscribe := r.autoSubscribe(p)
 	autoSubscribeDataTrack := r.autoSubscribeDataTrack(p)
@@ -1523,6 +1586,7 @@ func (r *Room) subscribeToExistingTracks(p types.LocalParticipant, isSync bool) 
 	if len(trackIDs) > 0 {
 		p.GetLogger().Debugw("subscribed participant to existing tracks", "trackID", trackIDs)
 	}
+	return len(trackIDs)
 }
 
 // broadcast an update about participant p

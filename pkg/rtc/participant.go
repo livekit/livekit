@@ -277,6 +277,9 @@ type ParticipantImpl struct {
 
 	sessionStartRecorded atomic.Bool
 	lastActiveAt         atomic.Pointer[time.Time]
+	// join-path stage timestamps (subscriber offer → answer → ICE → ACTIVE)
+	firstSubOfferAt atomic.Pointer[time.Time]
+	subAnswerAt     atomic.Pointer[time.Time]
 	// when first connected
 	connectedAt    time.Time
 	disconnectedAt atomic.Pointer[time.Time]
@@ -1353,6 +1356,9 @@ func (p *ParticipantImpl) HandleAnswer(sd *livekit.SessionDescription) {
 		"answerId", answerId,
 	)
 
+	now := time.Now()
+	p.subAnswerAt.CompareAndSwap(nil, &now)
+
 	/* from server received join request to client answer
 	 * 1. server send join response & offer
 	 * ... swap candidates
@@ -2376,12 +2382,34 @@ func (p *ParticipantImpl) setIsPublisher(isPublisher bool) {
 
 // when the server has an offer for participant
 func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription, offerId uint32, midToTrackID map[string]string) error {
+	now := time.Now()
+	isFirst := p.firstSubOfferAt.CompareAndSwap(nil, &now)
+	sdk := livekit.ClientInfo_UNKNOWN
+	if ci := p.GetClientInfo(); ci != nil {
+		sdk = ci.GetSdk()
+	}
+	if isFirst {
+		prometheus.RecordSessionJoinToOffer(
+			int(p.ProtocolVersion()),
+			sdk,
+			now.Sub(p.params.SessionStartTime),
+		)
+	} else if p.subAnswerAt.Load() != nil {
+		// Offer #2+ after client already answered — mid/post-ICE renegotiate risk.
+		prometheus.RecordSessionJoinPathEvent(
+			"sub_offer_after_answer",
+			int(p.ProtocolVersion()),
+			sdk,
+		)
+	}
 	p.subLogger.Debugw(
 		"sending offer",
 		"transport", livekit.SignalTarget_SUBSCRIBER,
 		"offer", offer,
 		"offerId", offerId,
 		"midToTrackID", midToTrackID,
+		"isFirstOffer", isFirst,
+		"msSinceSessionStart", now.Sub(p.params.SessionStartTime).Milliseconds(),
 	)
 	return p.sendSdpOffer(offer, offerId, midToTrackID)
 }
@@ -2783,10 +2811,68 @@ func (p *ParticipantImpl) onPrimaryTransportInitialConnected() {
 	}
 
 	if !p.sessionStartRecorded.Swap(true) {
-		prometheus.RecordSessionStartTime(int(p.ProtocolVersion()), p.params.EnableWarp, p.GetClientInfo().GetSdk(), time.Since(p.params.SessionStartTime))
-		prometheus.IncrementParticipantRtcSuccess(1, p.params.EnableWarp, p.GetClientInfo().GetSdk())
+		p.recordJoinPathLatency()
 	}
 	p.updateState(livekit.ParticipantInfo_ACTIVE)
+}
+
+// recordJoinPathLatency emits stage histograms + one INFO summary for deep-dives.
+func (p *ParticipantImpl) recordJoinPathLatency() {
+	proto := int(p.ProtocolVersion())
+	sdk := livekit.ClientInfo_UNKNOWN
+	if ci := p.GetClientInfo(); ci != nil {
+		sdk = ci.GetSdk()
+	}
+	now := time.Now()
+	sessionStart := p.params.SessionStartTime
+
+	var offerToAnswer, answerToICE, iceToDTLS, iceToActive, joinToOffer time.Duration
+	var hasOffer, hasAnswer, hasICE, hasDTLS bool
+
+	if offerAt := p.firstSubOfferAt.Load(); offerAt != nil {
+		hasOffer = true
+		joinToOffer = offerAt.Sub(sessionStart)
+		if answerAt := p.subAnswerAt.Load(); answerAt != nil {
+			hasAnswer = true
+			offerToAnswer = answerAt.Sub(*offerAt)
+			prometheus.RecordSessionOfferToAnswer(proto, sdk, offerToAnswer)
+			if iceAt := p.TransportManager.PrimaryICEFirstConnectedAt(); !iceAt.IsZero() {
+				hasICE = true
+				answerToICE = iceAt.Sub(*answerAt)
+				iceToActive = now.Sub(iceAt)
+				prometheus.RecordSessionAnswerToICE(proto, sdk, answerToICE)
+				prometheus.RecordSessionICEToActive(proto, sdk, iceToActive)
+				if pcAt := p.TransportManager.PrimaryPeerConnectionFirstConnectedAt(); !pcAt.IsZero() {
+					hasDTLS = true
+					iceToDTLS = pcAt.Sub(iceAt)
+					// Per-transport histogram also recorded in setPeerConnectionConnectedAt.
+				}
+			}
+		}
+	}
+
+	sessionStartMs := now.Sub(sessionStart)
+	prometheus.RecordSessionStartTime(proto, p.params.EnableWarp, sdk, sessionStartMs)
+	prometheus.IncrementParticipantRtcSuccess(1, p.params.EnableWarp, sdk)
+
+	// Single INFO line — searchable without DEBUG. Do not include PII beyond participant IDs already in logger context.
+	p.GetLogger().Infow("join_path_summary",
+		"sessionStartMs", sessionStartMs.Milliseconds(),
+		"joinToOfferMs", joinToOffer.Milliseconds(),
+		"offerToAnswerMs", offerToAnswer.Milliseconds(),
+		"answerToICEMs", answerToICE.Milliseconds(),
+		"iceToDtlsMs", iceToDTLS.Milliseconds(),
+		"iceToActiveMs", iceToActive.Milliseconds(),
+		"hasOffer", hasOffer,
+		"hasAnswer", hasAnswer,
+		"hasICE", hasICE,
+		"hasDTLS", hasDTLS,
+		"singlePC", p.params.UseSinglePeerConnection,
+		"subscriberAsPrimary", p.SubscriberAsPrimary(),
+		"protocol", proto,
+		"sdk", sdk.String(),
+		"warp", p.params.EnableWarp,
+	)
 }
 
 func (p *ParticipantImpl) onPrimaryTransportFullyEstablished() {
