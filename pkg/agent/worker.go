@@ -46,6 +46,7 @@ var (
 	ErrWorkerNotAvailable         = errors.New("worker not available")
 	ErrAvailabilityTimeout        = errors.New("agent worker availability timeout")
 	ErrDuplicateJobAssignment     = errors.New("duplicate job assignment")
+	ErrSimulatedJobNoRoom         = errors.New("simulated job has no room")
 )
 
 const AgentNameAttributeKey = "lk.agent_name"
@@ -683,6 +684,12 @@ func (w *Worker) UpdateJobStatus(update *livekit.UpdateJobStatus) (*livekit.JobS
 }
 
 func (w *Worker) HandleSimulateJob(simulate *livekit.SimulateJobRequest) error {
+	// AssignJob builds the agent token from the job's room name, so a job without one would panic
+	// in the goroutine below
+	if simulate.GetRoom() == nil {
+		return ErrSimulatedJobNoRoom
+	}
+
 	jobType := livekit.JobType_JT_ROOM
 	if simulate.Participant != nil {
 		jobType = livekit.JobType_JT_PUBLISHER
