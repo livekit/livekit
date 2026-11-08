@@ -193,6 +193,32 @@ func TestAgentDispatchMetadataLimits(t *testing.T) {
 	})
 }
 
+func TestAgentDispatchThreadID(t *testing.T) {
+	ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{
+		Video: &auth.VideoGrant{Room: "testroom", RoomAdmin: true},
+	}, "")
+	allocator := &servicefakes.FakeRoomAllocator{}
+	allocator.AutoCreateEnabledReturns(false)
+	dispatchClient := &rpcfakes.FakeTypedAgentDispatchInternalClient{}
+	svc := service.NewAgentDispatchService(
+		config.LimitConfig{},
+		dispatchClient,
+		rpc.NewTopicFormatter(),
+		allocator,
+		&routingfakes.FakeRouter{},
+	)
+
+	_, err := svc.CreateDispatch(ctx, &livekit.CreateAgentDispatchRequest{
+		Room:      "testroom",
+		AgentName: "front-desk",
+		ThreadId:  "AT_api",
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, dispatchClient.CreateDispatchCallCount())
+	_, _, dispatch, _ := dispatchClient.CreateDispatchArgsForCall(0)
+	require.Equal(t, "AT_api", dispatch.ThreadId)
+}
+
 func newTestAgentDispatchService(limitConf config.LimitConfig) *service.AgentDispatchService {
 	allocator := &servicefakes.FakeRoomAllocator{}
 	allocator.AutoCreateEnabledReturns(false)
