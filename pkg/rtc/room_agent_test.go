@@ -24,6 +24,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/protocol/utils/guid"
 
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
@@ -82,28 +83,30 @@ func newRoomWithAgentClient(t *testing.T, internal *livekit.RoomInternal, client
 
 func TestAgentDispatchThreadID(t *testing.T) {
 	t.Run("a room configuration dispatch launches its job on the dispatch's thread", func(t *testing.T) {
+		threadID := guid.New(guid.AgentThreadPrefix)
 		client := &recordingAgentClient{}
 		rm := newRoomWithAgentClient(t, &livekit.RoomInternal{
-			AgentDispatches: []*livekit.RoomAgentDispatch{{AgentName: "front-desk", ThreadId: "AT_room"}},
+			AgentDispatches: []*livekit.RoomAgentDispatch{{AgentName: "front-desk", ThreadId: threadID}},
 		}, client)
 
 		dispatches, err := rm.GetAgentDispatches("")
 		require.NoError(t, err)
 		require.Len(t, dispatches, 1)
-		require.Equal(t, "AT_room", dispatches[0].ThreadId)
+		require.Equal(t, threadID, dispatches[0].ThreadId)
 
 		require.Eventually(t, func() bool { return client.requestFor("front-desk") != nil }, time.Second, 10*time.Millisecond)
-		require.Equal(t, "AT_room", client.requestFor("front-desk").ThreadId)
+		require.Equal(t, threadID, client.requestFor("front-desk").ThreadId)
 	})
 
 	t.Run("an added dispatch launches its job on the dispatch's thread", func(t *testing.T) {
+		threadID := guid.New(guid.AgentThreadPrefix)
 		client := &recordingAgentClient{}
 		rm := newRoomWithAgentClient(t, nil, client)
 
-		_, err := rm.AddAgentDispatch(&livekit.AgentDispatch{Id: "AD_added", AgentName: "back-office", ThreadId: "AT_api"})
+		_, err := rm.AddAgentDispatch(&livekit.AgentDispatch{Id: "AD_added", AgentName: "back-office", ThreadId: threadID})
 		require.NoError(t, err)
 
 		require.Eventually(t, func() bool { return client.requestFor("back-office") != nil }, time.Second, 10*time.Millisecond)
-		require.Equal(t, "AT_api", client.requestFor("back-office").ThreadId)
+		require.Equal(t, threadID, client.requestFor("back-office").ThreadId)
 	})
 }

@@ -97,6 +97,9 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		if !s.limitConf.CheckAttributesSize(ad.Attributes) {
 			return nil, twirp.InvalidArgumentError(ErrAttributeExceedsLimits.Error(), strconv.Itoa(int(s.limitConf.MaxAttributesSize)))
 		}
+		if err := validateThreadID(ad.ThreadId); err != nil {
+			return nil, err
+		}
 	}
 
 	err := s.roomAllocator.SelectRoomNode(ctx, livekit.RoomName(req.Name), livekit.NodeID(req.NodeId))

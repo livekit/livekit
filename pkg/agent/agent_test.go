@@ -208,19 +208,20 @@ func TestAgent(t *testing.T) {
 		client := must.Get(agent.NewAgentClient(bus, agent.Config{}))
 		t.Cleanup(func() { _ = client.Stop() })
 
+		threadID := guid.New(guid.AgentThreadPrefix)
 		var launched []*livekit.Job
 		client.LaunchJob(context.Background(), &agent.JobRequest{
 			JobType:   livekit.JobType_JT_ROOM,
 			Room:      &livekit.Room{},
 			AgentName: testAgentName,
-			ThreadId:  "AT_thread",
+			ThreadId:  threadID,
 		}).ForEach(func(job *livekit.Job) { launched = append(launched, job) })
 		require.Len(t, launched, 1)
-		require.Equal(t, "AT_thread", launched[0].ThreadId)
+		require.Equal(t, threadID, launched[0].ThreadId)
 
 		jobs := worker.Jobs()
 		require.Len(t, jobs, 1)
-		require.Equal(t, "AT_thread", jobs[0].ThreadId)
+		require.Equal(t, threadID, jobs[0].ThreadId)
 	})
 
 	t.Run("dispatch burst does not wait for the CheckEnabled timeout", func(t *testing.T) {
