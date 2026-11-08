@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/twitchtv/twirp"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -75,8 +74,8 @@ func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit
 	if !ag.limitConf.CheckAttributesSize(req.Attributes) {
 		return nil, ErrAttributeExceedsLimits
 	}
-	if err := validateThreadID(req.ThreadId); err != nil {
-		return nil, err
+	if err := agent.ValidateThreadID(req.GetThreadId()); err != nil {
+		return nil, psrpc.NewError(psrpc.InvalidArgument, err)
 	}
 
 	if ag.roomAllocator.AutoCreateEnabled(ctx) {
@@ -122,14 +121,6 @@ func (ag *AgentDispatchService) ListDispatch(ctx context.Context, req *livekit.L
 	}
 
 	return ag.agentDispatchClient.ListDispatch(ctx, ag.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
-}
-
-// validateThreadID admits an empty thread id or an agent thread id minted by guid.New(guid.AgentThreadPrefix).
-func validateThreadID(threadID string) error {
-	if threadID != "" && !guid.IsValidWithPrefix(guid.AgentThreadPrefix, threadID) {
-		return twirp.InvalidArgumentError("thread_id", "must be an "+guid.AgentThreadPrefix+" agent thread id")
-	}
-	return nil
 }
 
 func redactCreateAgentDispatchRequest(req *livekit.CreateAgentDispatchRequest) *livekit.CreateAgentDispatchRequest {

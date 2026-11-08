@@ -16,6 +16,7 @@ package service_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -203,6 +204,13 @@ func requireTwirpInvalidArgument(t *testing.T, err error) {
 	require.Equal(t, twirp.InvalidArgument, terr.Code())
 }
 
+func requirePsrpcInvalidArgument(t *testing.T, err error) {
+	t.Helper()
+	var perr psrpc.Error
+	require.True(t, errors.As(err, &perr), "expected psrpc error, got %T (%v)", err, err)
+	require.Equal(t, psrpc.InvalidArgument, perr.Code())
+}
+
 func TestAgentDispatchThreadID(t *testing.T) {
 	ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{
 		Video: &auth.VideoGrant{Room: "testroom", RoomAdmin: true},
@@ -224,7 +232,7 @@ func TestAgentDispatchThreadID(t *testing.T) {
 			AgentName: "front-desk",
 			ThreadId:  threadID,
 		})
-		requireTwirpInvalidArgument(t, err)
+		requirePsrpcInvalidArgument(t, err)
 	}
 	require.Zero(t, dispatchClient.CreateDispatchCallCount())
 
