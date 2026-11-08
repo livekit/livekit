@@ -43,6 +43,7 @@ import (
 	"github.com/livekit/protocol/signalling"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
+	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -2035,4 +2036,244 @@ func TestPerformRpcForwardedResponseTimeout(t *testing.T) {
 			require.Equal(t, c.expected, dp.GetRpcRequest().GetResponseTimeoutMs())
 		})
 	}
+}
+
+func TestPerformRpc(t *testing.T) {
+	pendingRpcID := func(p *ParticipantImpl) string {
+		p.rpcLock.Lock()
+		defer p.rpcLock.Unlock()
+		for id := range p.rpcPendingResponses {
+			return id
+		}
+		return ""
+	}
+	requireNoPendingRpc := func(t *testing.T, p *ParticipantImpl) {
+		p.rpcLock.Lock()
+		defer p.rpcLock.Unlock()
+		require.Empty(t, p.rpcPendingAcks)
+		require.Empty(t, p.rpcPendingResponses)
+	}
+	// the participant is still joining, so the request is held as an unsequenced
+	// reliable message, which is how the test reads it back
+	sentRpcRequest := func(t *testing.T, p *ParticipantImpl) *livekit.RpcRequest {
+		var data []byte
+		require.Eventually(t, func() bool {
+			p.reliableDataInfo.joiningMessageLock.Lock()
+			defer p.reliableDataInfo.joiningMessageLock.Unlock()
+			if len(p.reliableDataInfo.joiningUnsequencedMessages) == 0 {
+				return false
+			}
+			data = p.reliableDataInfo.joiningUnsequencedMessages[0]
+			return true
+		}, time.Second, time.Millisecond)
+		dp := &livekit.DataPacket{}
+		require.NoError(t, proto.Unmarshal(data, dp))
+		require.NotNil(t, dp.GetRpcRequest())
+		return dp.GetRpcRequest()
+	}
+	requireRpcError := func(t *testing.T, errorCh chan error, code utils.DataChannelRpcErrorCode) {
+		select {
+		case err := <-errorCh:
+			var rpcErr *utils.DataChannelRpcError
+			require.ErrorAs(t, err, &rpcErr)
+			require.Equal(t, code, rpcErr.Code)
+		case <-time.After(time.Second):
+			require.Fail(t, "no RPC error")
+		}
+	}
+	newRpcRequest := func() *livekit.PerformRpcRequest {
+		return &livekit.PerformRpcRequest{DestinationIdentity: "test", Method: "ping", Payload: "ping"}
+	}
+
+	t.Run("response arriving while the request is being sent", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		resultCh, errorCh := make(chan string, 1), make(chan error, 1)
+
+		// keep the request inside SendDataMessage, as if the callee answered before it returned
+		p.reliableDataInfo.joiningMessageLock.Lock()
+		unlock := sync.OnceFunc(p.reliableDataInfo.joiningMessageLock.Unlock)
+		defer unlock()
+		p.PerformRpc(newRpcRequest(), resultCh, errorCh)
+
+		var id string
+		require.Eventually(t, func() bool {
+			id = pendingRpcID(p)
+			return id != ""
+		}, time.Second, time.Millisecond, "RPC handlers are not registered before the request is sent")
+		require.True(t, p.handleIncomingRpcAck(id))
+		require.True(t, p.handleIncomingRpcResponse(id, "pong", nil))
+		unlock()
+
+		select {
+		case res := <-resultCh:
+			require.Equal(t, "pong", res)
+		case err := <-errorCh:
+			require.Fail(t, "unexpected RPC error", err)
+		case <-time.After(time.Second):
+			require.Fail(t, "no RPC response")
+		}
+		requireNoPendingRpc(t, p)
+	})
+
+	t.Run("ack then response", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		resultCh, errorCh := make(chan string, 1), make(chan error, 1)
+
+		p.PerformRpc(newRpcRequest(), resultCh, errorCh)
+		req := sentRpcRequest(t, p)
+		require.Equal(t, "ping", req.Method)
+		require.Equal(t, "ping", req.Payload)
+
+		require.True(t, p.handleIncomingRpcAck(req.Id))
+		require.True(t, p.handleIncomingRpcResponse(req.Id, "pong", nil))
+		require.Equal(t, "pong", <-resultCh)
+		requireNoPendingRpc(t, p)
+
+		// a duplicate is not taken for this request any more
+		require.False(t, p.handleIncomingRpcResponse(req.Id, "pong", nil))
+		require.False(t, p.handleIncomingRpcAck(req.Id))
+	})
+
+	t.Run("response without an ack", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		resultCh, errorCh := make(chan string, 1), make(chan error, 1)
+
+		p.PerformRpc(newRpcRequest(), resultCh, errorCh)
+		req := sentRpcRequest(t, p)
+
+		require.True(t, p.handleIncomingRpcResponse(req.Id, "pong", nil))
+		require.Equal(t, "pong", <-resultCh)
+		// the pending ack must not be left behind for the life of the participant
+		requireNoPendingRpc(t, p)
+	})
+
+	t.Run("error response", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		resultCh, errorCh := make(chan string, 1), make(chan error, 1)
+
+		p.PerformRpc(newRpcRequest(), resultCh, errorCh)
+		req := sentRpcRequest(t, p)
+
+		require.True(t, p.handleIncomingRpcAck(req.Id))
+		require.True(t, p.handleIncomingRpcResponse(req.Id, "", utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcUnsupportedMethod, "")))
+		requireRpcError(t, errorCh, utils.DataChannelRpcUnsupportedMethod)
+		require.Empty(t, resultCh)
+		requireNoPendingRpc(t, p)
+	})
+
+	t.Run("response timeout", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		resultCh, errorCh := make(chan string, 1), make(chan error, 1)
+
+		req := newRpcRequest()
+		req.ResponseTimeoutMs = 10
+		p.PerformRpc(req, resultCh, errorCh)
+		sent := sentRpcRequest(t, p)
+		require.True(t, p.handleIncomingRpcAck(sent.Id))
+
+		requireRpcError(t, errorCh, utils.DataChannelRpcResponseTimeout)
+		// a late response is not delivered
+		require.False(t, p.handleIncomingRpcResponse(sent.Id, "pong", nil))
+		require.Empty(t, resultCh)
+		requireNoPendingRpc(t, p)
+	})
+
+	t.Run("response timeout without an ack", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		resultCh, errorCh := make(chan string, 1), make(chan error, 1)
+
+		req := newRpcRequest()
+		req.ResponseTimeoutMs = 10
+		p.PerformRpc(req, resultCh, errorCh)
+		sent := sentRpcRequest(t, p)
+
+		requireRpcError(t, errorCh, utils.DataChannelRpcResponseTimeout)
+		// the request is settled, so the ack is not waited for and a late one is not taken
+		requireNoPendingRpc(t, p)
+		require.False(t, p.handleIncomingRpcAck(sent.Id))
+	})
+
+	t.Run("response racing the response timer", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		resultCh, errorCh := make(chan string, 1), make(chan error, 1)
+
+		req := newRpcRequest()
+		req.ResponseTimeoutMs = 20
+		p.PerformRpc(req, resultCh, errorCh)
+		sent := sentRpcRequest(t, p)
+
+		// let the response timer fire and wait for rpcLock while the response is handled,
+		// as handleIncomingRpcResponse does
+		p.rpcLock.Lock()
+		time.Sleep(100 * time.Millisecond)
+		handler := p.rpcPendingResponses[sent.Id]
+		require.NotNil(t, handler)
+		handler.Resolve("pong", nil)
+		delete(p.rpcPendingResponses, sent.Id)
+		p.rpcLock.Unlock()
+
+		require.Equal(t, "pong", <-resultCh)
+		// the timer must not report a timeout for a request that has been answered
+		time.Sleep(100 * time.Millisecond)
+		require.Empty(t, errorCh)
+		requireNoPendingRpc(t, p)
+	})
+
+	t.Run("closed participant", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		require.NoError(t, p.Close(false, types.ParticipantCloseReasonNone, false))
+		resultCh, errorCh := make(chan string, 1), make(chan error, 1)
+
+		p.PerformRpc(newRpcRequest(), resultCh, errorCh)
+
+		requireRpcError(t, errorCh, utils.DataChannelRpcRecipientDisconnected)
+		requireNoPendingRpc(t, p)
+		require.Empty(t, p.reliableDataInfo.joiningUnsequencedMessages)
+	})
+
+	t.Run("participant closing with a pending request", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		resultCh, errorCh := make(chan string, 1), make(chan error, 1)
+
+		p.PerformRpc(newRpcRequest(), resultCh, errorCh)
+		sent := sentRpcRequest(t, p)
+		require.NoError(t, p.Close(false, types.ParticipantCloseReasonNone, false))
+
+		requireRpcError(t, errorCh, utils.DataChannelRpcRecipientDisconnected)
+		requireNoPendingRpc(t, p)
+		require.False(t, p.handleIncomingRpcResponse(sent.Id, "pong", nil))
+		require.Empty(t, resultCh)
+	})
+
+	t.Run("send failure", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		// past the joining buffer, and the test participant is not active, so the send fails
+		p.replayJoiningReliableMessages()
+		resultCh, errorCh := make(chan string, 1), make(chan error, 1)
+
+		p.PerformRpc(newRpcRequest(), resultCh, errorCh)
+
+		select {
+		case err := <-errorCh:
+			var psrpcErr psrpc.Error
+			require.ErrorAs(t, err, &psrpcErr)
+			require.Equal(t, psrpc.Internal, psrpcErr.Code())
+		case <-time.After(time.Second):
+			require.Fail(t, "no RPC error")
+		}
+		requireNoPendingRpc(t, p)
+	})
+
+	t.Run("payload too large", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		resultCh, errorCh := make(chan string, 1), make(chan error, 1)
+
+		req := newRpcRequest()
+		req.Payload = strings.Repeat("a", utils.DataChannelRpcMaxPayloadBytes+1)
+		p.PerformRpc(req, resultCh, errorCh)
+
+		requireRpcError(t, errorCh, utils.DataChannelRpcRequestPayloadTooLarge)
+		requireNoPendingRpc(t, p)
+		require.Empty(t, p.reliableDataInfo.joiningUnsequencedMessages)
+	})
 }
