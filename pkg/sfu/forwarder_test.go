@@ -3427,18 +3427,22 @@ func TestForwarderCameraTemporalFloorCooperativeLimit(t *testing.T) {
 		{"floor 1 limit 1, nothing compliant, stock maximal h-T0", Bitrates{{0, 0, 0, 0}, {300, 0, 0, 0}, {400, 0, 0, 0}}, 1, 1, floorHT0, 300 - 400},
 		// within the limit: highest compliant temporal that fits on the first spatial layer that has one
 		{"floor 1 h-T1 costs more, q-T2 fits", Bitrates{{100, 150, 200, 0}, {300, 450, 0, 0}, {400, 0, 0, 0}}, 2, 1, floorQT2, 200 - 400},
+		// target layer stopped (bitrate 0): highest compliant layer below it, as stock does with no floor
+		{"floor 1 limit 2, f-T0 stopped, moves to h-T2", Bitrates{{100, 150, 200, 0}, {300, 450, 600, 0}, {0, 0, 0, 0}}, 2, 1, floorHT2, 600 - 400},
+		{"floor 1 limit 1, f-T0 stopped, moves to h-T2", Bitrates{{100, 150, 200, 0}, {300, 450, 600, 0}, {0, 0, 0, 0}}, 1, 1, floorHT2, 600 - 400},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			f := newFloorForwarder(buffer.DefaultMaxLayerTemporal, buffer.DefaultMaxLayerTemporal)
 			f.SetMaxSpatialLayer(c.maxSpatial)
 			f.vls.SetTarget(floorFT0)
-			f.lastAllocation.BandwidthRequested = c.brs[2][0]
+			f.lastAllocation.BandwidthRequested = 400
 			f.ProvisionalAllocatePrepare(nil, c.brs)
 
-			// precondition: streaming f-T0 at 400, below the floor when it is on, above the limit when maxSpatial < 2
+			// precondition: f-T0 allocated at 400 (streaming at 400 or stopped), below the floor when it is on,
+			// above the limit when maxSpatial < 2
 			require.Equal(t, floorFT0, f.vls.GetTarget())
-			require.Equal(t, int64(400), c.brs[2][0])
+			require.Contains(t, []int64{0, 400}, c.brs[2][0])
 			require.Equal(t, c.floor > 0, belowTemporalFloor(floorFT0, c.floor))
 			require.Equal(t, c.maxSpatial, f.provisional.maxLayer.Spatial)
 
