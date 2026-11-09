@@ -337,6 +337,10 @@ func (s *EgressService) UpdateStream(ctx context.Context, req *livekit.UpdateStr
 		return nil, ErrEgressNotConnected
 	}
 
+	if _, err := s.io.GetEgress(ctx, &rpc.GetEgressRequest{EgressId: req.EgressId}); err != nil {
+		return nil, err
+	}
+
 	info, err := s.client.UpdateStream(ctx, req.EgressId, req)
 	if err != nil {
 		var loadErr error
@@ -379,6 +383,10 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 	AppendLogFields(ctx, "egressID", req.EgressId)
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
+	}
+
+	if _, err = s.io.GetEgress(ctx, &rpc.GetEgressRequest{EgressId: req.EgressId}); err != nil {
+		return nil, err
 	}
 
 	info, err = s.launcher.StopEgress(ctx, req)
