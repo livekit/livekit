@@ -22,8 +22,8 @@ var (
 	ErrGatewayAccountMismatch  = errors.New("x-account-id does not match join identity")
 )
 
-// ensureGatewayAccountMatchesIdentity requires x-account-id == accountId in identity user-{accountId}
-// when the header is present. Missing header is allowed (optional until gateway always injects it).
+// ensureGatewayAccountMatchesIdentity requires x-account-id from the gateway and
+// that it equals the accountId in identity user-{accountId}.
 // Agents are skipped (no Kevlar AT / gateway account header).
 func ensureGatewayAccountMatchesIdentity(
 	reqHeader http.Header,
@@ -38,7 +38,7 @@ func ensureGatewayAccountMatchesIdentity(
 		accountID = reqHeader.Get(gatewayAccountIDHeader)
 	}
 	if accountID == "" {
-		return nil
+		return ErrMissingGatewayAccountID
 	}
 	if claimsIdentity != userIdentityPrefix+accountID {
 		return ErrGatewayAccountMismatch

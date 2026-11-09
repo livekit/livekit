@@ -277,7 +277,8 @@ keys:
 #     - https://your-host.com/handler
 
 # FK: icap-gateway authenticates Kevlar on /rtc and injects x-account-id.
-# SFU requires that header to match join identity user-{accountId} (agents skipped).
+# SFU requires x-account-id and that it matches join identity user-{accountId}
+# (agents skipped). Missing/mismatch → 401.
 
 # Signal Relay
 # since v1.4.0, a more reliable, psrpc based signal relay is available
