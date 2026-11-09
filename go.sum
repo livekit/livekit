@@ -158,8 +158,8 @@ github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
 github.com/lithammer/shortuuid/v4 v4.3.0 h1:XRr80OYPOlqxgnCv2/iuElkl/ZtXtPtLKk2AvpXGdWA=
 github.com/lithammer/shortuuid/v4 v4.3.0/go.mod h1:D5noHZ2oFw/YaKCfGy0YxyE7M0wMbezmMjPdhyEFe6Y=
-github.com/livekit/ice/v4 v4.4.8-warp.2 h1:CED3dys57JySsNmKrPFAwA1j/9eDSOJA3MZJ/GZ5Sug=
-github.com/livekit/ice/v4 v4.4.8-warp.2/go.mod h1:zCRRg4Mkpdbx9B+75fd4z2APvIXeIraeUOB7IMPt8mU=
+github.com/livekit/ice/v4 v4.4.8-warp.4 h1:D1pqAknVbHQoVcADCeF1JVLklCfzXWKLQ70jGGXRCNY=
+github.com/livekit/ice/v4 v4.4.8-warp.4/go.mod h1:zCRRg4Mkpdbx9B+75fd4z2APvIXeIraeUOB7IMPt8mU=
 github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731 h1:9x+U2HGLrSw5ATTo469PQPkqzdoU7be46ryiCDO3boc=
 github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731/go.mod h1:Rs3MhFwutWhGwmY1VQsygw28z5bWcnEYmS1OG9OxjOQ=
 github.com/livekit/mediatransportutil v0.0.0-20261105133908-2cf1b1487796 h1:Ywn57x0LFvbUbHFV1gESlPA/4u8FHIpuEJIwQH3CQZA=
@@ -168,8 +168,8 @@ github.com/livekit/protocol v1.53.2 h1:IuT1oM3XdP6m/FjeH5IhV3pRkF2iF3bqO5K4S3xND
 github.com/livekit/protocol v1.53.2/go.mod h1:oSYtuivQ/y77D+cCZStm9heI6yE+w9lAacWnzSIRLiQ=
 github.com/livekit/psrpc v0.8.2 h1:7tbkhBJoYlK5Csfkdv1XYbZjyAQeaEZgupvIXNCv7Dc=
 github.com/livekit/psrpc v0.8.2/go.mod h1:6KnU8vULoizX0Er9NNfeKJDV8ug87j3fuo19M0bhj6Q=
-github.com/livekit/webrtc-pion/v4 v4.2.25-warp.1 h1:SfQE1iiA/ALDV/bZxW/UIeL25UtgCv5OFADaJMh+73E=
-github.com/livekit/webrtc-pion/v4 v4.2.25-warp.1/go.mod h1:L8PdQPP+djXPwcCPI5mh3TWWDnZorDnLsW9Zf9BXv14=
+github.com/livekit/webrtc-pion/v4 v4.2.25-warp.3 h1:n6Rctm2NI+YuAZlAuI0yDw+ZmazAIcol6sjeeTqU32I=
+github.com/livekit/webrtc-pion/v4 v4.2.25-warp.3/go.mod h1:fJ30cAMDdcujHW6Q3gavoXGxNA/QCex+VOE31k8vldw=
 github.com/mackerelio/go-osstat v0.2.8 h1:I2duicTaCGWoM53XwAwA9OIe1inu0xnVs8/pqOWWVr4=
 github.com/mackerelio/go-osstat v0.2.8/go.mod h1:SyS3XxKdoSKJnTGTkN5Yrh6VUQVuAURACfE6y+2DN4k=
 github.com/magefile/mage v1.17.2 h1:fyXVu1eadI8Ap1HCCNgEhJ5McIWiYhLR8uol64ZZc40=
