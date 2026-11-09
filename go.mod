@@ -32,7 +32,7 @@ require (
 	github.com/pion/datachannel v1.6.3
 	github.com/pion/dtls/v4 v4.0.0-rc.8
 	github.com/pion/ice/v4 v4.4.8
-	github.com/pion/interceptor v0.1.49
+	github.com/pion/interceptor v0.1.51
 	github.com/pion/rtcp v1.2.20
 	github.com/pion/rtp v1.10.6
 	github.com/pion/sctp v1.12.0
@@ -40,8 +40,8 @@ require (
 	github.com/pion/stun/v4 v4.0.1
 	github.com/pion/transport/v4 v4.1.3
 	github.com/pion/transport/v5 v5.1.4
-	github.com/pion/turn/v5 v5.1.2
-	github.com/pion/webrtc/v4 v4.2.23
+	github.com/pion/turn/v5 v5.1.3
+	github.com/pion/webrtc/v4 v4.2.25
 	github.com/pires/go-proxyproto v0.15.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.25.0
