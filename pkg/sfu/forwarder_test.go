@@ -564,6 +564,53 @@ func TestForwarderAllocateOptimalHold(t *testing.T) {
 	}
 }
 
+// A hold never raises the layer bitrate on a spatial step down (non-monotonic simulcast ladder), and never targets a
+// temporal layer the held spatial stream does not send (mixed simulcast encoders).
+func TestForwarderAllocateOptimalHoldBitrate(t *testing.T) {
+	s2t1 := buffer.VideoLayer{Spatial: 2, Temporal: 1}
+	s2t2 := buffer.VideoLayer{Spatial: 2, Temporal: 2}
+	// S1T2 (600) costs more than the current S2T2 (400), S1T1 (350) does not
+	nonMonotonic := Bitrates{
+		{100, 150, 200, 0},
+		{300, 350, 600, 0},
+		{250, 300, 400, 0},
+	}
+	// S0 sends T0/T1, S1 only T0
+	mixedTemporal := Bitrates{
+		{10, 11, 0, 0},
+		{20, 0, 0, 0},
+		{30, 31, 0, 0},
+	}
+	cases := []struct {
+		name      string
+		brs       Bitrates
+		maxLayer  buffer.VideoLayer
+		current   buffer.VideoLayer
+		available []int32
+		floor     int32
+		want      buffer.VideoLayer
+	}{
+		{"B limit S1, S1T2 costs more, floor 0", nonMonotonic, buffer.VideoLayer{Spatial: 1, Temporal: 3}, s2t2, []int32{0, 1, 2}, 0, buffer.VideoLayer{Spatial: 1, Temporal: 1}},
+		{"B limit S1, S1T2 costs more, floor 1", nonMonotonic, buffer.VideoLayer{Spatial: 1, Temporal: 3}, s2t2, []int32{0, 1, 2}, 1, buffer.VideoLayer{Spatial: 1, Temporal: 1}},
+		{"B limit S1, no measurements keeps the current temporal", Bitrates{}, buffer.VideoLayer{Spatial: 1, Temporal: 3}, s2t2, []int32{0, 1, 2}, 1, buffer.VideoLayer{Spatial: 1, Temporal: 2}},
+		{"C limit S1, S1 sends only T0, floor 1", mixedTemporal, buffer.VideoLayer{Spatial: 1, Temporal: 3}, s2t1, []int32{0, 1, 2}, 1, buffer.VideoLayer{Spatial: 1, Temporal: 0}},
+		{"C current invalid, lowest available S1 sends only T0, floor 1", mixedTemporal, buffer.VideoLayer{Spatial: 2, Temporal: 3}, buffer.InvalidLayer, []int32{1, 2}, 1, buffer.VideoLayer{Spatial: 1, Temporal: 0}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := newHoldForwarder(c.maxLayer, c.current, 2)
+			require.Equal(t, c.current, f.vls.GetCurrent(), "precondition: current layer")
+			if c.current.IsValid() && c.brs[c.current.Spatial][c.current.Temporal] != 0 {
+				require.LessOrEqual(t, c.brs[c.want.Spatial][c.want.Temporal], c.brs[c.current.Spatial][c.current.Temporal], "hold must not cost more than current")
+			}
+			result := f.AllocateOptimal(c.available, c.brs, true, true, c.floor)
+			require.Equal(t, c.want, result.TargetLayer)
+			require.Equal(t, c.want.Spatial, result.RequestLayerSpatial)
+			require.Equal(t, c.want, f.TargetLayer())
+		})
+	}
+}
+
 type holdRecordingLogger struct {
 	logger.Logger
 

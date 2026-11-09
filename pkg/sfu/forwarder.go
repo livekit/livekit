@@ -1077,10 +1077,15 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 						holdSpatial = lowestAvailableLayer
 					}
 					holdTemporal := min(max(currentLayer.Temporal, holdFloor), getMaxTemporal())
+					holdCeiling := int64(0)
 					if holdSpatial > currentLayer.Spatial {
 						// stepping spatial up: do not carry the current temporal, take the floor (stock takes T0)
 						holdTemporal = holdFloor
+					} else if holdSpatial < currentLayer.Spatial {
+						// stepping spatial down: never above the bitrate of the current layer (ladders need not be monotonic)
+						holdCeiling = brs[currentLayer.Spatial][currentLayer.Temporal]
 					}
+					holdTemporal = holdTemporalLayer(brs, holdSpatial, holdTemporal, holdFloor, holdCeiling)
 					alloc.TargetLayer = buffer.VideoLayer{
 						Spatial:  holdSpatial,
 						Temporal: holdTemporal,
@@ -1105,7 +1110,7 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 				} else {
 					alloc.TargetLayer = buffer.VideoLayer{
 						Spatial:  lowestAvailableLayer,
-						Temporal: holdFloor,
+						Temporal: holdTemporalLayer(brs, lowestAvailableLayer, holdFloor, holdFloor, 0),
 					}
 				}
 				alloc.RequestLayerSpatial = alloc.TargetLayer.Spatial
@@ -1836,6 +1841,34 @@ func (f *Forwarder) GetNextHigherTransition(brs Bitrates, allowOvershoot bool, m
 // and the publisher has shown (maxSeenLayer), so it never asks for a temporal layer that cannot be forwarded. 0 = off.
 func temporalFloor(minTemporalLayer int32, maxLayer buffer.VideoLayer, maxSeenLayer buffer.VideoLayer) int32 {
 	return max(0, min(minTemporalLayer, maxLayer.Temporal, maxSeenLayer.Temporal))
+}
+
+// holdTemporalLayer: the temporal layer a hold targets on spatial. The floor is clamped against the global max seen
+// temporal, so with measurements for spatial, the result is the highest measured layer <= temporal; with a ceiling
+// (> 0) it then steps down through measured layers, not below floor, while it costs more than the ceiling. Without
+// measurements for spatial, temporal is returned unchanged.
+func holdTemporalLayer(brs Bitrates, spatial int32, temporal int32, floor int32, ceiling int64) int32 {
+	if spatial < 0 || spatial > buffer.DefaultMaxLayerSpatial || temporal < 0 {
+		return temporal
+	}
+	t := min(temporal, buffer.DefaultMaxLayerTemporal)
+	for t >= 0 && brs[spatial][t] == 0 {
+		t--
+	}
+	if t < 0 {
+		return temporal
+	}
+	for ceiling > 0 && brs[spatial][t] > ceiling {
+		lower := t - 1
+		for lower >= floor && brs[spatial][lower] == 0 {
+			lower--
+		}
+		if lower < floor || lower < 0 {
+			break
+		}
+		t = lower
+	}
+	return t
 }
 
 // belowTemporalFloor: spatial layers >= 1 need temporal >= floor; spatial layer 0 is never filtered.
