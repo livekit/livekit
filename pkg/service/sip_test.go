@@ -24,6 +24,7 @@ import (
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/psrpc"
 	"github.com/stretchr/testify/require"
+	"github.com/twitchtv/twirp"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/service"
@@ -103,9 +104,19 @@ func TestSIPInboundTrunkNumbersNormalized(t *testing.T) {
 }
 
 func TestCreateSIPParticipantSourceCallUnsupported(t *testing.T) {
-	_, err := (&service.SIPService{}).CreateSIPParticipant(context.Background(), &livekit.CreateSIPParticipantRequest{
-		SipSourceCallId: "SCL_1",
+	req := &livekit.CreateSIPParticipantRequest{SipSourceCallId: "SCL_1"}
+
+	t.Run("without SIP call permission", func(t *testing.T) {
+		_, err := (&service.SIPService{}).CreateSIPParticipant(context.Background(), req)
+		var terr twirp.Error
+		require.ErrorAs(t, err, &terr)
+		require.Equal(t, twirp.Unauthenticated, terr.Code())
 	})
-	code, _ := psrpc.GetErrorCode(err)
-	require.Equal(t, psrpc.Unimplemented, code)
+
+	t.Run("with SIP call permission", func(t *testing.T) {
+		ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{SIP: &auth.SIPGrant{Call: true}}, "")
+		_, err := (&service.SIPService{}).CreateSIPParticipant(ctx, req)
+		code, _ := psrpc.GetErrorCode(err)
+		require.Equal(t, psrpc.Unimplemented, code)
+	})
 }

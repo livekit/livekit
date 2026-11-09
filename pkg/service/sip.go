@@ -615,6 +615,9 @@ func (s *SIPService) DeleteSIPDispatchRule(ctx context.Context, req *livekit.Del
 }
 
 func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.CreateSIPParticipantRequest) (*livekit.SIPParticipantInfo, error) {
+	if err := EnsureSIPCallPermission(ctx); err != nil {
+		return nil, twirpAuthError(err)
+	}
 	if req.SipSourceCallId != "" {
 		return nil, psrpc.NewErrorf(psrpc.Unimplemented, "sip_source_call_id is not supported")
 	}
