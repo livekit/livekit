@@ -337,25 +337,20 @@ func (s *EgressService) UpdateStream(ctx context.Context, req *livekit.UpdateStr
 		return nil, ErrEgressNotConnected
 	}
 
-	if _, err := s.io.GetEgress(ctx, &rpc.GetEgressRequest{EgressId: req.EgressId}); err != nil {
+	existing, err := s.io.GetEgress(ctx, &rpc.GetEgressRequest{EgressId: req.EgressId})
+	if err != nil {
 		return nil, err
 	}
 
 	info, err := s.client.UpdateStream(ctx, req.EgressId, req)
 	if err != nil {
-		var loadErr error
-		info, loadErr = s.io.GetEgress(ctx, &rpc.GetEgressRequest{EgressId: req.EgressId})
-		if loadErr != nil {
-			return nil, loadErr
-		}
-
-		switch info.Status {
+		switch existing.Status {
 		case livekit.EgressStatus_EGRESS_STARTING,
 			livekit.EgressStatus_EGRESS_ACTIVE:
 			return nil, err
 		default:
 			return nil, twirp.NewError(twirp.FailedPrecondition,
-				fmt.Sprintf("egress with status %s cannot be updated", info.Status.String()))
+				fmt.Sprintf("egress with status %s cannot be updated", existing.Status.String()))
 		}
 	}
 
@@ -385,25 +380,20 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 		return nil, twirpAuthError(err)
 	}
 
-	if _, err = s.io.GetEgress(ctx, &rpc.GetEgressRequest{EgressId: req.EgressId}); err != nil {
+	existing, err := s.io.GetEgress(ctx, &rpc.GetEgressRequest{EgressId: req.EgressId})
+	if err != nil {
 		return nil, err
 	}
 
 	info, err = s.launcher.StopEgress(ctx, req)
 	if err != nil {
-		var loadErr error
-		info, loadErr = s.io.GetEgress(ctx, &rpc.GetEgressRequest{EgressId: req.EgressId})
-		if loadErr != nil {
-			return nil, loadErr
-		}
-
-		switch info.Status {
+		switch existing.Status {
 		case livekit.EgressStatus_EGRESS_STARTING,
 			livekit.EgressStatus_EGRESS_ACTIVE:
 			return nil, err
 		default:
 			return nil, twirp.NewError(twirp.FailedPrecondition,
-				fmt.Sprintf("egress with status %s cannot be stopped", info.Status.String()))
+				fmt.Sprintf("egress with status %s cannot be stopped", existing.Status.String()))
 		}
 	}
 
