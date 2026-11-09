@@ -3367,7 +3367,7 @@ func TestForwarderCameraTemporalFloorCooperative(t *testing.T) {
 	}
 }
 
-// A target below the floor moves to the highest spatial layer whose cheapest floor-compliant layer costs no more
+// A target below the floor moves to the highest floor-compliant layer, highest spatial first, that costs no more
 // than the target; when every compliant layer costs more, the target is preserved as stock does.
 func TestForwarderCameraTemporalFloorCooperativeNeverCostsMore(t *testing.T) {
 	// every floor-compliant layer costs more than f-T0 (h-T0 is below the floor)
@@ -3405,6 +3405,48 @@ func TestForwarderCameraTemporalFloorCooperativeNeverCostsMore(t *testing.T) {
 			require.Equal(t, c.want, transition.To)
 			require.Equal(t, c.wantDelta, transition.BandwidthDelta)
 			require.LessOrEqual(t, c.brs[c.want.Spatial][c.want.Temporal], c.brs[2][0])
+		})
+	}
+}
+
+// A below-floor target is preserved only while it is within the subscriber limit; above the limit it always moves
+// under the limit, with its real delta. Per spatial the highest compliant temporal that fits the target bitrate wins.
+func TestForwarderCameraTemporalFloorCooperativeLimit(t *testing.T) {
+	cases := []struct {
+		name       string
+		brs        Bitrates
+		maxSpatial int32
+		floor      int32
+		want       buffer.VideoLayer
+		wantDelta  int64
+	}{
+		// stock above the limit: down move to the maximal layer under it, even when it costs more
+		{"stock limit 1 moves to h-T2", floorBrsCheapF, 1, 0, floorHT2, 450 - 400},
+		{"floor 1 limit 1, every compliant layer costs more, moves to cheapest q-T0", Bitrates{{450, 0, 0, 0}, {300, 500, 0, 0}, {400, 0, 0, 0}}, 1, 1, floorQT0, 450 - 400},
+		{"floor 1 limit 0, q-T0 costs more, moves to q-T0", Bitrates{{450, 0, 0, 0}, {300, 500, 0, 0}, {400, 0, 0, 0}}, 0, 1, floorQT0, 450 - 400},
+		{"floor 1 limit 1, nothing compliant, stock maximal h-T0", Bitrates{{0, 0, 0, 0}, {300, 0, 0, 0}, {400, 0, 0, 0}}, 1, 1, floorHT0, 300 - 400},
+		// within the limit: highest compliant temporal that fits on the first spatial layer that has one
+		{"floor 1 h-T1 costs more, q-T2 fits", Bitrates{{100, 150, 200, 0}, {300, 450, 0, 0}, {400, 0, 0, 0}}, 2, 1, floorQT2, 200 - 400},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFloorForwarder(buffer.DefaultMaxLayerTemporal, buffer.DefaultMaxLayerTemporal)
+			f.SetMaxSpatialLayer(c.maxSpatial)
+			f.vls.SetTarget(floorFT0)
+			f.lastAllocation.BandwidthRequested = c.brs[2][0]
+			f.ProvisionalAllocatePrepare(nil, c.brs)
+
+			// precondition: streaming f-T0 at 400, below the floor when it is on, above the limit when maxSpatial < 2
+			require.Equal(t, floorFT0, f.vls.GetTarget())
+			require.Equal(t, int64(400), c.brs[2][0])
+			require.Equal(t, c.floor > 0, belowTemporalFloor(floorFT0, c.floor))
+			require.Equal(t, c.maxSpatial, f.provisional.maxLayer.Spatial)
+
+			transition, _, _ := f.ProvisionalAllocateGetCooperativeTransition(false, c.floor)
+			require.Equal(t, floorFT0, transition.From)
+			require.Equal(t, c.want, transition.To)
+			require.Equal(t, c.wantDelta, transition.BandwidthDelta)
+			require.LessOrEqual(t, transition.To.Spatial, c.maxSpatial, "never above the subscriber limit")
 		})
 	}
 }
