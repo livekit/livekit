@@ -1063,7 +1063,7 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 	var iceServers []*livekit.ICEServer
 	rtcConf := r.config.RTC
 
-	if tlsOnly && r.config.TURN.TLSPort == 0 {
+	if tlsOnly && !r.config.TURN.HasTLS() {
 		logger.Warnw("tls only enabled but no turn tls config", nil)
 		tlsOnly = false
 	}
@@ -1078,7 +1078,7 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 				urls = append(urls, fmt.Sprintf("turn:%s?transport=udp", net.JoinHostPort(ip, strconv.Itoa(int(r.config.TURN.UDPPort)))))
 			}
 		}
-		if r.config.TURN.TLSPort > 0 {
+		if r.config.TURN.HasTLS() {
 			urls = append(urls, fmt.Sprintf("turns:%s:443?transport=tcp", r.config.TURN.Domain))
 		}
 		if len(urls) > 0 {
