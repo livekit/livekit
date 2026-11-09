@@ -62,7 +62,7 @@ type floorFixture struct {
 	p pacer.Pacer
 }
 
-// newFloorFixture: a StreamAllocator (queue not started; handlers driven directly), allow_pause=false as on staging.
+// newFloorFixture: a StreamAllocator (queue not started; handlers driven directly), allow_pause=false.
 func newFloorFixture(t *testing.T, floor int32, l logger.Logger) *floorFixture {
 	t.Helper()
 

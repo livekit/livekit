@@ -3345,7 +3345,7 @@ func TestForwarderCameraTemporalFloorCooperative(t *testing.T) {
 			"stock preserves streaming f-T0", floorFT0, 2, false, floorBrsCheapF, 0, floorFT0,
 		},
 		{
-			"floor 1 does not preserve a floor-excluded f-T0", floorFT0, 2, false, floorBrsCheapF, 1, floorHT2,
+			"floor 1 does not preserve a floor-excluded f-T0", floorFT0, 2, false, floorBrsCheapF, 1, floorHT1,
 		},
 		{
 			"floor 1 preserves streaming f-T1", floorFT1, 2, false, floorBrsCheapF, 1, floorFT1,
@@ -3363,6 +3363,48 @@ func TestForwarderCameraTemporalFloorCooperative(t *testing.T) {
 
 			transition, _, _ := f.ProvisionalAllocateGetCooperativeTransition(c.allowOvershoot, c.floor)
 			require.Equal(t, c.want, transition.To)
+		})
+	}
+}
+
+// A target below the floor moves to the highest spatial layer whose cheapest floor-compliant layer costs no more
+// than the target; when every compliant layer costs more, the target is preserved as stock does.
+func TestForwarderCameraTemporalFloorCooperativeNeverCostsMore(t *testing.T) {
+	// every floor-compliant layer costs more than f-T0 (h-T0 is below the floor)
+	allCostMore := Bitrates{
+		{450, 500, 550, 0},
+		{420, 500, 600, 0},
+		{400, 0, 0, 0},
+	}
+	cases := []struct {
+		name      string
+		brs       Bitrates
+		floor     int32
+		want      buffer.VideoLayer
+		wantDelta int64
+	}{
+		{"stock preserves streaming f-T0", floorBrsCheapF, 0, floorFT0, 0},
+		{"floor 1 moves to cheapest compliant h-T1 not h-T2", floorBrsCheapF, 1, floorHT1, 300 - 400},
+		{"stock preserves f-T0 when everything costs more", allCostMore, 0, floorFT0, 0},
+		{"floor 1 preserves f-T0 when every compliant layer costs more", allCostMore, 1, floorFT0, 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFloorForwarder(buffer.DefaultMaxLayerTemporal, buffer.DefaultMaxLayerTemporal)
+			f.vls.SetTarget(floorFT0)
+			f.lastAllocation.BandwidthRequested = c.brs[2][0]
+			f.ProvisionalAllocatePrepare(nil, c.brs)
+
+			// precondition: streaming f-T0, which is below the floor whenever the floor is on
+			require.Equal(t, floorFT0, f.vls.GetTarget())
+			require.Equal(t, int64(400), c.brs[2][0])
+			require.Equal(t, c.floor > 0, belowTemporalFloor(floorFT0, c.floor))
+
+			transition, _, _ := f.ProvisionalAllocateGetCooperativeTransition(false, c.floor)
+			require.Equal(t, floorFT0, transition.From)
+			require.Equal(t, c.want, transition.To)
+			require.Equal(t, c.wantDelta, transition.BandwidthDelta)
+			require.LessOrEqual(t, c.brs[c.want.Spatial][c.want.Temporal], c.brs[2][0])
 		})
 	}
 }

@@ -1239,27 +1239,51 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 
 	// check if we should preserve current target
 	if existingTargetLayer.IsValid() {
-		// a target below the camera temporal floor is never preserved: the search stops at it, so the move is down
-		existingBelowFloor := belowTemporalFloor(existingTargetLayer, floor)
-
 		// what is the highest that is available
 		maximalLayer := buffer.InvalidLayer
 		maximalBandwidthRequired := int64(0)
-		for s := f.provisional.maxLayer.Spatial; s >= 0; s-- {
-			for t := f.provisional.maxLayer.Temporal; t >= 0; t-- {
-				layer := buffer.VideoLayer{Spatial: s, Temporal: t}
-				if belowTemporalFloor(layer, floor) || (existingBelowFloor && layer.GreaterThan(existingTargetLayer)) {
-					continue
-				}
-				if f.provisional.bitrates[s][t] != 0 {
-					maximalLayer = layer
-					maximalBandwidthRequired = f.provisional.bitrates[s][t]
+		if belowTemporalFloor(existingTargetLayer, floor) {
+			// a target below the camera temporal floor moves down to the highest spatial layer whose cheapest
+			// floor-compliant layer costs no more than the target, else it is preserved: never a costlier move
+			existingBitrate := f.provisional.bitrates[existingTargetLayer.Spatial][existingTargetLayer.Temporal]
+			for s := min(f.provisional.maxLayer.Spatial, existingTargetLayer.Spatial-1); s >= 0 && !maximalLayer.IsValid(); s-- {
+				for t := int32(0); t <= f.provisional.maxLayer.Temporal; t++ {
+					bitrate := f.provisional.bitrates[s][t]
+					if bitrate == 0 || belowTemporalFloor(buffer.VideoLayer{Spatial: s, Temporal: t}, floor) {
+						continue
+					}
+					if existingBitrate == 0 || bitrate <= existingBitrate {
+						maximalLayer = buffer.VideoLayer{Spatial: s, Temporal: t}
+						maximalBandwidthRequired = bitrate
+					}
 					break
 				}
 			}
+			if !maximalLayer.IsValid() && existingBitrate != 0 {
+				f.provisional.allocatedLayer = existingTargetLayer
+				return VideoTransition{
+					From:           existingTargetLayer,
+					To:             existingTargetLayer,
+					BandwidthDelta: 0,
+				}, f.provisional.availableLayers, f.provisional.bitrates
+			}
+		} else {
+			for s := f.provisional.maxLayer.Spatial; s >= 0; s-- {
+				for t := f.provisional.maxLayer.Temporal; t >= 0; t-- {
+					layer := buffer.VideoLayer{Spatial: s, Temporal: t}
+					if belowTemporalFloor(layer, floor) {
+						continue
+					}
+					if f.provisional.bitrates[s][t] != 0 {
+						maximalLayer = layer
+						maximalBandwidthRequired = f.provisional.bitrates[s][t]
+						break
+					}
+				}
 
-			if maximalBandwidthRequired != 0 {
-				break
+				if maximalBandwidthRequired != 0 {
+					break
+				}
 			}
 		}
 
