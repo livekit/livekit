@@ -15,6 +15,7 @@
 package rtc
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -31,6 +32,8 @@ func TestUnpublishDataTrackRejectsInvalidHandle(t *testing.T) {
 	}{
 		{name: "handle wraps to published track", handle: 65537},
 		{name: "zero handle", handle: 0},
+		{name: "first out-of-range handle", handle: 65536},
+		{name: "maximum uint32 handle", handle: ^uint32(0)},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			p := newParticipantForTest("test")
@@ -49,6 +52,45 @@ func TestUnpublishDataTrackRejectsInvalidHandle(t *testing.T) {
 				assert.Equal(t, livekit.RequestResponse_INVALID_HANDLE, response.Reason)
 			}
 			assert.NotNil(t, p.UpDataTrackManager.GetPublishedDataTrack(1), "published track must remain after handle %d", test.handle)
+		})
+	}
+}
+
+func TestPublishDataTrackRejectsInvalidHandle(t *testing.T) {
+	for _, handle := range []uint32{0, 65536, 65537, ^uint32(0)} {
+		t.Run(fmt.Sprint(handle), func(t *testing.T) {
+			p := newParticipantForTest("test")
+			p.params.EnableDataTracks = true
+			sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+
+			p.HandlePublishDataTrackRequest(&livekit.PublishDataTrackRequest{PubHandle: handle, Name: "test-track"})
+
+			require.Equal(t, 1, sink.WriteMessageCallCount())
+			response := lastRequestResponse(t, sink, 0)
+			require.Equal(t, livekit.RequestResponse_INVALID_HANDLE, response.Reason)
+			require.Empty(t, p.UpDataTrackManager.GetPublishedDataTracks())
+		})
+	}
+}
+
+func TestDataTrackValidHandles(t *testing.T) {
+	for _, handle := range []uint32{1, 32768, 65535} {
+		t.Run(fmt.Sprint(handle), func(t *testing.T) {
+			p := newParticipantForTest("test")
+			p.params.EnableDataTracks = true
+			sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+
+			p.HandlePublishDataTrackRequest(&livekit.PublishDataTrackRequest{PubHandle: handle, Name: "test-track"})
+
+			require.NotNil(t, p.UpDataTrackManager.GetPublishedDataTrack(uint16(handle)))
+			require.Equal(t, 1, sink.WriteMessageCallCount())
+			require.NotNil(t, sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse).GetPublishDataTrackResponse())
+
+			p.HandleUnpublishDataTrackRequest(&livekit.UnpublishDataTrackRequest{PubHandle: handle})
+
+			require.Empty(t, p.UpDataTrackManager.GetPublishedDataTracks())
+			require.Equal(t, 2, sink.WriteMessageCallCount())
+			require.NotNil(t, sink.WriteMessageArgsForCall(1).(*livekit.SignalResponse).GetUnpublishDataTrackResponse())
 		})
 	}
 }
