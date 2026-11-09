@@ -3811,7 +3811,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 		)
 
 		p.pendingTracksLock.Lock()
-		if pti := p.pendingTracks[signalCid]; pti != nil {
+		if pti := p.pendingTracks[signalCid]; pti != nil && pti.queued {
 			p.sendTrackPublished(signalCid, pti.trackInfos[0])
 			pti.queued = false
 		}
@@ -3968,9 +3968,10 @@ func (p *ParticipantImpl) setTrackID(cid string, info *livekit.TrackInfo) {
 	info.Sid = trackID
 }
 
+// a track whose receiver closed stays published while its subscribers flush, a republish of its cid must not land on it
 func (p *ParticipantImpl) getPublishedTrackBySignalCid(clientId string) types.MediaTrack {
 	for _, publishedTrack := range p.GetPublishedTracks() {
-		if publishedTrack.(types.LocalMediaTrack).HasSignalCid(clientId) {
+		if publishedTrack.IsOpen() && publishedTrack.(types.LocalMediaTrack).HasSignalCid(clientId) {
 			p.pubLogger.Debugw("found track by signal cid", "signalCid", clientId, "trackID", publishedTrack.ID())
 			return publishedTrack
 		}
@@ -3981,7 +3982,7 @@ func (p *ParticipantImpl) getPublishedTrackBySignalCid(clientId string) types.Me
 
 func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) types.MediaTrack {
 	for _, publishedTrack := range p.GetPublishedTracks() {
-		if publishedTrack.(types.LocalMediaTrack).HasSdpCid(clientId) {
+		if publishedTrack.IsOpen() && publishedTrack.(types.LocalMediaTrack).HasSdpCid(clientId) {
 			p.pubLogger.Debugw("found track by SDP cid", "sdpCid", clientId, "trackID", publishedTrack.ID())
 			return publishedTrack
 		}

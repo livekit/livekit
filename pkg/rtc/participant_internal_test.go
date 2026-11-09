@@ -201,6 +201,7 @@ func TestTrackPublishing(t *testing.T) {
 		track := &typesfakes.FakeLocalMediaTrack{}
 		track.HasSignalCidCalls(func(s string) bool { return s == "cid" })
 		track.ToProtoReturns(&livekit.TrackInfo{})
+		track.IsOpenReturns(true)
 		// directly add to publishedTracks without lock - for testing purpose only
 		p.UpTrackManager.publishedTracks["cid"] = track
 
@@ -233,6 +234,7 @@ func TestTrackPublishing(t *testing.T) {
 
 		track := &typesfakes.FakeLocalMediaTrack{}
 		track.ToProtoReturns(&livekit.TrackInfo{})
+		track.IsOpenReturns(true)
 		track.HasSdpCidCalls(func(s string) bool { return s == "cid" })
 		// directly add to publishedTracks without lock - for testing purpose only
 		p.UpTrackManager.publishedTracks["cid"] = track
@@ -258,6 +260,35 @@ func TestTrackPublishing(t *testing.T) {
 
 		// check SID is the same
 		require.Equal(t, p.pendingTracks["cid"].trackInfos[0].Sid, p.pendingTracks["cid"].trackInfos[1].Sid)
+	})
+
+	t.Run("should not queue a republish behind a track that is still closing", func(t *testing.T) {
+		p, _ := newParticipantWithPendingTrack(t, livekit.TrackType_VIDEO)
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+		closing := publishPendingTrack(p, livekit.TrackType_VIDEO)
+		require.True(t, closing.HasSdpCid(pendingTrackCid))
+		// the receiver closed, the track leaves publishedTracks once its subscribers flush
+		closing.MediaTrackReceiver.SetClosing(false)
+		require.Nil(t, p.getPublishedTrackBySignalCid(pendingTrackCid))
+		require.Nil(t, p.getPublishedTrackBySdpCid(pendingTrackCid))
+
+		written := sink.WriteMessageCallCount()
+		p.AddTrack(&livekit.AddTrackRequest{Cid: pendingTrackCid, Name: "track", Type: livekit.TrackType_VIDEO})
+		require.Equal(t, written+1, sink.WriteMessageCallCount())
+		res := sink.WriteMessageArgsForCall(written).(*livekit.SignalResponse)
+		require.IsType(t, &livekit.SignalResponse_TrackPublished{}, res.Message)
+		require.False(t, p.pendingTracks[pendingTrackCid].queued)
+
+		// the closing track finishing its close does not answer the republish again
+		closing.Close(false)
+		require.Equal(t, written+1, sink.WriteMessageCallCount())
+		require.NotNil(t, p.pendingTracks[pendingTrackCid])
+
+		// media with the same sdp cid lands on the republished track, not the closed one
+		republished := publishPendingTrack(p, livekit.TrackType_VIDEO)
+		require.NotNil(t, republished)
+		require.NotEqual(t, closing.ID(), republished.ID())
+		require.Len(t, p.UpTrackManager.publishedTracks, 1)
 	})
 
 	t.Run("should release timed out pending tracks when at the pending track limit", func(t *testing.T) {
