@@ -476,6 +476,8 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook Assignmen
 	// job's previous attempt or its creation; see advance
 	job.State.StartedAt = advance(job.State.StartedAt, now.UnixNano())
 	job.State.Status = livekit.JobStatus_JS_RUNNING
+	// a retry carries the previous attempt's times
+	job.State.AcceptedAt, job.State.AssignedAt = 0, 0
 
 	if _, err := w.conn.WriteServerMessage(&livekit.ServerMessage{Message: &livekit.ServerMessage_Availability{
 		Availability: &livekit.AvailabilityRequest{Job: job},
@@ -499,6 +501,8 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook Assignmen
 		if !res.Available {
 			return nil, ErrWorkerNotAvailable
 		}
+		// offset from StartedAt, which may be past this node's clock; see advance
+		job.State.AcceptedAt = job.State.StartedAt + time.Since(now).Nanoseconds()
 
 		job.State.ParticipantIdentity = res.ParticipantIdentity
 		attributes := res.ParticipantAttributes
@@ -533,6 +537,7 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook Assignmen
 		if hook != nil {
 			send = hook(send)
 		}
+		job.State.AssignedAt = job.State.StartedAt + time.Since(now).Nanoseconds()
 		state := proto.CloneOf(job.State)
 
 		// must be in runningJobs before the assignment is sent; stored as a copy because send reads job without w.mu.

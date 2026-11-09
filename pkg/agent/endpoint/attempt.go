@@ -22,14 +22,12 @@ import (
 	"maps"
 	"net"
 	"net/http"
-	"net/url"
 	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/agent/endpoint/wire"
-	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils/guid"
 )
@@ -116,11 +114,9 @@ func (a *attempt) requestHeader() http.Header {
 		h.Set("Connection", "Upgrade")
 		h.Set("Upgrade", "websocket")
 	}
-	// identity travels as preamble.authorized; the token must never reach the
-	// worker
-	if isLiveKitBearer(h.Get("Authorization")) {
-		h.Del("Authorization")
-	}
+	// the caller's token reaches the worker as sent: preamble.authorized is the
+	// node's verdict, and the token carries what the worker authorizes itself
+	// (an agentThread grant, the caller's identity)
 	// the signalling namespace is the node's to write: a client able to set
 	// x-lk-completion could tell the worker a body it cut short was whole
 	wire.StripReservedHeaders(h)
@@ -305,29 +301,10 @@ func bodyLength(r *http.Request) int64 {
 }
 
 func requestTarget(escPath, rawQuery string) string {
-	rawQuery = stripAccessToken(rawQuery)
 	if rawQuery == "" {
 		return escPath
 	}
 	return escPath + "?" + rawQuery
-}
-
-func stripAccessToken(rawQuery string) string {
-	if rawQuery == "" {
-		return ""
-	}
-	// the kept pairs must keep the client's encoding byte for byte, so the query
-	// is never decoded and re-encoded
-	pairs := strings.Split(rawQuery, "&")
-	kept := pairs[:0]
-	for _, p := range pairs {
-		k, _, _ := strings.Cut(p, "=")
-		if uk, err := url.QueryUnescape(k); err == nil && uk == "access_token" {
-			continue
-		}
-		kept = append(kept, p)
-	}
-	return strings.Join(kept, "&")
 }
 
 // isWebSocketUpgrade admits only an HTTP/1.x websocket handshake; every other
@@ -347,15 +324,6 @@ func connectionHasToken(h http.Header, token string) bool {
 		}
 	}
 	return false
-}
-
-func isLiveKitBearer(v string) bool {
-	tok, ok := strings.CutPrefix(v, "Bearer ")
-	if !ok || tok == "" {
-		return false
-	}
-	t, err := auth.ParseAPIToken(tok)
-	return err == nil && t.APIKey() != ""
 }
 
 // hop-by-hop headers per RFC 9110; Connection-nominated headers are dropped too.

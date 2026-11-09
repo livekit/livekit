@@ -38,6 +38,7 @@ type WebRTCConfig struct {
 	Receiver      ReceiverConfig
 	Publisher     DirectionConfig
 	Subscriber    DirectionConfig
+	ICELite       bool
 
 	flexFEC config.FlexFECConfig
 }
@@ -102,8 +103,14 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 		},
 		Publisher:  getPublisherConfig(false, flexFEC),
 		Subscriber: subscriberConfig,
+		ICELite:    rtcConf.UseICELite,
 		flexFEC:    flexFEC,
 	}, nil
+}
+
+func (c *WebRTCConfig) DisableICELite() {
+	c.SettingEngine.SetLite(false)
+	c.ICELite = false
 }
 
 func (c *WebRTCConfig) UpdatePublisherConfig(consolidated bool) {

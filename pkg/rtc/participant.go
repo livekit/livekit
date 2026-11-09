@@ -3436,14 +3436,10 @@ func (p *ParticipantImpl) setTrackMuted(mute *livekit.MuteTrackRequest, fromAdmi
 		p.supervisor.SetPublicationMute(trackID, mute.Muted)
 	}
 
-	track, changed := p.UpTrackManager.SetPublishedTrackMuted(trackID, mute.Muted)
 	var trackInfo *livekit.TrackInfo
-	if track != nil {
-		trackInfo = track.ToProto()
-	}
-
+	changed := false
+	p.pendingTracksLock.Lock()
 	// update mute status in any pending/queued add track requests too
-	p.pendingTracksLock.RLock()
 	for _, pti := range p.pendingTracks {
 		for i, ti := range pti.trackInfos {
 			if livekit.TrackID(ti.Sid) == trackID {
@@ -3452,12 +3448,19 @@ func (p *ParticipantImpl) setTrackMuted(mute *livekit.MuteTrackRequest, fromAdmi
 				ti.Muted = mute.Muted
 				pti.trackInfos[i] = ti
 				if trackInfo == nil {
-					trackInfo = ti
+					// callers marshal it unlocked, and updateRidsFromSDP writes the stored one in place
+					trackInfo = proto.CloneOf(ti)
 				}
 			}
 		}
 	}
-	p.pendingTracksLock.RUnlock()
+	p.pendingTracksLock.Unlock()
+
+	// after the pending pass, so a publish that moves the track in between is still found
+	if track, muteChanged := p.UpTrackManager.SetPublishedTrackMuted(trackID, mute.Muted); track != nil {
+		trackInfo = track.ToProto()
+		changed = changed || muteChanged
+	}
 
 	if trackInfo != nil && changed {
 		if mute.Muted {
@@ -3808,9 +3811,14 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 		)
 
 		p.pendingTracksLock.Lock()
-		if pti := p.pendingTracks[signalCid]; pti != nil {
-			p.sendTrackPublished(signalCid, pti.trackInfos[0])
-			pti.queued = false
+		// a replacement queued behind any cid of this track waits till no open track holds that cid,
+		// this close may be an older track's
+		for cid, pti := range p.pendingTracks {
+			if pti.queued && (cid == signalCid || mt.HasSdpCid(cid)) &&
+				p.getPublishedTrackBySignalCid(cid) == nil && p.getPublishedTrackBySdpCid(cid) == nil {
+				p.sendTrackPublished(cid, pti.trackInfos[0])
+				pti.queued = false
+			}
 		}
 		p.pendingTracksLock.Unlock()
 		p.handlePendingRemoteTracks()
@@ -3965,9 +3973,10 @@ func (p *ParticipantImpl) setTrackID(cid string, info *livekit.TrackInfo) {
 	info.Sid = trackID
 }
 
+// a track whose receiver closed stays published while its subscribers flush, a republish of its cid must not land on it
 func (p *ParticipantImpl) getPublishedTrackBySignalCid(clientId string) types.MediaTrack {
 	for _, publishedTrack := range p.GetPublishedTracks() {
-		if publishedTrack.(types.LocalMediaTrack).HasSignalCid(clientId) {
+		if publishedTrack.IsOpen() && publishedTrack.(types.LocalMediaTrack).HasSignalCid(clientId) {
 			p.pubLogger.Debugw("found track by signal cid", "signalCid", clientId, "trackID", publishedTrack.ID())
 			return publishedTrack
 		}
@@ -3978,13 +3987,26 @@ func (p *ParticipantImpl) getPublishedTrackBySignalCid(clientId string) types.Me
 
 func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) types.MediaTrack {
 	for _, publishedTrack := range p.GetPublishedTracks() {
-		if publishedTrack.(types.LocalMediaTrack).HasSdpCid(clientId) {
+		if publishedTrack.IsOpen() && publishedTrack.(types.LocalMediaTrack).HasSdpCid(clientId) {
 			p.pubLogger.Debugw("found track by SDP cid", "sdpCid", clientId, "trackID", publishedTrack.ID())
 			return publishedTrack
 		}
 	}
 
 	return nil
+}
+
+// The move from pending to published in mediaTrackReceived happens under this lock, so holding it
+// across both lookups keeps a moving track from being missed by both.
+func (p *ParticipantImpl) getTrackInfoBySdpCid(sdpCid string, kind livekit.TrackType) *livekit.TrackInfo {
+	p.pendingTracksLock.RLock()
+	defer p.pendingTracksLock.RUnlock()
+
+	if mt := p.getPublishedTrackBySdpCid(sdpCid); mt != nil {
+		return mt.ToProto()
+	}
+	_, ti, _, _, _ := p.getPendingTrack(sdpCid, kind, false)
+	return ti
 }
 
 func (p *ParticipantImpl) DebugInfo() map[string]any {
@@ -4415,17 +4437,14 @@ func (p *ParticipantImpl) GetEnabledPublishCodecs() []*livekit.Codec {
 }
 
 func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack) error {
-	if track := p.UpTrackManager.UpdatePublishedAudioTrack(update); track != nil {
-		return nil
-	}
-
 	isPending := false
-	p.pendingTracksLock.RLock()
+	p.pendingTracksLock.Lock()
 	for _, pti := range p.pendingTracks {
-		for _, ti := range pti.trackInfos {
+		for i, ti := range pti.trackInfos {
 			if ti.Sid == update.TrackSid {
 				isPending = true
 
+				ti = proto.CloneOf(ti)
 				ti.AudioFeatures = sutils.DedupeSlice(update.Features)
 				ti.Stereo = false
 				ti.DisableDtx = false
@@ -4437,13 +4456,16 @@ func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack
 						ti.DisableDtx = true
 					}
 				}
+				pti.trackInfos[i] = ti
 
 				p.pubLogger.Debugw("updated pending track", "trackID", ti.Sid, "trackInfo", logger.Proto(ti))
 			}
 		}
 	}
-	p.pendingTracksLock.RUnlock()
-	if isPending {
+	p.pendingTracksLock.Unlock()
+
+	// after the pending pass, so a publish that moves the track in between is still found
+	if p.UpTrackManager.UpdatePublishedAudioTrack(update) != nil || isPending {
 		return nil
 	}
 
@@ -4458,24 +4480,24 @@ func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack
 }
 
 func (p *ParticipantImpl) UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack) error {
-	if track := p.UpTrackManager.UpdatePublishedVideoTrack(update); track != nil {
-		return nil
-	}
-
 	isPending := false
-	p.pendingTracksLock.RLock()
+	p.pendingTracksLock.Lock()
 	for _, pti := range p.pendingTracks {
-		for _, ti := range pti.trackInfos {
+		for i, ti := range pti.trackInfos {
 			if ti.Sid == update.TrackSid {
 				isPending = true
 
+				ti = proto.CloneOf(ti)
 				ti.Width = update.Width
 				ti.Height = update.Height
+				pti.trackInfos[i] = ti
 			}
 		}
 	}
-	p.pendingTracksLock.RUnlock()
-	if isPending {
+	p.pendingTracksLock.Unlock()
+
+	// after the pending pass, so a publish that moves the track in between is still found
+	if p.UpTrackManager.UpdatePublishedVideoTrack(update) != nil || isPending {
 		return nil
 	}
 

@@ -135,6 +135,7 @@ func (s *SIPService) CreateSIPInboundTrunk(ctx context.Context, req *livekit.Cre
 	if info.SipTrunkId != "" {
 		return nil, twirp.NewError(twirp.InvalidArgument, "trunk ID must be empty")
 	}
+	info.Numbers = normalizeNumbers(info.Numbers)
 	AppendLogFields(ctx, "trunk", logger.Proto(info))
 
 	// Keep ID empty still, so that validation can print "<new>" instead of a non-existent ID in the error.
@@ -208,6 +209,8 @@ func (s *SIPService) UpdateSIPInboundTrunk(ctx context.Context, req *livekit.Upd
 		}
 		return nil, err
 	}
+	info.Numbers = normalizeNumbers(info.Numbers)
+	normalizeInboundTrunkUpdate(req)
 	switch a := req.Action.(type) {
 	default:
 		return nil, errors.New("missing or unsupported action")
@@ -238,6 +241,36 @@ func (s *SIPService) UpdateSIPInboundTrunk(ctx context.Context, req *livekit.Upd
 		return nil, err
 	}
 	return info, nil
+}
+
+func normalizeNumbers(nums []string) []string {
+	if len(nums) == 0 {
+		return nums
+	}
+	out := make([]string, 0, len(nums))
+	seen := make(map[string]struct{}, len(nums))
+	for _, n := range nums {
+		n = sip.NormalizeNumber(n)
+		if _, ok := seen[n]; ok {
+			continue
+		}
+		seen[n] = struct{}{}
+		out = append(out, n)
+	}
+	return out
+}
+
+// normalizeInboundTrunkUpdate normalizes the numbers in the request, so that a Remove
+// still finds an entry that was stored in its normalized form.
+func normalizeInboundTrunkUpdate(req *livekit.UpdateSIPInboundTrunkRequest) {
+	if r := req.GetReplace(); r != nil {
+		r.Numbers = normalizeNumbers(r.Numbers)
+	}
+	if u := req.GetUpdate().GetNumbers(); u != nil {
+		u.Set = normalizeNumbers(u.Set)
+		u.Add = normalizeNumbers(u.Add)
+		u.Remove = normalizeNumbers(u.Remove)
+	}
 }
 
 func (s *SIPService) UpdateSIPOutboundTrunk(ctx context.Context, req *livekit.UpdateSIPOutboundTrunkRequest) (*livekit.SIPOutboundTrunkInfo, error) {

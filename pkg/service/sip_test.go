@@ -18,12 +18,89 @@ import (
 	"context"
 	"testing"
 
+	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
+	"github.com/livekit/psrpc"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/service"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/psrpc"
 )
+
+func newTestSIPService(t *testing.T) (context.Context, *service.SIPService, *service.RedisStore) {
+	rs := redisStoreDocker(t)
+	s := service.NewSIPService(nil, "", nil, nil, rs, nil, nil)
+	ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{SIP: &auth.SIPGrant{Admin: true}}, "")
+	return ctx, s, rs
+}
+
+func TestSIPInboundTrunkNumbersNormalized(t *testing.T) {
+	ctx, s, rs := newTestSIPService(t)
+
+	created, err := s.CreateSIPInboundTrunk(ctx, &livekit.CreateSIPInboundTrunkRequest{
+		Trunk: &livekit.SIPInboundTrunkInfo{
+			Name:    "create",
+			Numbers: []string{"15550001001", "+1 (555) 000-1002", "support", "+15550001001"},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"+15550001001", "+15550001002", "support"}, created.Numbers)
+
+	stored, err := rs.LoadSIPInboundTrunk(ctx, created.SipTrunkId)
+	require.NoError(t, err)
+	require.Equal(t, created.Numbers, stored.Numbers)
+
+	update := func(t *testing.T, id string, u *livekit.SIPInboundTrunkUpdate) *livekit.SIPInboundTrunkInfo {
+		info, err := s.UpdateSIPInboundTrunk(ctx, &livekit.UpdateSIPInboundTrunkRequest{
+			SipTrunkId: id,
+			Action:     &livekit.UpdateSIPInboundTrunkRequest_Update{Update: u},
+		})
+		require.NoError(t, err)
+		stored, err := rs.LoadSIPInboundTrunk(ctx, id)
+		require.NoError(t, err)
+		require.Equal(t, info.Numbers, stored.Numbers)
+		return info
+	}
+
+	t.Run("remove unnormalized", func(t *testing.T) {
+		info := update(t, created.SipTrunkId, &livekit.SIPInboundTrunkUpdate{
+			Numbers: &livekit.ListUpdate{Remove: []string{"15550001001"}},
+		})
+		require.Equal(t, []string{"+15550001002", "support"}, info.Numbers)
+	})
+
+	t.Run("add unnormalized", func(t *testing.T) {
+		info := update(t, created.SipTrunkId, &livekit.SIPInboundTrunkUpdate{
+			Numbers: &livekit.ListUpdate{Add: []string{"15550001003", "15550001002"}},
+		})
+		require.Equal(t, []string{"+15550001002", "support", "+15550001003"}, info.Numbers)
+	})
+
+	t.Run("replace", func(t *testing.T) {
+		info, err := s.UpdateSIPInboundTrunk(ctx, &livekit.UpdateSIPInboundTrunkRequest{
+			SipTrunkId: created.SipTrunkId,
+			Action: &livekit.UpdateSIPInboundTrunkRequest_Replace{Replace: &livekit.SIPInboundTrunkInfo{
+				Name:    "replace",
+				Numbers: []string{"15550001004"},
+			}},
+		})
+		require.NoError(t, err)
+		require.Equal(t, []string{"+15550001004"}, info.Numbers)
+	})
+
+	t.Run("legacy row normalized on edit", func(t *testing.T) {
+		id := guid.New(utils.SIPTrunkPrefix)
+		require.NoError(t, rs.StoreSIPInboundTrunk(ctx, &livekit.SIPInboundTrunkInfo{
+			SipTrunkId: id,
+			Name:       "legacy",
+			Numbers:    []string{"15550001005", "+15550001005"},
+		}))
+		info := update(t, id, &livekit.SIPInboundTrunkUpdate{Name: proto.String("renamed")})
+		require.Equal(t, []string{"+15550001005"}, info.Numbers)
+	})
+}
 
 func TestCreateSIPParticipantSourceCallUnsupported(t *testing.T) {
 	_, err := (&service.SIPService{}).CreateSIPParticipant(context.Background(), &livekit.CreateSIPParticipantRequest{

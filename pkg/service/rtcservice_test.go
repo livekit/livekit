@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -105,5 +106,28 @@ func TestDrainMessageSource(t *testing.T) {
 			return false
 		}))
 		require.Len(t, got, 1)
+	})
+}
+
+func TestStampJoinRequestTime(t *testing.T) {
+	at := time.UnixMilli(1_700_000_000_123)
+	stamped := func(pi routing.ParticipantInit) map[string]string {
+		stampJoinRequestTime(&pi, at)
+		return pi.Grants.Attributes
+	}
+
+	t.Run("new user", func(t *testing.T) {
+		attrs := stamped(routing.ParticipantInit{Grants: &auth.ClaimGrants{Attributes: map[string]string{"a": "b"}}})
+		require.Equal(t, map[string]string{"a": "b", livekit.AttrRTCJoinRequestTime: "1700000000123"}, attrs)
+	})
+
+	t.Run("reconnect", func(t *testing.T) {
+		require.Empty(t, stamped(routing.ParticipantInit{Reconnect: true, Grants: &auth.ClaimGrants{}}))
+	})
+
+	t.Run("agent", func(t *testing.T) {
+		grants := &auth.ClaimGrants{}
+		grants.SetParticipantKind(livekit.ParticipantInfo_AGENT)
+		require.Empty(t, stamped(routing.ParticipantInit{Grants: grants}))
 	})
 }
