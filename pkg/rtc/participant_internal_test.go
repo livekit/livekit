@@ -317,6 +317,31 @@ func TestTrackPublishing(t *testing.T) {
 		require.False(t, p.pendingTracks[pendingTrackCid].queued)
 	})
 
+	t.Run("a queued replacement matched only by SDP cid is released when that track closes", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+		p.AddTrack(&livekit.AddTrackRequest{
+			Cid: "y", Name: "track", Type: livekit.TrackType_VIDEO,
+			SimulcastCodecs: []*livekit.SimulcastCodec{{Codec: "vp8", Cid: "y"}},
+		})
+		p.pendingTracksLock.Lock()
+		signalCid, ti, _, _, _ := p.getPendingTrack("y", livekit.TrackType_VIDEO, true)
+		alias := p.addMediaTrack(signalCid, ti)
+		p.pendingTracksLock.Unlock()
+		alias.MediaTrackReceiver.UpdateCodecSdpCid(mime.MimeTypeVP8, "x")
+		require.True(t, alias.HasSdpCid("x"))
+		require.False(t, alias.HasSignalCid("x"))
+
+		// a publish of x queues behind the track whose SDP cid is x
+		p.AddTrack(&livekit.AddTrackRequest{Cid: "x", Name: "track", Type: livekit.TrackType_VIDEO})
+		require.True(t, p.pendingTracks["x"].queued)
+		written := sink.WriteMessageCallCount()
+
+		alias.Close(false)
+		require.Equal(t, written+1, sink.WriteMessageCallCount())
+		require.False(t, p.pendingTracks["x"].queued)
+	})
+
 	t.Run("should release timed out pending tracks when at the pending track limit", func(t *testing.T) {
 		p := newParticipantForTestWithOpts("test", &participantOpts{protocolVersion: 7})
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
