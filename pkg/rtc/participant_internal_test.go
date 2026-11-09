@@ -291,6 +291,32 @@ func TestTrackPublishing(t *testing.T) {
 		require.Len(t, p.UpTrackManager.publishedTracks, 1)
 	})
 
+	t.Run("a queued replacement waits for the open track that holds its cid, not an earlier closing one", func(t *testing.T) {
+		p, _ := newParticipantWithPendingTrack(t, livekit.TrackType_VIDEO)
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+		first := publishPendingTrack(p, livekit.TrackType_VIDEO)
+		first.MediaTrackReceiver.SetClosing(false)
+
+		p.AddTrack(&livekit.AddTrackRequest{Cid: pendingTrackCid, Name: "track", Type: livekit.TrackType_VIDEO})
+		second := publishPendingTrack(p, livekit.TrackType_VIDEO)
+		require.NotNil(t, second)
+
+		// a third publish of the cid queues behind the open second track
+		p.AddTrack(&livekit.AddTrackRequest{Cid: pendingTrackCid, Name: "track", Type: livekit.TrackType_VIDEO})
+		require.True(t, p.pendingTracks[pendingTrackCid].queued)
+		written := sink.WriteMessageCallCount()
+
+		first.Close(false)
+		require.Equal(t, written, sink.WriteMessageCallCount())
+		require.True(t, p.pendingTracks[pendingTrackCid].queued)
+
+		second.Close(false)
+		require.Equal(t, written+1, sink.WriteMessageCallCount())
+		res := sink.WriteMessageArgsForCall(written).(*livekit.SignalResponse)
+		require.IsType(t, &livekit.SignalResponse_TrackPublished{}, res.Message)
+		require.False(t, p.pendingTracks[pendingTrackCid].queued)
+	})
+
 	t.Run("should release timed out pending tracks when at the pending track limit", func(t *testing.T) {
 		p := newParticipantForTestWithOpts("test", &participantOpts{protocolVersion: 7})
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)

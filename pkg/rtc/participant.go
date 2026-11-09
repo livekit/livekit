@@ -3811,7 +3811,9 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 		)
 
 		p.pendingTracksLock.Lock()
-		if pti := p.pendingTracks[signalCid]; pti != nil && pti.queued {
+		// a queued replacement waits till no open track holds its cid, this close may be an older track's
+		if pti := p.pendingTracks[signalCid]; pti != nil && pti.queued &&
+			p.getPublishedTrackBySignalCid(signalCid) == nil && p.getPublishedTrackBySdpCid(signalCid) == nil {
 			p.sendTrackPublished(signalCid, pti.trackInfos[0])
 			pti.queued = false
 		}
