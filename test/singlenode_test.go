@@ -1519,12 +1519,10 @@ func TestTurnAuthFailure(t *testing.T) {
 			_, allocErr := client.Allocate()
 			require.Error(t, allocErr)
 
-			// pion's TURN server replies with 400 Bad Request for any
-			// authenticated-allocate failure (unknown user or integrity check
-			// mismatch); the initial unauthenticated probe is what returns 401.
+			// pion's TURN server replies with 401 Unauthorized for any authenticated-allocate failure (unknown user or integrity mismatch)
 			var turnErr *stun.TurnError
 			require.ErrorAs(t, allocErr, &turnErr)
-			require.Equal(t, stun.CodeBadRequest, turnErr.ErrorCodeAttr.Code)
+			require.Equal(t, stun.CodeUnauthorized, turnErr.ErrorCodeAttr.Code)
 		})
 	}
 }
