@@ -553,6 +553,23 @@ func TestOutOfOrderUpdates(t *testing.T) {
 	require.Equal(t, "second update", sent.GetUpdate().Participants[0].Metadata)
 }
 
+func TestServerAttributesNotSent(t *testing.T) {
+	p := newParticipantForTest("test")
+	p.updateState(livekit.ParticipantInfo_JOINED)
+	sink := p.GetResponseSink().(*routingfakes.FakeMessageSink)
+
+	attrs := map[string]string{"lk.rtc.joinRequestTime": "1", "app": "a"}
+	other := &livekit.ParticipantInfo{Sid: "PA_other", Identity: "other", Version: 1, Attributes: attrs}
+	self := &livekit.ParticipantInfo{Sid: string(p.ID()), Identity: "test", Version: 1, Attributes: attrs}
+	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{other, self}))
+
+	sent := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse).GetUpdate().Participants
+	require.Equal(t, map[string]string{"app": "a"}, sent[0].Attributes)
+	require.Equal(t, map[string]string{"app": "a"}, sent[1].Attributes)
+	// the shared input is not changed
+	require.Len(t, other.Attributes, 2)
+}
+
 func TestRecentlyDisconnectedKeepsUpdateOrder(t *testing.T) {
 	p := newParticipantForTest("test")
 
