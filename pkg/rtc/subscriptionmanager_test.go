@@ -995,6 +995,24 @@ func TestSubscribeRevokedInFlight(t *testing.T) {
 		require.False(t, isExpectedToResume)
 		require.Empty(t, sm.GetSubscribedParticipants())
 		require.False(t, subscribed.Load())
+
+		// the real RemoveSubscriber closes the subscribed track; the reconcile that follows
+		// records the denial, tells the client and keeps waiting without adding it again
+		sm.lock.RLock()
+		s := sm.subscriptions["track"]
+		sm.lock.RUnlock()
+		setTestSubscribedTrackClosed(t, s.getSubscribedTrack(), false)
+		// granted by the first subscribe, denied by this one
+		p := sm.params.Participant.(*typesfakes.FakeLocalParticipant)
+		require.Eventually(t, func() bool {
+			return p.SendSubscriptionPermissionUpdateCallCount() == 2
+		}, subSettleTimeout, subCheckInterval, "the client should be told about the denial")
+		_, _, allowed := p.SendSubscriptionPermissionUpdateArgsForCall(1)
+		require.False(t, allowed)
+		require.False(t, s.getHasPermission())
+		require.True(t, s.isDesired())
+		require.True(t, s.needsSubscribe())
+		require.Equal(t, 1, track.AddSubscriberCallCount())
 	})
 }
 
