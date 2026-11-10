@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -842,19 +841,12 @@ func (conf *Config) ToCLIFlagNames(existingFlags []cli.Flag) map[string]reflect.
 	return flagNames
 }
 
-// HasOthersPermission reports whether a secret file grants any permission to
-// others. Windows has no Unix permission bits: os.Stat reports 0666 for every
-// writable file and 0444 for a read-only one, so the check is skipped there.
-func HasOthersPermission(st os.FileInfo) bool {
-	return runtime.GOOS != "windows" && st.Mode().Perm()&0o007 != 0
-}
-
 func (conf *Config) ValidateKeys() error {
 	// prefer keyfile if set
 	if conf.KeyFile != "" {
-		if st, err := os.Stat(conf.KeyFile); err != nil {
+		if others, err := HasOthersPermission(conf.KeyFile); err != nil {
 			return err
-		} else if HasOthersPermission(st) {
+		} else if others {
 			return ErrKeyFileIncorrectPermission
 		}
 		f, err := os.Open(conf.KeyFile)
@@ -895,11 +887,11 @@ func (conf *Config) LoadTURNSecrets() error {
 				"host", s.Host, "port", s.Port)
 			conf.RTC.TURNServers[i].Secret = inlineSecret
 		case s.SecretFile != "":
-			st, err := os.Stat(s.SecretFile)
+			others, err := HasOthersPermission(s.SecretFile)
 			if err != nil {
 				return err
 			}
-			if HasOthersPermission(st) {
+			if others {
 				return ErrTURNSecretFileIncorrectPermission
 			}
 			data, err := os.ReadFile(s.SecretFile)
@@ -922,11 +914,11 @@ func (conf *Config) LoadTURNSecrets() error {
 				logger.Warnw(turnCredentialsInlineWarning, nil,
 					"host", s.Host, "port", s.Port)
 			} else {
-				st, err := os.Stat(s.CredentialsFile)
+				others, err := HasOthersPermission(s.CredentialsFile)
 				if err != nil {
 					return err
 				}
-				if HasOthersPermission(st) {
+				if others {
 					return ErrTURNCredentialFileIncorrectPermission
 				}
 				data, err := os.ReadFile(s.CredentialsFile)

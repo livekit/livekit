@@ -202,9 +202,9 @@ func getNodeID(currentNode routing.LocalNode) livekit.NodeID {
 func createKeyProvider(conf *config.Config) (auth.KeyProvider, error) {
 
 	if conf.KeyFile != "" {
-		if st, err := os.Stat(conf.KeyFile); err != nil {
+		if others, err := config.HasOthersPermission(conf.KeyFile); err != nil {
 			return nil, err
-		} else if config.HasOthersPermission(st) {
+		} else if others {
 			return nil, fmt.Errorf("key file others permissions must be set to 0")
 		}
 		f, err := os.Open(conf.KeyFile)

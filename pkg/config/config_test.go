@@ -20,7 +20,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"testing"
 	"time"
 
@@ -358,6 +357,7 @@ func writeSecretFile(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "secret")
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	setSecretFilePermissions(t, path, 0o600)
 	return path
 }
 
@@ -365,6 +365,7 @@ func TestValidateKeysKeyFile(t *testing.T) {
 	writeKeyFile := func(t *testing.T, mode os.FileMode) string {
 		path := filepath.Join(t.TempDir(), "keys.yaml")
 		require.NoError(t, os.WriteFile(path, []byte("key1: secret1\n"), mode))
+		setSecretFilePermissions(t, path, mode)
 		return path
 	}
 
@@ -375,9 +376,6 @@ func TestValidateKeysKeyFile(t *testing.T) {
 	})
 
 	t.Run("key file readable by others is rejected", func(t *testing.T) {
-		if runtime.GOOS == "windows" {
-			t.Skip("Windows has no Unix permission bits")
-		}
 		conf := &Config{KeyFile: writeKeyFile(t, 0o604)}
 		require.ErrorIs(t, conf.ValidateKeys(), ErrKeyFileIncorrectPermission)
 	})
@@ -484,15 +482,13 @@ func TestTURNCredentialsFile(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.mode&0o007 != 0 && runtime.GOOS == "windows" {
-				t.Skip("Windows has no Unix permission bits")
-			}
 			path := filepath.Join(t.TempDir(), fileName)
 			switch {
 			case tc.directory:
 				require.NoError(t, os.Mkdir(path, 0o700))
 			case !tc.missing:
 				require.NoError(t, os.WriteFile(path, []byte(tc.data), tc.mode))
+				setSecretFilePermissions(t, path, tc.mode)
 			}
 			conf, err := NewConfig(fmt.Sprintf(configFormat, path, tc.inline), true, nil, nil)
 			require.NoError(t, err)
