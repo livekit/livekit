@@ -956,6 +956,15 @@ func (m *SubscriptionManager) addSubscriber(sub *mediaTrackSubscription, track t
 			return ErrNoSubscribePermission
 		}
 
+		// same for the publisher revoking this track's permission, which only removes
+		// subscribers already recorded on the track
+		if !isSync {
+			if res := m.params.TrackResolver(m.params.Participant, trackID); res.Track == track && !res.HasPermission {
+				track.RemoveSubscriber(m.params.Participant.ID(), false)
+				return ErrNoTrackPermission
+			}
+		}
+
 		if !isSync && subTrack.NeedsNegotiation() {
 			m.params.Participant.Negotiate(false)
 		}

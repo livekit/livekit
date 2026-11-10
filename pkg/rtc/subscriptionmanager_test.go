@@ -949,6 +949,53 @@ func TestSubscribeRevokedInFlight(t *testing.T) {
 		require.Equal(t, sm.params.Participant.ID(), resolver.dataTrack.RemoveSubscriberArgsForCall(0))
 		require.Empty(t, sm.GetSubscribedParticipants())
 	})
+
+	// the publisher revoking this track's permission has the same blind spot
+	t.Run("media track permission", func(t *testing.T) {
+		sm := newTestSubscriptionManager()
+		defer sm.Close(false)
+
+		resolver := newTestResolver(true, true, "pub", "pubID")
+		var lock sync.Mutex
+		var track *typesfakes.FakeMediaTrack
+		sm.params.TrackResolver = func(sub types.LocalParticipant, trackID livekit.TrackID) types.MediaResolverResult {
+			res := resolver.Resolve(sub, trackID)
+			lock.Lock()
+			defer lock.Unlock()
+			if track == nil {
+				// revoked once the subscribe is past its permission check
+				track = res.Track.(*typesfakes.FakeMediaTrack)
+				track.IDReturns(trackID)
+				addSubscriber := track.AddSubscriberStub
+				track.AddSubscriberCalls(func(sub types.LocalParticipant) (types.SubscribedTrack, error) {
+					resolver.lock.Lock()
+					resolver.hasPermission = false
+					resolver.lock.Unlock()
+					return addSubscriber(sub)
+				})
+			}
+			// the room resolves the same published track every time
+			res.Track = track
+			return res
+		}
+		subscribed := atomic.Bool{}
+		sm.params.OnTrackSubscribed = func(subTrack types.SubscribedTrack) {
+			subscribed.Store(true)
+		}
+
+		sm.SubscribeToTrack("track", false)
+		require.Eventually(t, func() bool {
+			lock.Lock()
+			defer lock.Unlock()
+			return track != nil && track.RemoveSubscriberCallCount() == 1
+		}, subSettleTimeout, subCheckInterval, "the subscriber should be removed")
+
+		subID, isExpectedToResume := track.RemoveSubscriberArgsForCall(0)
+		require.Equal(t, sm.params.Participant.ID(), subID)
+		require.False(t, isExpectedToResume)
+		require.Empty(t, sm.GetSubscribedParticipants())
+		require.False(t, subscribed.Load())
+	})
 }
 
 type testSubscriptionParams struct {
