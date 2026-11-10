@@ -66,19 +66,6 @@ func FindRTXPayloadType(needle webrtc.PayloadType, haystack []webrtc.RTPCodecPar
 	return webrtc.PayloadType(0)
 }
 
-// IsOpusInbandFECEnabled reports whether an opus fmtp line turns on in-band FEC,
-// that is, whether it has useinbandfec=1. Only the value of that parameter is checked,
-// so an fmtp line with useinbandfec=0 does not count as FEC.
-func IsOpusInbandFECEnabled(fmtpLine string) bool {
-	for param := range strings.SplitSeq(fmtpLine, ";") {
-		key, value, found := strings.Cut(param, "=")
-		if found && strings.EqualFold(strings.TrimSpace(key), "useinbandfec") {
-			return strings.TrimSpace(value) == "1"
-		}
-	}
-	return false
-}
-
 // GetHeaderExtensionID returns the ID of a header extension, or 0 if not found
 func GetHeaderExtensionID(extensions []interceptor.RTPHeaderExtension, extension webrtc.RTPHeaderExtensionCapability) int {
 	for _, h := range extensions {

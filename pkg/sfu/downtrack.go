@@ -23,6 +23,7 @@ import (
 	"math"
 	"math/rand"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -721,13 +722,13 @@ func isUpstreamFECEnabled(matchedUpstreamCodec webrtc.RTPCodecParameters, upstre
 	case mime.IsMimeTypeStringRED(matchedUpstreamCodec.MimeType):
 		for _, c := range upstreamCodecs {
 			if mime.IsMimeTypeStringOpus(c.MimeType) {
-				return utils.IsOpusInbandFECEnabled(c.SDPFmtpLine)
+				return strings.Contains(strings.ToLower(c.SDPFmtpLine), "useinbandfec=1")
 			}
 		}
 		return false
 
 	case mime.IsMimeTypeStringAudio(matchedUpstreamCodec.MimeType):
-		return utils.IsOpusInbandFECEnabled(matchedUpstreamCodec.SDPFmtpLine)
+		return strings.Contains(strings.ToLower(matchedUpstreamCodec.SDPFmtpLine), "useinbandfec=1")
 
 	default:
 		return false
