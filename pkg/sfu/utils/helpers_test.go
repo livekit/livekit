@@ -53,3 +53,24 @@ func TestFindRTXPayloadType(t *testing.T) {
 		})
 	}
 }
+
+func TestIsOpusInbandFECEnabled(t *testing.T) {
+	tests := []struct {
+		fmtp     string
+		expected bool
+	}{
+		{"minptime=10;useinbandfec=1", true},
+		{"useinbandfec=1", true},
+		{"minptime=10; useinbandfec = 1 ;stereo=1", true},
+		{"minptime=10;UseInbandFEC=1", true},
+		{"minptime=10;useinbandfec=0", false},
+		{"useinbandfec=0;stereo=1", false},
+		{"minptime=10", false},
+		{"", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.fmtp, func(t *testing.T) {
+			require.Equal(t, tc.expected, IsOpusInbandFECEnabled(tc.fmtp))
+		})
+	}
+}

@@ -23,7 +23,6 @@ import (
 	"math"
 	"math/rand"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -515,7 +514,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		if mime.IsMimeTypeStringRED(matchedUpstreamCodec.MimeType) {
 			d.isRED = true
 			for _, c := range d.upstreamCodecs {
-				isFECEnabled = strings.Contains(strings.ToLower(c.SDPFmtpLine), "useinbandfec=1")
+				isFECEnabled = utils.IsOpusInbandFECEnabled(c.SDPFmtpLine)
 
 				// assume upstream primary codec is opus since we only support it for audio now
 				if mime.IsMimeTypeStringOpus(c.MimeType) {
@@ -540,7 +539,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			}
 			d.primaryPT = uint8(primaryPT)
 		} else if mime.IsMimeTypeStringAudio(matchedUpstreamCodec.MimeType) {
-			isFECEnabled = strings.Contains(strings.ToLower(matchedUpstreamCodec.SDPFmtpLine), "fec")
+			isFECEnabled = utils.IsOpusInbandFECEnabled(matchedUpstreamCodec.SDPFmtpLine)
 		}
 
 		logFields := []any{
@@ -698,7 +697,7 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 	d.rtpStats.SetClockRate(codec.RTPCodecCapability.ClockRate)
 	d.rtpStatsRTX.SetClockRate(codec.RTPCodecCapability.ClockRate)
 
-	isFECEnabled := strings.Contains(strings.ToLower(codec.SDPFmtpLine), "fec")
+	isFECEnabled := utils.IsOpusInbandFECEnabled(codec.SDPFmtpLine)
 	d.bindLock.Unlock()
 
 	d.params.Logger.Infow(
