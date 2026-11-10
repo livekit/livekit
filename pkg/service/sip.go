@@ -17,6 +17,8 @@ package service
 import (
 	"context"
 	"errors"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/dennwc/iters"
@@ -136,6 +138,9 @@ func (s *SIPService) CreateSIPInboundTrunk(ctx context.Context, req *livekit.Cre
 		return nil, twirp.NewError(twirp.InvalidArgument, "trunk ID must be empty")
 	}
 	info.Numbers = normalizeNumbers(info.Numbers)
+	if err := validateInboundNumbersNoURI(info.Numbers, nil); err != nil {
+		return nil, err
+	}
 	AppendLogFields(ctx, "trunk", logger.Proto(info))
 
 	// Keep ID empty still, so that validation can print "<new>" instead of a non-existent ID in the error.
@@ -211,6 +216,7 @@ func (s *SIPService) UpdateSIPInboundTrunk(ctx context.Context, req *livekit.Upd
 	}
 	info.Numbers = normalizeNumbers(info.Numbers)
 	normalizeInboundTrunkUpdate(req)
+	prevNumbers := slices.Clone(info.Numbers)
 	switch a := req.Action.(type) {
 	default:
 		return nil, errors.New("missing or unsupported action")
@@ -220,6 +226,9 @@ func (s *SIPService) UpdateSIPInboundTrunk(ctx context.Context, req *livekit.Upd
 		if err := result.LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
 			return nil, err
 		}
+	}
+	if err := validateInboundNumbersNoURI(info.Numbers, prevNumbers); err != nil {
+		return nil, err
 	}
 
 	it, err := ListSIPInboundTrunk(ctx, s.store, &livekit.ListSIPInboundTrunkRequest{
@@ -271,6 +280,28 @@ func normalizeInboundTrunkUpdate(req *livekit.UpdateSIPInboundTrunkRequest) {
 		u.Add = normalizeNumbers(u.Add)
 		u.Remove = normalizeNumbers(u.Remove)
 	}
+}
+
+// isSIPURINumber reports whether an inbound trunk number is a URI. Inbound numbers are compared
+// to the user part of the called URI, so a URI never matches a call.
+func isSIPURINumber(num string) bool {
+	lower := strings.ToLower(num)
+	return strings.HasPrefix(lower, "sip:") ||
+		strings.HasPrefix(lower, "sips:") ||
+		strings.HasPrefix(lower, "tel:") ||
+		strings.Contains(num, "@")
+}
+
+// validateInboundNumbersNoURI rejects URI numbers, except the ones that already exist,
+// so that trunks which stored a URI before this check can still be updated.
+func validateInboundNumbersNoURI(nums, existing []string) error {
+	for _, num := range nums {
+		if isSIPURINumber(num) && !slices.Contains(existing, num) {
+			return twirp.NewErrorf(twirp.InvalidArgument,
+				"inbound trunk number %q is a URI: only numbers or SIP usernames are accepted", num)
+		}
+	}
+	return nil
 }
 
 func (s *SIPService) UpdateSIPOutboundTrunk(ctx context.Context, req *livekit.UpdateSIPOutboundTrunkRequest) (*livekit.SIPOutboundTrunkInfo, error) {

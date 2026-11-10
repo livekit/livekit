@@ -19,7 +19,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"maps"
 	"net"
 	"net/http"
 	"reflect"
@@ -865,12 +864,8 @@ func TestSingleNodeAttributes(t *testing.T) {
 				if pubRemote == nil {
 					return "could not find remote publisher"
 				}
-				attrs := maps.Clone(pubRemote.Attributes)
-				// the server stamps when it received the join request
-				if attrs[livekit.AttrRTCJoinRequestTime] == "" {
-					return fmt.Sprintf("did not receive the join request time: %v", attrs)
-				}
-				delete(attrs, livekit.AttrRTCJoinRequestTime)
+				// the server-set join request time is not sent to clients
+				attrs := pubRemote.Attributes
 				if !reflect.DeepEqual(attrs, map[string]string{
 					"a": "0",
 					"b": "2",
@@ -1524,12 +1519,10 @@ func TestTurnAuthFailure(t *testing.T) {
 			_, allocErr := client.Allocate()
 			require.Error(t, allocErr)
 
-			// pion's TURN server replies with 400 Bad Request for any
-			// authenticated-allocate failure (unknown user or integrity check
-			// mismatch); the initial unauthenticated probe is what returns 401.
+			// pion's TURN server replies with 401 Unauthorized for any authenticated-allocate failure (unknown user or integrity mismatch)
 			var turnErr *stun.TurnError
 			require.ErrorAs(t, allocErr, &turnErr)
-			require.Equal(t, stun.CodeBadRequest, turnErr.ErrorCodeAttr.Code)
+			require.Equal(t, stun.CodeUnauthorized, turnErr.ErrorCodeAttr.Code)
 		})
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -201,6 +202,7 @@ func TestTrackPublishing(t *testing.T) {
 		track := &typesfakes.FakeLocalMediaTrack{}
 		track.HasSignalCidCalls(func(s string) bool { return s == "cid" })
 		track.ToProtoReturns(&livekit.TrackInfo{})
+		track.IsOpenReturns(true)
 		// directly add to publishedTracks without lock - for testing purpose only
 		p.UpTrackManager.publishedTracks["cid"] = track
 
@@ -233,6 +235,7 @@ func TestTrackPublishing(t *testing.T) {
 
 		track := &typesfakes.FakeLocalMediaTrack{}
 		track.ToProtoReturns(&livekit.TrackInfo{})
+		track.IsOpenReturns(true)
 		track.HasSdpCidCalls(func(s string) bool { return s == "cid" })
 		// directly add to publishedTracks without lock - for testing purpose only
 		p.UpTrackManager.publishedTracks["cid"] = track
@@ -258,6 +261,86 @@ func TestTrackPublishing(t *testing.T) {
 
 		// check SID is the same
 		require.Equal(t, p.pendingTracks["cid"].trackInfos[0].Sid, p.pendingTracks["cid"].trackInfos[1].Sid)
+	})
+
+	t.Run("should not queue a republish behind a track that is still closing", func(t *testing.T) {
+		p, _ := newParticipantWithPendingTrack(t, livekit.TrackType_VIDEO)
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+		closing := publishPendingTrack(p, livekit.TrackType_VIDEO)
+		require.True(t, closing.HasSdpCid(pendingTrackCid))
+		// the receiver closed, the track leaves publishedTracks once its subscribers flush
+		closing.MediaTrackReceiver.SetClosing(false)
+		require.Nil(t, p.getPublishedTrackBySignalCid(pendingTrackCid))
+		require.Nil(t, p.getPublishedTrackBySdpCid(pendingTrackCid))
+
+		written := sink.WriteMessageCallCount()
+		p.AddTrack(&livekit.AddTrackRequest{Cid: pendingTrackCid, Name: "track", Type: livekit.TrackType_VIDEO})
+		require.Equal(t, written+1, sink.WriteMessageCallCount())
+		res := sink.WriteMessageArgsForCall(written).(*livekit.SignalResponse)
+		require.IsType(t, &livekit.SignalResponse_TrackPublished{}, res.Message)
+		require.False(t, p.pendingTracks[pendingTrackCid].queued)
+
+		// the closing track finishing its close does not answer the republish again
+		closing.Close(false)
+		require.Equal(t, written+1, sink.WriteMessageCallCount())
+		require.NotNil(t, p.pendingTracks[pendingTrackCid])
+
+		// media with the same sdp cid lands on the republished track, not the closed one
+		republished := publishPendingTrack(p, livekit.TrackType_VIDEO)
+		require.NotNil(t, republished)
+		require.NotEqual(t, closing.ID(), republished.ID())
+		require.Len(t, p.UpTrackManager.publishedTracks, 1)
+	})
+
+	t.Run("a queued replacement waits for the open track that holds its cid, not an earlier closing one", func(t *testing.T) {
+		p, _ := newParticipantWithPendingTrack(t, livekit.TrackType_VIDEO)
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+		first := publishPendingTrack(p, livekit.TrackType_VIDEO)
+		first.MediaTrackReceiver.SetClosing(false)
+
+		p.AddTrack(&livekit.AddTrackRequest{Cid: pendingTrackCid, Name: "track", Type: livekit.TrackType_VIDEO})
+		second := publishPendingTrack(p, livekit.TrackType_VIDEO)
+		require.NotNil(t, second)
+
+		// a third publish of the cid queues behind the open second track
+		p.AddTrack(&livekit.AddTrackRequest{Cid: pendingTrackCid, Name: "track", Type: livekit.TrackType_VIDEO})
+		require.True(t, p.pendingTracks[pendingTrackCid].queued)
+		written := sink.WriteMessageCallCount()
+
+		first.Close(false)
+		require.Equal(t, written, sink.WriteMessageCallCount())
+		require.True(t, p.pendingTracks[pendingTrackCid].queued)
+
+		second.Close(false)
+		require.Equal(t, written+1, sink.WriteMessageCallCount())
+		res := sink.WriteMessageArgsForCall(written).(*livekit.SignalResponse)
+		require.IsType(t, &livekit.SignalResponse_TrackPublished{}, res.Message)
+		require.False(t, p.pendingTracks[pendingTrackCid].queued)
+	})
+
+	t.Run("a queued replacement matched only by SDP cid is released when that track closes", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+		p.AddTrack(&livekit.AddTrackRequest{
+			Cid: "y", Name: "track", Type: livekit.TrackType_VIDEO,
+			SimulcastCodecs: []*livekit.SimulcastCodec{{Codec: "vp8", Cid: "y"}},
+		})
+		p.pendingTracksLock.Lock()
+		signalCid, ti, _, _, _ := p.getPendingTrack("y", livekit.TrackType_VIDEO, true)
+		alias := p.addMediaTrack(signalCid, ti)
+		p.pendingTracksLock.Unlock()
+		alias.MediaTrackReceiver.UpdateCodecSdpCid(mime.MimeTypeVP8, "x")
+		require.True(t, alias.HasSdpCid("x"))
+		require.False(t, alias.HasSignalCid("x"))
+
+		// a publish of x queues behind the track whose SDP cid is x
+		p.AddTrack(&livekit.AddTrackRequest{Cid: "x", Name: "track", Type: livekit.TrackType_VIDEO})
+		require.True(t, p.pendingTracks["x"].queued)
+		written := sink.WriteMessageCallCount()
+
+		alias.Close(false)
+		require.Equal(t, written+1, sink.WriteMessageCallCount())
+		require.False(t, p.pendingTracks["x"].queued)
 	})
 
 	t.Run("should release timed out pending tracks when at the pending track limit", func(t *testing.T) {
@@ -469,6 +552,23 @@ func TestOutOfOrderUpdates(t *testing.T) {
 	require.Equal(t, 1, sink.WriteMessageCallCount())
 	sent := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
 	require.Equal(t, "second update", sent.GetUpdate().Participants[0].Metadata)
+}
+
+func TestServerAttributesNotSent(t *testing.T) {
+	p := newParticipantForTest("test")
+	p.updateState(livekit.ParticipantInfo_JOINED)
+	sink := p.GetResponseSink().(*routingfakes.FakeMessageSink)
+
+	attrs := map[string]string{"lk.rtc.joinRequestTime": "1", "app": "a"}
+	other := &livekit.ParticipantInfo{Sid: "PA_other", Identity: "other", Version: 1, Attributes: attrs}
+	self := &livekit.ParticipantInfo{Sid: string(p.ID()), Identity: "test", Version: 1, Attributes: attrs}
+	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{other, self}))
+
+	sent := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse).GetUpdate().Participants
+	require.Equal(t, map[string]string{"app": "a"}, sent[0].Attributes)
+	require.Equal(t, map[string]string{"app": "a"}, sent[1].Attributes)
+	// the shared input is not changed
+	require.Len(t, other.Attributes, 2)
 }
 
 func TestRecentlyDisconnectedKeepsUpdateOrder(t *testing.T) {
@@ -1827,4 +1927,49 @@ func TestUpdateVideoTrackReachesQueuedReplacement(t *testing.T) {
 	p, sid := newParticipantWithQueuedReplacement(t, livekit.TrackType_VIDEO)
 	require.NoError(t, p.UpdateVideoTrack(&livekit.UpdateLocalVideoTrack{TrackSid: sid, Width: 1280, Height: 720}))
 	require.EqualValues(t, 1280, p.pendingTracks[pendingTrackCid].trackInfos[0].Width)
+}
+
+// the response timeout forwarded to the callee is the caller's less the round trip, and must not
+// wrap around when the round trip is not below the timeout.
+func TestPerformRpcForwardedResponseTimeout(t *testing.T) {
+	cases := []struct {
+		name     string
+		timeout  uint32
+		rtt      uint32
+		expected uint32
+	}{
+		{"no rtt", 15000, 0, 15000},
+		{"rtt taken off", 15000, 150, 14850},
+		{"rtt just under the timeout", 1000, 999, 1},
+		{"rtt equal to the timeout", 1000, 1000, 1000},
+		{"rtt above the timeout", 1000, 1500, 1000},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p := newParticipantForTest("test")
+			p.lock.Lock()
+			p.lastRTT = c.rtt
+			p.lock.Unlock()
+
+			errorCh := make(chan error, 2)
+			p.PerformRpc(&livekit.PerformRpcRequest{
+				DestinationIdentity: "test",
+				Method:              "method",
+				ResponseTimeoutMs:   c.timeout,
+			}, make(chan string, 1), errorCh)
+
+			// the reliable channel is not writable yet, so the request is held for when it opens
+			var held [][]byte
+			require.Eventually(t, func() bool {
+				p.reliableDataInfo.joiningMessageLock.Lock()
+				defer p.reliableDataInfo.joiningMessageLock.Unlock()
+				held = slices.Clone(p.reliableDataInfo.joiningUnsequencedMessages)
+				return len(held) == 1
+			}, time.Second, time.Millisecond)
+
+			dp := &livekit.DataPacket{}
+			require.NoError(t, proto.Unmarshal(held[0], dp))
+			require.Equal(t, c.expected, dp.GetRpcRequest().GetResponseTimeoutMs())
+		})
+	}
 }
