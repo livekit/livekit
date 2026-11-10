@@ -42,6 +42,8 @@ func (p *ParticipantImpl) CloseSignalConnection(reason types.SignallingCloseReas
 }
 
 func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) error {
+	joinResponse.Participant = withoutServerAttributes(joinResponse.Participant)
+
 	// keep track of participant updates and versions
 	p.updateLock.Lock()
 	for i, op := range joinResponse.OtherParticipants {
@@ -121,10 +123,7 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 				state:     pi.State,
 				updatedAt: time.Now(),
 			})
-			if pi.Sid != string(p.ID()) {
-				pi = withoutServerAttributes(pi)
-			}
-			validUpdates = append(validUpdates, pi)
+			validUpdates = append(validUpdates, withoutServerAttributes(pi))
 		}
 	}
 	p.updateLock.Unlock()
@@ -133,13 +132,13 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 }
 
 // serverAttributePrefix marks attributes the server sets for its own use; older clients
-// treat them as attribute changes, so they are not sent to other participants.
+// treat them as attribute changes, so they are never sent to clients.
 const serverAttributePrefix = "lk.rtc."
 
 // withoutServerAttributes returns pi, or a copy without server attributes when it has any.
 // The input is shared across participants, so it is never changed.
 func withoutServerAttributes(pi *livekit.ParticipantInfo) *livekit.ParticipantInfo {
-	for k := range pi.Attributes {
+	for k := range pi.GetAttributes() {
 		if strings.HasPrefix(k, serverAttributePrefix) {
 			cloned := proto.CloneOf(pi)
 			for ck := range cloned.Attributes {
@@ -199,6 +198,10 @@ func (p *ParticipantImpl) sendRequestResponse(requestResponse *livekit.RequestRe
 }
 
 func (p *ParticipantImpl) SendRoomMovedResponse(roomMovedResponse *livekit.RoomMovedResponse) error {
+	roomMovedResponse.Participant = withoutServerAttributes(roomMovedResponse.Participant)
+	for i, op := range roomMovedResponse.OtherParticipants {
+		roomMovedResponse.OtherParticipants[i] = withoutServerAttributes(op)
+	}
 	return p.signaller.WriteMessage(p.signalling.SignalRoomMovedResponse(roomMovedResponse))
 }
 

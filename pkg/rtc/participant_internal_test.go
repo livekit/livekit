@@ -553,7 +553,7 @@ func TestOutOfOrderUpdates(t *testing.T) {
 	require.Equal(t, "second update", sent.GetUpdate().Participants[0].Metadata)
 }
 
-func TestServerAttributesNotSentToOthers(t *testing.T) {
+func TestServerAttributesNotSent(t *testing.T) {
 	p := newParticipantForTest("test")
 	p.updateState(livekit.ParticipantInfo_JOINED)
 	sink := p.GetResponseSink().(*routingfakes.FakeMessageSink)
@@ -565,7 +565,7 @@ func TestServerAttributesNotSentToOthers(t *testing.T) {
 
 	sent := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse).GetUpdate().Participants
 	require.Equal(t, map[string]string{"app": "a"}, sent[0].Attributes)
-	require.Equal(t, attrs, sent[1].Attributes)
+	require.Equal(t, map[string]string{"app": "a"}, sent[1].Attributes)
 	// the shared input is not changed
 	require.Len(t, other.Attributes, 2)
 }
