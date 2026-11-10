@@ -118,6 +118,7 @@ func TestConfigurePublisherAnswerWhileTrackMovesToPublished(t *testing.T) {
 	done := make(chan struct{})
 	started := false
 	decoy := &typesfakes.FakeLocalMediaTrack{}
+	decoy.IsOpenReturns(true)
 	decoy.HasSdpCidCalls(func(string) bool {
 		if started {
 			return false
