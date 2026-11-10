@@ -103,6 +103,89 @@ func TestSIPInboundTrunkNumbersNormalized(t *testing.T) {
 	})
 }
 
+func requireInvalidArgument(t *testing.T, err error) {
+	t.Helper()
+	var terr twirp.Error
+	require.ErrorAs(t, err, &terr)
+	require.Equal(t, twirp.InvalidArgument, terr.Code())
+}
+
+func TestSIPInboundTrunkRejectsURINumbers(t *testing.T) {
+	ctx, s, rs := newTestSIPService(t)
+
+	create := func(nums ...string) (*livekit.SIPInboundTrunkInfo, error) {
+		return s.CreateSIPInboundTrunk(ctx, &livekit.CreateSIPInboundTrunkRequest{
+			Trunk: &livekit.SIPInboundTrunkInfo{Name: "trunk", Numbers: nums},
+		})
+	}
+	update := func(id string, u *livekit.SIPInboundTrunkUpdate) (*livekit.SIPInboundTrunkInfo, error) {
+		return s.UpdateSIPInboundTrunk(ctx, &livekit.UpdateSIPInboundTrunkRequest{
+			SipTrunkId: id,
+			Action:     &livekit.UpdateSIPInboundTrunkRequest_Update{Update: u},
+		})
+	}
+
+	t.Run("create", func(t *testing.T) {
+		for _, num := range []string{
+			"sip:support@example.com",
+			"SIPS:support@example.com",
+			"sip:support",
+			"tel:+15550001001",
+			"support@example.com",
+		} {
+			_, err := create("+15550001001", num)
+			requireInvalidArgument(t, err)
+		}
+		_, err := create("+15550002001", "support")
+		require.NoError(t, err)
+	})
+
+	t.Run("update", func(t *testing.T) {
+		const legacyURI = "sip:legacy@example.com"
+		id := guid.New(utils.SIPTrunkPrefix)
+		require.NoError(t, rs.StoreSIPInboundTrunk(ctx, &livekit.SIPInboundTrunkInfo{
+			SipTrunkId: id,
+			Name:       "legacy",
+			Numbers:    []string{"+15550003001", legacyURI},
+		}))
+
+		info, err := update(id, &livekit.SIPInboundTrunkUpdate{Name: proto.String("renamed")})
+		require.NoError(t, err)
+		require.Equal(t, []string{"+15550003001", legacyURI}, info.Numbers)
+
+		info, err = update(id, &livekit.SIPInboundTrunkUpdate{
+			Numbers: &livekit.ListUpdate{Add: []string{"+15550003002"}},
+		})
+		require.NoError(t, err)
+		require.Equal(t, []string{"+15550003001", legacyURI, "+15550003002"}, info.Numbers)
+
+		_, err = update(id, &livekit.SIPInboundTrunkUpdate{
+			Numbers: &livekit.ListUpdate{Add: []string{"sip:new@example.com"}},
+		})
+		requireInvalidArgument(t, err)
+
+		_, err = s.UpdateSIPInboundTrunk(ctx, &livekit.UpdateSIPInboundTrunkRequest{
+			SipTrunkId: id,
+			Action: &livekit.UpdateSIPInboundTrunkRequest_Replace{Replace: &livekit.SIPInboundTrunkInfo{
+				Name:    "replace",
+				Numbers: []string{legacyURI, "sip:new@example.com"},
+			}},
+		})
+		requireInvalidArgument(t, err)
+
+		info, err = update(id, &livekit.SIPInboundTrunkUpdate{
+			Numbers: &livekit.ListUpdate{Remove: []string{legacyURI}},
+		})
+		require.NoError(t, err)
+		require.Equal(t, []string{"+15550003001", "+15550003002"}, info.Numbers)
+
+		_, err = update(id, &livekit.SIPInboundTrunkUpdate{
+			Numbers: &livekit.ListUpdate{Add: []string{legacyURI}},
+		})
+		requireInvalidArgument(t, err)
+	})
+}
+
 func TestCreateSIPParticipantSourceCallUnsupported(t *testing.T) {
 	req := &livekit.CreateSIPParticipantRequest{SipSourceCallId: "SCL_1"}
 

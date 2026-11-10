@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -551,6 +552,23 @@ func TestOutOfOrderUpdates(t *testing.T) {
 	require.Equal(t, 1, sink.WriteMessageCallCount())
 	sent := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
 	require.Equal(t, "second update", sent.GetUpdate().Participants[0].Metadata)
+}
+
+func TestServerAttributesNotSent(t *testing.T) {
+	p := newParticipantForTest("test")
+	p.updateState(livekit.ParticipantInfo_JOINED)
+	sink := p.GetResponseSink().(*routingfakes.FakeMessageSink)
+
+	attrs := map[string]string{"lk.rtc.joinRequestTime": "1", "app": "a"}
+	other := &livekit.ParticipantInfo{Sid: "PA_other", Identity: "other", Version: 1, Attributes: attrs}
+	self := &livekit.ParticipantInfo{Sid: string(p.ID()), Identity: "test", Version: 1, Attributes: attrs}
+	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{other, self}))
+
+	sent := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse).GetUpdate().Participants
+	require.Equal(t, map[string]string{"app": "a"}, sent[0].Attributes)
+	require.Equal(t, map[string]string{"app": "a"}, sent[1].Attributes)
+	// the shared input is not changed
+	require.Len(t, other.Attributes, 2)
 }
 
 func TestRecentlyDisconnectedKeepsUpdateOrder(t *testing.T) {
@@ -1909,4 +1927,49 @@ func TestUpdateVideoTrackReachesQueuedReplacement(t *testing.T) {
 	p, sid := newParticipantWithQueuedReplacement(t, livekit.TrackType_VIDEO)
 	require.NoError(t, p.UpdateVideoTrack(&livekit.UpdateLocalVideoTrack{TrackSid: sid, Width: 1280, Height: 720}))
 	require.EqualValues(t, 1280, p.pendingTracks[pendingTrackCid].trackInfos[0].Width)
+}
+
+// the response timeout forwarded to the callee is the caller's less the round trip, and must not
+// wrap around when the round trip is not below the timeout.
+func TestPerformRpcForwardedResponseTimeout(t *testing.T) {
+	cases := []struct {
+		name     string
+		timeout  uint32
+		rtt      uint32
+		expected uint32
+	}{
+		{"no rtt", 15000, 0, 15000},
+		{"rtt taken off", 15000, 150, 14850},
+		{"rtt just under the timeout", 1000, 999, 1},
+		{"rtt equal to the timeout", 1000, 1000, 1000},
+		{"rtt above the timeout", 1000, 1500, 1000},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p := newParticipantForTest("test")
+			p.lock.Lock()
+			p.lastRTT = c.rtt
+			p.lock.Unlock()
+
+			errorCh := make(chan error, 2)
+			p.PerformRpc(&livekit.PerformRpcRequest{
+				DestinationIdentity: "test",
+				Method:              "method",
+				ResponseTimeoutMs:   c.timeout,
+			}, make(chan string, 1), errorCh)
+
+			// the reliable channel is not writable yet, so the request is held for when it opens
+			var held [][]byte
+			require.Eventually(t, func() bool {
+				p.reliableDataInfo.joiningMessageLock.Lock()
+				defer p.reliableDataInfo.joiningMessageLock.Unlock()
+				held = slices.Clone(p.reliableDataInfo.joiningUnsequencedMessages)
+				return len(held) == 1
+			}, time.Second, time.Millisecond)
+
+			dp := &livekit.DataPacket{}
+			require.NoError(t, proto.Unmarshal(held[0], dp))
+			require.Equal(t, c.expected, dp.GetRpcRequest().GetResponseTimeoutMs())
+		})
+	}
 }
