@@ -809,6 +809,12 @@ func (d *DownTrack) SetReceiver(r TrackReceiver) {
 	d.handleUpstreamCodecChange(r.Codec().MimeType)
 
 	d.bindLock.Lock()
+	// a close that ran while bindLock was released may already have removed the down
+	// track from r, adding it now would leave a closed down track registered there
+	if d.IsClosed() {
+		d.bindLock.Unlock()
+		return
+	}
 	if err := r.AddDownTrack(d); err != nil {
 		d.params.Logger.Warnw("failed to add downtrack to receiver", err)
 	}
