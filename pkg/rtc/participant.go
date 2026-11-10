@@ -4737,17 +4737,6 @@ func (p *ParticipantImpl) handleIncomingRpcResponse(requestId string, payload st
 	return true
 }
 
-// rpcRequestTimeoutMs is the response timeout to forward to the callee: the caller's timeout less
-// the time the request spends in flight. Both values are unsigned, so a round trip at or above the
-// timeout would wrap around to about 49 days. There is no time to take off in that case, so the
-// caller's timeout is kept as is.
-func rpcRequestTimeoutMs(responseTimeoutMs uint32, rttMs uint32) uint32 {
-	if rttMs >= responseTimeoutMs {
-		return responseTimeoutMs
-	}
-	return responseTimeoutMs - rttMs
-}
-
 func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh chan string, errorCh chan error) {
 	responseTimeout := req.GetResponseTimeoutMs()
 	if responseTimeout <= 0 {
@@ -4789,6 +4778,11 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 		rtt := p.lastRTT
 		p.lock.RUnlock()
 
+		requestTimeout := responseTimeout
+		if rtt < requestTimeout {
+			requestTimeout -= rtt
+		}
+
 		rpcRequest := &livekit.DataPacket{
 			Kind:                livekit.DataPacket_RELIABLE,
 			ParticipantIdentity: id,
@@ -4797,7 +4791,7 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 					Id:                id,
 					Method:            req.GetMethod(),
 					Payload:           req.GetPayload(),
-					ResponseTimeoutMs: rpcRequestTimeoutMs(responseTimeout, rtt),
+					ResponseTimeoutMs: requestTimeout,
 					Version:           1,
 				},
 			},
