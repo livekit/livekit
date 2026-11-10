@@ -509,6 +509,51 @@ func TestNewTrack(t *testing.T) {
 		require.Equal(t, 0, p0.SubscribeToTrackCallCount())
 		require.Equal(t, 1, p1.SubscribeToTrackCallCount())
 	})
+
+	// a one-shot signalling participant (WHIP) subscribes synchronously and the track
+	// resolver takes the room lock again; holding it across SubscribeToTrack deadlocks
+	// the room as soon as a writer queues in between
+	t.Run("subscribes without holding the room lock", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 3})
+		lpl := rm.LocalParticipantListener()
+
+		noAutoSub := NewMockParticipant("noAutoSub", types.CurrentProtocol, false, true, lpl)
+		require.NoError(t, rm.Join(noAutoSub, nil, &ParticipantOptions{AutoSubscribe: false}, iceServersForRoom))
+		noAutoSub.StateReturns(livekit.ParticipantInfo_ACTIVE)
+
+		pub := rm.GetParticipant("p0").(*typesfakes.FakeLocalParticipant)
+		subs := []*typesfakes.FakeLocalParticipant{
+			rm.GetParticipant("p1").(*typesfakes.FakeLocalParticipant),
+			rm.GetParticipant("p2").(*typesfakes.FakeLocalParticipant),
+		}
+		var blocked atomic.Int32
+		for _, p := range rm.GetParticipants() {
+			p.(*typesfakes.FakeLocalParticipant).SubscribeToTrackCalls(func(livekit.TrackID, bool) {
+				// a writer has to get through while the subscribe runs
+				acquired := make(chan struct{})
+				go func() {
+					rm.lock.Lock()
+					close(acquired)
+					rm.lock.Unlock()
+				}()
+				select {
+				case <-acquired:
+				case <-time.After(time.Second):
+					blocked.Inc()
+				}
+			})
+		}
+
+		track := NewMockTrack(livekit.TrackType_VIDEO, "webcam")
+		lpl.OnTrackPublished(pub, track)
+
+		for _, sub := range subs {
+			require.Equal(t, 1, sub.SubscribeToTrackCallCount())
+		}
+		require.Equal(t, 0, pub.SubscribeToTrackCallCount())
+		require.Equal(t, 0, noAutoSub.SubscribeToTrackCallCount())
+		require.Zero(t, blocked.Load(), "SubscribeToTrack called with the room lock held")
+	})
 }
 
 func TestActiveSpeakers(t *testing.T) {
