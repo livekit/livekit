@@ -51,6 +51,9 @@ const (
 
 	generatedCLIFlagUsage = "generated"
 
+	// LKAttributePrefix marks participant attributes that LiveKit services set
+	LKAttributePrefix = "lk."
+
 	// TURNMaxTTLSeconds is the operational maximum for TURN credential TTLs (24 hours).
 	// It bounds credential lifetime and prevents time.Duration overflow when multiplying
 	// by time.Second (values above ~9.2e9 seconds wrap on 64-bit builds).
@@ -388,8 +391,10 @@ type LimitConfig struct {
 	SubscriptionLimitVideo int32   `yaml:"subscription_limit_video,omitempty"`
 	SubscriptionLimitAudio int32   `yaml:"subscription_limit_audio,omitempty"`
 	MaxMetadataSize        uint32  `yaml:"max_metadata_size,omitempty"`
-	// total size of all attributes on a participant
-	MaxAttributesSize            uint32 `yaml:"max_attributes_size,omitempty"`
+	// total size of all attributes on a participant, except those with the lk. prefix
+	MaxAttributesSize uint32 `yaml:"max_attributes_size,omitempty"`
+	// total size of attributes with the lk. prefix, which LiveKit services set
+	MaxLKAttributesSize          uint32 `yaml:"max_lk_attributes_size,omitempty"`
 	MaxRoomNameLength            int    `yaml:"max_room_name_length,omitempty"`
 	MaxParticipantIdentityLength int    `yaml:"max_participant_identity_length,omitempty"`
 	MaxParticipantNameLength     int    `yaml:"max_participant_name_length,omitempty"`
@@ -434,16 +439,28 @@ func (l LimitConfig) CheckMetadataSize(metadata string) bool {
 	return l.MaxMetadataSize == 0 || uint32(len(metadata)) <= l.MaxMetadataSize
 }
 
+// CheckAttributesSize checks attributes without the lk. prefix against MaxAttributesSize.
 func (l LimitConfig) CheckAttributesSize(attributes map[string]string) bool {
-	if l.MaxAttributesSize == 0 {
+	return checkAttributesSize(attributes, false, l.MaxAttributesSize)
+}
+
+// CheckLKAttributesSize checks attributes with the lk. prefix against MaxLKAttributesSize.
+func (l LimitConfig) CheckLKAttributesSize(attributes map[string]string) bool {
+	return checkAttributesSize(attributes, true, l.MaxLKAttributesSize)
+}
+
+func checkAttributesSize(attributes map[string]string, lk bool, limit uint32) bool {
+	if limit == 0 {
 		return true
 	}
 
 	total := 0
 	for k, v := range attributes {
-		total += len(k) + len(v)
+		if strings.HasPrefix(k, LKAttributePrefix) == lk {
+			total += len(k) + len(v)
+		}
 	}
-	return uint32(total) <= l.MaxAttributesSize
+	return uint32(total) <= limit
 }
 
 // DataBlobKeyLength returns the length of the identifying content of a data blob key.
@@ -644,6 +661,7 @@ var DefaultConfig = Config{
 	Limit: LimitConfig{
 		MaxMetadataSize:                  512 * 1024,
 		MaxAttributesSize:                64 * 1024,
+		MaxLKAttributesSize:              1024,
 		MaxRoomNameLength:                256,
 		MaxParticipantIdentityLength:     256,
 		MaxParticipantNameLength:         256,
