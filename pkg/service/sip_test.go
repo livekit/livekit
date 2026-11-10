@@ -22,6 +22,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
+	"github.com/livekit/psrpc"
 	"github.com/stretchr/testify/require"
 	"github.com/twitchtv/twirp"
 	"google.golang.org/protobuf/proto"
@@ -182,5 +183,23 @@ func TestSIPInboundTrunkRejectsURINumbers(t *testing.T) {
 			Numbers: &livekit.ListUpdate{Add: []string{legacyURI}},
 		})
 		requireInvalidArgument(t, err)
+	})
+}
+
+func TestCreateSIPParticipantSourceCallUnsupported(t *testing.T) {
+	req := &livekit.CreateSIPParticipantRequest{SipSourceCallId: "SCL_1"}
+
+	t.Run("without SIP call permission", func(t *testing.T) {
+		_, err := (&service.SIPService{}).CreateSIPParticipant(context.Background(), req)
+		var terr twirp.Error
+		require.ErrorAs(t, err, &terr)
+		require.Equal(t, twirp.Unauthenticated, terr.Code())
+	})
+
+	t.Run("with SIP call permission", func(t *testing.T) {
+		ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{SIP: &auth.SIPGrant{Call: true}}, "")
+		_, err := (&service.SIPService{}).CreateSIPParticipant(ctx, req)
+		code, _ := psrpc.GetErrorCode(err)
+		require.Equal(t, psrpc.Unimplemented, code)
 	})
 }
