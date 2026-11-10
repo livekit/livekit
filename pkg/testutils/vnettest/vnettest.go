@@ -29,8 +29,8 @@ import (
 	"github.com/pion/interceptor"
 	"github.com/pion/logging"
 	"github.com/pion/sdp/v3"
-	"github.com/pion/transport/v4/packetio"
-	"github.com/pion/transport/v4/vnet"
+	"github.com/pion/transport/v5/packetio"
+	"github.com/pion/transport/v5/vnet"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 )

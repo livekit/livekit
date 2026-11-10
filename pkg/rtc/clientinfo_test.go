@@ -57,3 +57,47 @@ func TestClientInfo_SupportsICETCP(t *testing.T) {
 		require.True(t, c.SupportsICETCP())
 	})
 }
+
+func TestClientInfo_WebKitFeatures(t *testing.T) {
+	// Browser / Os values are what the server's user agent parser sets for JS clients
+	testCases := []struct {
+		name             string
+		sdk              livekit.ClientInfo_SDK
+		browser          string
+		os               string
+		transceiverReuse bool
+		audioRED         bool
+	}{
+		{"macOS Safari", livekit.ClientInfo_JS, "Safari", "Mac OS X", false, false},
+		{"iPadOS Safari (desktop UA)", livekit.ClientInfo_JS, "Safari", "Mac OS X", false, false},
+		{"iOS Safari", livekit.ClientInfo_JS, "Mobile Safari", "iOS", false, false},
+		{"iOS WKWebView", livekit.ClientInfo_JS, "Mobile Safari UI/WKWebView", "iOS", false, false},
+		{"iOS Chrome", livekit.ClientInfo_JS, "Chrome Mobile iOS", "iOS", false, false},
+		{"iOS Firefox", livekit.ClientInfo_JS, "Firefox iOS", "iOS", false, false},
+		{"iOS Edge", livekit.ClientInfo_JS, "Edge Mobile", "iOS", false, false},
+		{"iOS in-app browser", livekit.ClientInfo_JS, "Instagram", "iOS", false, false},
+		{"desktop Chrome", livekit.ClientInfo_JS, "Chrome", "Mac OS X", true, true},
+		{"desktop Firefox", livekit.ClientInfo_JS, "Firefox", "Windows", true, false},
+		{"Android Chrome", livekit.ClientInfo_JS, "Chrome Mobile", "Android", true, true},
+		{"React Native iOS", livekit.ClientInfo_REACT_NATIVE, "LiveKitExample", "ios", true, true},
+		{"Swift", livekit.ClientInfo_SWIFT, "", "ios", true, true},
+		{"Flutter iOS", livekit.ClientInfo_FLUTTER, "Dart", "ios", true, true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := ClientInfo{
+				ClientInfo: &livekit.ClientInfo{
+					Sdk:     tc.sdk,
+					Browser: tc.browser,
+					Os:      tc.os,
+				},
+			}
+			require.Equal(t, tc.transceiverReuse, c.SupportsTransceiverReuse())
+			require.Equal(t, tc.audioRED, c.SupportsAudioRED())
+		})
+	}
+
+	require.True(t, ClientInfo{}.SupportsTransceiverReuse())
+	require.True(t, ClientInfo{}.SupportsAudioRED())
+}

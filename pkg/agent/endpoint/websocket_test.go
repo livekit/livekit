@@ -201,9 +201,9 @@ func TestWebSocketTunnelLimit(t *testing.T) {
 	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 }
 
-// the worker gets identity from the preamble; the caller's LiveKit token must
-// not reach application code.
-func TestLiveKitCredentialsDoNotReachTheWorker(t *testing.T) {
+// the caller's LiveKit token reaches the worker as sent, in the header or the
+// query, so the worker can authorize what the node's verdict does not cover.
+func TestLiveKitCredentialsReachTheWorker(t *testing.T) {
 	type seen struct {
 		auth  string
 		query string
@@ -226,8 +226,8 @@ func TestLiveKitCredentialsDoNotReachTheWorker(t *testing.T) {
 	require.NoError(t, err)
 	resp.Body.Close()
 	s := <-got
-	require.Empty(t, s.auth)
-	require.Equal(t, "x=1&b=%2F", s.query)
+	require.Equal(t, "Bearer "+jwt, s.auth)
+	require.Equal(t, "access_token="+jwt+"&x=1&b=%2F", s.query)
 
 	req, _ = http.NewRequest(http.MethodGet, base+"/who", nil)
 	req.Header.Set("Authorization", "Bearer app-owned")

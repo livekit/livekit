@@ -27,7 +27,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pion/dtls/v3/pkg/crypto/elliptic"
+	"github.com/pion/dtls/v4/pkg/crypto/elliptic"
 	"github.com/pion/ice/v4"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/cc"
@@ -412,6 +412,7 @@ func newPeerConnection(
 	//
 	se.DisableSRTPReplayProtection(true)
 	se.DisableSRTCPReplayProtection(true)
+	iceLite := params.Config.ICELite
 	if !params.ProtocolVersion.SupportsICELite() || !params.ClientInfo.SupportsPrflxOverRelay() {
 		// if client don't support prflx over relay which is only Firefox, disable ICE Lite to ensure that
 		// aggressive nomination is handled properly. Firefox does aggressive nomination even if peer is
@@ -421,6 +422,10 @@ func newPeerConnection(
 		// ending up with different candidates.
 		// As Firefox does not support migration, ICE Lite can be disabled.
 		se.SetLite(false)
+		iceLite = false
+	}
+	if iceLite && params.ClientInfo.SupportsAnswerDTLSRoleServer() {
+		_ = se.SetAnsweringDTLSRole(webrtc.DTLSRoleServer)
 	}
 	// ICE checks already prove the remote address, so the HelloVerifyRequest cookie only adds a round trip.
 	// pion applies this only when this side ends up as the DTLS server.
