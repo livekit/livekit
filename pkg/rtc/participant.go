@@ -4780,6 +4780,15 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 			}
 		})
 
+		p.lock.RLock()
+		rtt := p.lastRTT
+		p.lock.RUnlock()
+
+		requestTimeout := responseTimeout
+		if rtt < requestTimeout {
+			requestTimeout -= rtt
+		}
+
 		rpcRequest := &livekit.DataPacket{
 			Kind:                livekit.DataPacket_RELIABLE,
 			ParticipantIdentity: id,
@@ -4788,7 +4797,7 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 					Id:                id,
 					Method:            req.GetMethod(),
 					Payload:           req.GetPayload(),
-					ResponseTimeoutMs: responseTimeout - p.lastRTT,
+					ResponseTimeoutMs: requestTimeout,
 					Version:           1,
 				},
 			},
