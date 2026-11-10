@@ -510,12 +510,10 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			return
 		}
 
-		isFECEnabled := false
+		isFECEnabled := isUpstreamFECEnabled(matchedUpstreamCodec, d.upstreamCodecs)
 		if mime.IsMimeTypeStringRED(matchedUpstreamCodec.MimeType) {
 			d.isRED = true
 			for _, c := range d.upstreamCodecs {
-				isFECEnabled = utils.IsOpusInbandFECEnabled(c.SDPFmtpLine)
-
 				// assume upstream primary codec is opus since we only support it for audio now
 				if mime.IsMimeTypeStringOpus(c.MimeType) {
 					d.upstreamPrimaryPT = uint8(c.PayloadType)
@@ -538,8 +536,6 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 				)
 			}
 			d.primaryPT = uint8(primaryPT)
-		} else if mime.IsMimeTypeStringAudio(matchedUpstreamCodec.MimeType) {
-			isFECEnabled = utils.IsOpusInbandFECEnabled(matchedUpstreamCodec.SDPFmtpLine)
 		}
 
 		logFields := []any{
@@ -665,7 +661,7 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 
 	oldPT, oldRtxPT, oldCodec := d.payloadType.Load(), d.payloadTypeRTX.Load(), d.codec.Load().(webrtc.RTPCodecCapability)
 
-	var codec webrtc.RTPCodecParameters
+	var codec, matchedUpstreamCodec webrtc.RTPCodecParameters
 	for _, c := range d.upstreamCodecs {
 		if !mime.IsMimeTypeStringEqual(c.MimeType, mimeType) {
 			continue
@@ -674,6 +670,7 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 		matchCodec, err := utils.CodecParametersFuzzySearch(c, d.negotiatedCodecParameters)
 		if err == nil {
 			codec = matchCodec
+			matchedUpstreamCodec = c
 			break
 		}
 	}
@@ -697,7 +694,7 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 	d.rtpStats.SetClockRate(codec.RTPCodecCapability.ClockRate)
 	d.rtpStatsRTX.SetClockRate(codec.RTPCodecCapability.ClockRate)
 
-	isFECEnabled := utils.IsOpusInbandFECEnabled(codec.SDPFmtpLine)
+	isFECEnabled := isUpstreamFECEnabled(matchedUpstreamCodec, d.upstreamCodecs)
 	d.bindLock.Unlock()
 
 	d.params.Logger.Infow(
@@ -705,6 +702,7 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 		"oldPT", oldPT, "newPT", d.payloadType.Load(),
 		"oldRTXPT", oldRtxPT, "newRTXPT", d.payloadTypeRTX.Load(),
 		"oldCodec", oldCodec, "newCodec", codec.RTPCodecCapability,
+		"isFECEnabled", isFECEnabled,
 	)
 
 	receiver := d.Receiver()
@@ -713,6 +711,27 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 	d.forwarder.DetermineCodec(codec.RTPCodecCapability, receiver.HeaderExtensions(), receiver.VideoLayerMode())
 
 	d.connectionStats.UpdateCodec(d.Mime(), isFECEnabled)
+}
+
+// isUpstreamFECEnabled reports whether the publisher's audio carries opus in-band FEC.
+// FEC is a property of what the publisher encodes, so it is read from the upstream codecs,
+// not from the codec the subscriber negotiated. For RED, it is the FEC of the upstream opus codec.
+func isUpstreamFECEnabled(matchedUpstreamCodec webrtc.RTPCodecParameters, upstreamCodecs []webrtc.RTPCodecParameters) bool {
+	switch {
+	case mime.IsMimeTypeStringRED(matchedUpstreamCodec.MimeType):
+		for _, c := range upstreamCodecs {
+			if mime.IsMimeTypeStringOpus(c.MimeType) {
+				return utils.IsOpusInbandFECEnabled(c.SDPFmtpLine)
+			}
+		}
+		return false
+
+	case mime.IsMimeTypeStringAudio(matchedUpstreamCodec.MimeType):
+		return utils.IsOpusInbandFECEnabled(matchedUpstreamCodec.SDPFmtpLine)
+
+	default:
+		return false
+	}
 }
 
 // Unbind implements the teardown logic when the track is no longer needed. This happens
