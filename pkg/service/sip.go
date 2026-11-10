@@ -44,6 +44,8 @@ type SIPService struct {
 	psrpcClient rpc.SIPClient
 	store       SIPStore
 	roomService livekit.RoomService
+
+	strictAllowedAddresses func(ctx context.Context) bool
 }
 
 func NewSIPService(
@@ -63,6 +65,18 @@ func NewSIPService(
 		store:       store,
 		roomService: rs,
 	}
+}
+
+// SetAllowedAddressValidation sets a callback that decides, per request, whether inbound trunk
+// create and update requests must have valid allowed_addresses entries.
+//
+// When it returns false, or no callback is set,.
+func (s *SIPService) SetAllowedAddressValidation(fnc func(ctx context.Context) bool) {
+	s.strictAllowedAddresses = fnc
+}
+
+func (s *SIPService) strictAddresses(ctx context.Context) bool {
+	return s.strictAllowedAddresses != nil && s.strictAllowedAddresses(ctx)
 }
 
 // Returns a new UnlikelyLogger, populated with values from the request context
@@ -129,7 +143,11 @@ func (s *SIPService) CreateSIPInboundTrunk(ctx context.Context, req *livekit.Cre
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
-	if err := req.ValidateResult().LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
+	validate := req.ValidateResult
+	if s.strictAddresses(ctx) {
+		validate = req.ValidateResultAddresses
+	}
+	if err := validate().LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
 		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
 
@@ -197,7 +215,12 @@ func (s *SIPService) UpdateSIPInboundTrunk(ctx context.Context, req *livekit.Upd
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
-	if err := req.ValidateResult().LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
+	strict := s.strictAddresses(ctx)
+	validate := req.ValidateResult
+	if strict {
+		validate = req.ValidateResultAddresses
+	}
+	if err := validate().LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
 		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
 
@@ -221,10 +244,14 @@ func (s *SIPService) UpdateSIPInboundTrunk(ctx context.Context, req *livekit.Upd
 	default:
 		return nil, errors.New("missing or unsupported action")
 	case livekit.UpdateSIPInboundTrunkRequestAction:
+		apply := a.ApplyResult
+		if strict {
+			apply = a.ApplyResultAddresses
+		}
 		var result livekit.ValidationResult
-		info, result = a.ApplyResult(info)
+		info, result = apply(info)
 		if err := result.LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
-			return nil, err
+			return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 		}
 	}
 	if err := validateInboundNumbersNoURI(info.Numbers, prevNumbers); err != nil {

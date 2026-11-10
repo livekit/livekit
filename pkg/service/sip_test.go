@@ -203,3 +203,106 @@ func TestCreateSIPParticipantSourceCallUnsupported(t *testing.T) {
 		require.Equal(t, psrpc.Unimplemented, code)
 	})
 }
+
+func TestSIPInboundTrunkAllowedAddressValidation(t *testing.T) {
+	ctx, s, rs := newTestSIPService(t)
+
+	create := func(addrs ...string) (*livekit.SIPInboundTrunkInfo, error) {
+		return s.CreateSIPInboundTrunk(ctx, &livekit.CreateSIPInboundTrunkRequest{
+			Trunk: &livekit.SIPInboundTrunkInfo{Name: "trunk", AllowedAddresses: addrs},
+		})
+	}
+	update := func(id string, u *livekit.SIPInboundTrunkUpdate) (*livekit.SIPInboundTrunkInfo, error) {
+		return s.UpdateSIPInboundTrunk(ctx, &livekit.UpdateSIPInboundTrunkRequest{
+			SipTrunkId: id,
+			Action:     &livekit.UpdateSIPInboundTrunkRequest_Update{Update: u},
+		})
+	}
+	storeLegacy := func(t *testing.T, addrs ...string) string {
+		id := guid.New(utils.SIPTrunkPrefix)
+		require.NoError(t, rs.StoreSIPInboundTrunk(ctx, &livekit.SIPInboundTrunkInfo{
+			SipTrunkId:       id,
+			Name:             "legacy",
+			AllowedAddresses: addrs,
+		}))
+		return id
+	}
+
+	t.Run("default", func(t *testing.T) {
+		// No callback set: invalid entries are allowed.
+		tr, err := create("sip.twilio.com")
+		require.NoError(t, err)
+		require.Equal(t, []string{"sip.twilio.com"}, tr.AllowedAddresses)
+
+		_, err = update(tr.SipTrunkId, &livekit.SIPInboundTrunkUpdate{
+			AllowedAddresses: &livekit.ListUpdate{Add: []string{"*"}},
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("callback returns false", func(t *testing.T) {
+		s.SetAllowedAddressValidation(func(ctx context.Context) bool { return false })
+		t.Cleanup(func() { s.SetAllowedAddressValidation(nil) })
+
+		_, err := create("sip.twilio.com")
+		require.NoError(t, err)
+	})
+
+	t.Run("strict", func(t *testing.T) {
+		s.SetAllowedAddressValidation(func(ctx context.Context) bool { return true })
+		t.Cleanup(func() { s.SetAllowedAddressValidation(nil) })
+
+		t.Run("create", func(t *testing.T) {
+			for _, addr := range []string{"sip.twilio.com", "*", "192.0.2.10:5060", "[2001:db8::1]"} {
+				_, err := create("192.0.2.10", addr)
+				requireInvalidArgument(t, err)
+			}
+			tr, err := create("192.0.2.10", "192.0.2.0/24", "2001:db8::/32")
+			require.NoError(t, err)
+			require.Equal(t, []string{"192.0.2.10", "192.0.2.0/24", "2001:db8::/32"}, tr.AllowedAddresses)
+		})
+
+		t.Run("update", func(t *testing.T) {
+			tr, err := create("192.0.2.10")
+			require.NoError(t, err)
+
+			_, err = update(tr.SipTrunkId, &livekit.SIPInboundTrunkUpdate{
+				AllowedAddresses: &livekit.ListUpdate{Add: []string{"sip.twilio.com"}},
+			})
+			requireInvalidArgument(t, err)
+
+			_, err = s.UpdateSIPInboundTrunk(ctx, &livekit.UpdateSIPInboundTrunkRequest{
+				SipTrunkId: tr.SipTrunkId,
+				Action: &livekit.UpdateSIPInboundTrunkRequest_Replace{Replace: &livekit.SIPInboundTrunkInfo{
+					Name:             "replace",
+					AllowedAddresses: []string{"sip.twilio.com"},
+				}},
+			})
+			requireInvalidArgument(t, err)
+
+			info, err := update(tr.SipTrunkId, &livekit.SIPInboundTrunkUpdate{
+				AllowedAddresses: &livekit.ListUpdate{Add: []string{"2001:db8::1"}},
+			})
+			require.NoError(t, err)
+			require.Equal(t, []string{"192.0.2.10", "2001:db8::1"}, info.AllowedAddresses)
+		})
+
+		t.Run("legacy invalid entry", func(t *testing.T) {
+			id := storeLegacy(t, "192.0.2.10", "sip.twilio.com")
+
+			// Unrelated changes are rejected until the invalid entry is removed.
+			_, err := update(id, &livekit.SIPInboundTrunkUpdate{Name: proto.String("renamed")})
+			requireInvalidArgument(t, err)
+
+			info, err := update(id, &livekit.SIPInboundTrunkUpdate{
+				AllowedAddresses: &livekit.ListUpdate{Remove: []string{"sip.twilio.com"}},
+			})
+			require.NoError(t, err)
+			require.Equal(t, []string{"192.0.2.10"}, info.AllowedAddresses)
+
+			stored, err := rs.LoadSIPInboundTrunk(ctx, id)
+			require.NoError(t, err)
+			require.Equal(t, []string{"192.0.2.10"}, stored.AllowedAddresses)
+		})
+	})
+}
