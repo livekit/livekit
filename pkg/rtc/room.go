@@ -590,9 +590,11 @@ func (r *Room) ResumeParticipant(
 		return err
 	}
 
-	// include the local participant's info as well, since metadata could have been changed
+	// include the local participant's info as well, since metadata could have been changed.
+	// Sent as a full snapshot: the client drops the participants it still holds that left
+	// while its signal connection was down and whose disconnect update it never received.
 	updates := GetOtherParticipantInfo(nil, false, toParticipants(r.GetParticipants()), false)
-	if err := p.SendParticipantUpdate(updates); err != nil {
+	if err := p.SendParticipantSnapshot(updates); err != nil {
 		return err
 	}
 
