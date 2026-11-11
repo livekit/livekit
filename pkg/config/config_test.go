@@ -28,6 +28,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config/configtest"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
+	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 )
 
 func TestConfig_UnmarshalKeys(t *testing.T) {
@@ -481,4 +482,19 @@ func TestTURNCredentialsFile(t *testing.T) {
 			require.Equal(t, tc.wantCredential, conf.RTC.TURNServers[0].Credential)
 		})
 	}
+}
+
+func TestCameraMinTemporalLayerParse(t *testing.T) {
+	conf, err := NewConfig("rtc: {congestion_control: {stream_allocator: {camera_min_temporal_layer: 1}}}", true, nil, nil)
+	require.NoError(t, err)
+
+	want := streamallocator.DefaultStreamAllocatorConfig
+	want.CameraMinTemporalLayer = 1
+	require.Equal(t, want, conf.RTC.CongestionControl.StreamAllocator)
+
+	// key absent: the stock defaults, floor off
+	conf, err = NewConfig("", true, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, int32(0), conf.RTC.CongestionControl.StreamAllocator.CameraMinTemporalLayer)
+	require.Equal(t, streamallocator.DefaultStreamAllocatorConfig, conf.RTC.CongestionControl.StreamAllocator)
 }

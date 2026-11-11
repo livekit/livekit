@@ -1175,7 +1175,7 @@ func TestDownTrackKeyFrameRequesterArmsOnlyWhilePending(t *testing.T) {
 	dh.receiver.GetLayeredBitrateReturns([]int32{0}, brs)
 	dh.dt.UpTrackMaxPublishedLayerChange(0)
 	dh.dt.SetMaxSpatialLayer(0)
-	alloc := dh.dt.AllocateOptimal(false, false)
+	alloc := dh.dt.AllocateOptimal(false, false, 0)
 	require.Equal(t, int32(0), alloc.TargetLayer.Spatial, "expected target layer to be allocated")
 
 	// unlocked: PLIs must keep coming at the key frame interval
