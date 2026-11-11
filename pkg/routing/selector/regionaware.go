@@ -24,12 +24,15 @@ import (
 
 // RegionAwareSelector prefers available nodes that are closest to the region of the current instance
 type RegionAwareSelector struct {
-	SystemLoadSelector
-	CurrentRegion   string
-	regionDistances map[string]float64
-	regions         []config.RegionConfig
-	SortBy          string
-	Algorithm       string
+	CurrentRegion    string
+	regionDistances  map[string]float64
+	regions          []config.RegionConfig
+	SortBy           string
+	Algorithm        string
+	SysloadLimit     float32
+	CPULoadLimit     float32
+	BytesPerSecLimit float32
+	Filter           NodeFilter
 }
 
 func NewRegionAwareSelector(currentRegion string, regions []config.RegionConfig, sortBy string, algorithm string) (*RegionAwareSelector, error) {
@@ -67,8 +70,21 @@ func NewRegionAwareSelector(currentRegion string, regions []config.RegionConfig,
 	return s, nil
 }
 
+func (s *RegionAwareSelector) filterNodes(nodes []*livekit.Node) ([]*livekit.Node, error) {
+	if s.Filter != nil {
+		return s.Filter.Filter(nodes)
+	}
+
+	filter := &LimitsFilter{
+		SysloadLimit:     s.SysloadLimit,
+		CPULoadLimit:     s.CPULoadLimit,
+		BytesPerSecLimit: s.BytesPerSecLimit,
+	}
+	return filter.Filter(nodes)
+}
+
 func (s *RegionAwareSelector) SelectNode(nodes []*livekit.Node) (*livekit.Node, error) {
-	nodes, err := s.SystemLoadSelector.filterNodes(nodes)
+	nodes, err := s.filterNodes(nodes)
 	if err != nil {
 		return nil, err
 	}

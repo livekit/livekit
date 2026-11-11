@@ -21,12 +21,22 @@ import (
 // CPULoadSelector eliminates nodes that have CPU usage higher than CPULoadLimit
 // then selects a node from nodes that are not overloaded
 type CPULoadSelector struct {
-	CPULoadLimit float32
-	SortBy       string
-	Algorithm    string
+	CPULoadLimit     float32
+	SysloadLimit     float32
+	BytesPerSecLimit float32
+	SortBy           string
+	Algorithm        string
 }
 
 func (s *CPULoadSelector) filterNodes(nodes []*livekit.Node) ([]*livekit.Node, error) {
+	if s.SysloadLimit > 0 || s.BytesPerSecLimit > 0 {
+		return (&LimitsFilter{
+			SysloadLimit:     s.SysloadLimit,
+			CPULoadLimit:     s.CPULoadLimit,
+			BytesPerSecLimit: s.BytesPerSecLimit,
+		}).Filter(nodes)
+	}
+
 	nodes, err := FilterNodesByCriteria(nodes, s.CPULoadLimit, func(node *livekit.Node) float32 {
 		return node.Stats.CpuLoad
 	})
