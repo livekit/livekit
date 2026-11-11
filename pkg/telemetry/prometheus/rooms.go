@@ -230,30 +230,30 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, []string{"transport", "state"})
 
-	// ICE step budgets: Checking → nominated pair → ICE Connected.
+	// ICE Checking → nominated pair → ICE Connected.
 	iceStepBuckets := prometheus.ExponentialBucketsRange(5, 5000, 15)
 	iceStepLabels := []string{"transport", "local_candidate_type", "remote_candidate_type", "connection_type"}
 	promICEStep5CheckToNominate = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "ice",
-		Name:        "step5_check_to_nominate_ms",
-		Help:        "Step 5: ICE Checking started → first nominated/selected candidate pair.",
+		Name:        "check_to_nominate_ms",
+		Help:        "ICE Checking started → first nominated/selected candidate pair.",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		Buckets:     iceStepBuckets,
 	}, iceStepLabels)
 	promICEStep6NominateToConnected = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "ice",
-		Name:        "step6_nominate_to_connected_ms",
-		Help:        "Step 6: first nominated/selected pair → ICE Connected.",
+		Name:        "nominate_to_connected_ms",
+		Help:        "First nominated/selected pair → ICE Connected.",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		Buckets:     iceStepBuckets,
 	}, iceStepLabels)
 	promICEStep56CheckToConnected = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "ice",
-		Name:        "step5_6_check_to_connected_ms",
-		Help:        "Steps 5+6: ICE Checking started → ICE Connected (full SFU-side ICE).",
+		Name:        "check_to_connected_ms",
+		Help:        "ICE Checking started → ICE Connected (full SFU-side ICE).",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		Buckets:     iceStepBuckets,
 	}, iceStepLabels)

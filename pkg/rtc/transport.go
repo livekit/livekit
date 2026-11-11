@@ -679,8 +679,8 @@ func (t *PCTransport) createPeerConnection() (cc.BandwidthEstimator, error) {
 				"existingPair", wrappedICECandidatePairLogger{existingPair},
 				"newPair", wrappedICECandidatePairLogger{pair})
 		} else {
-			// First nomination = ICE step 6 (controlling side picks the winning pair).
-			t.recordICEStep6Nominated(pair)
+			// First nomination = winning candidate pair selected.
+			t.recordICEPairNominated(pair)
 		}
 		t.selectedPair.Store(pair)
 	})
@@ -737,8 +737,8 @@ func (t *PCTransport) setICEStartedAt(at time.Time) {
 	t.lock.Unlock()
 
 	if first {
-		// Step 5 begins: SFU ICE agent starts connectivity checks on candidate pairs.
-		t.params.Logger.Infow("ice_step5_check_started",
+		// SFU ICE agent starts connectivity checks on candidate pairs.
+		t.params.Logger.Infow("ice_check_started",
 			"transport", t.params.Transport.String(),
 		)
 	}
@@ -796,7 +796,7 @@ func (t *PCTransport) setICEConnectedAt(at time.Time) {
 	t.lock.Unlock()
 
 	if recordStepObs {
-		t.recordICEStep5and6Connected(at)
+		t.recordICEConnectedSummary(at)
 	}
 
 	if onICEConnected != nil {
@@ -804,8 +804,8 @@ func (t *PCTransport) setICEConnectedAt(at time.Time) {
 	}
 }
 
-// recordICEStep6Nominated logs/metrics the first selected candidate pair (ICE nomination).
-func (t *PCTransport) recordICEStep6Nominated(pair *webrtc.ICECandidatePair) {
+// recordICEPairNominated logs the first selected candidate pair (ICE nomination).
+func (t *PCTransport) recordICEPairNominated(pair *webrtc.ICECandidatePair) {
 	now := time.Now()
 	t.lock.Lock()
 	if !t.iceFirstNominatedAt.IsZero() {
@@ -822,17 +822,17 @@ func (t *PCTransport) recordICEStep6Nominated(pair *webrtc.ICECandidatePair) {
 		checkToNominateMs = now.Sub(startedAt).Milliseconds()
 	}
 
-	t.params.Logger.Infow("ice_step6_pair_nominated",
+	t.params.Logger.Infow("ice_pair_nominated",
 		"transport", t.params.Transport.String(),
-		"step5CheckToNominateMs", checkToNominateMs,
+		"iceCheckToNominateMs", checkToNominateMs,
 		"localCandidateType", localType,
 		"remoteCandidateType", remoteType,
 		"pair", wrappedICECandidatePairLogger{pair},
 	)
 }
 
-// recordICEStep5and6Connected emits step 5/6 latency metrics + one INFO summary at ICE Connected.
-func (t *PCTransport) recordICEStep5and6Connected(connectedAt time.Time) {
+// recordICEConnectedSummary emits ICE check/nominate latency metrics + INFO at ICE Connected.
+func (t *PCTransport) recordICEConnectedSummary(connectedAt time.Time) {
 	t.lock.RLock()
 	startedAt := t.iceFirstStartedAt
 	nominatedAt := t.iceFirstNominatedAt
@@ -863,9 +863,9 @@ func (t *PCTransport) recordICEStep5and6Connected(connectedAt time.Time) {
 
 	fields := []any{
 		"transport", t.params.Transport.String(),
-		"step5CheckToNominateMs", durationMsOrNeg(checkToNominate),
-		"step6NominateToConnectedMs", durationMsOrNeg(nominateToConnected),
-		"step5_6CheckToConnectedMs", durationMsOrNeg(checkToConnected),
+		"iceCheckToNominateMs", durationMsOrNeg(checkToNominate),
+		"iceNominateToConnectedMs", durationMsOrNeg(nominateToConnected),
+		"iceCheckToConnectedMs", durationMsOrNeg(checkToConnected),
 		"localCandidateType", localType,
 		"remoteCandidateType", remoteType,
 		"connectionType", connType,
@@ -885,7 +885,7 @@ func (t *PCTransport) recordICEStep5and6Connected(connectedAt time.Time) {
 		)
 	}
 
-	t.params.Logger.Infow("ice_step5_6_connected", fields...)
+	t.params.Logger.Infow("ice_connected_summary", fields...)
 }
 
 func icePairCandidateTypes(pair *webrtc.ICECandidatePair) (localType, remoteType string) {
