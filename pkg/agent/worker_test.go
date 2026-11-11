@@ -127,3 +127,18 @@ func TestParseJobAttempt(t *testing.T) {
 		require.False(t, ok, s)
 	}
 }
+
+// a simulated job is assigned from its room, so one without a room is refused instead of
+// panicking when the agent token is built.
+func TestHandleSimulateJobWithoutRoom(t *testing.T) {
+	w := agent.NewWorker(agent.MakeWorkerRegistration(), "key", "secret", nopSignalConn{}, logger.GetLogger())
+
+	for _, req := range []*livekit.SimulateJobRequest{
+		{},
+		{Participant: &livekit.ParticipantInfo{Identity: "user"}},
+	} {
+		err := w.HandleSimulateJob(req)
+		require.ErrorIs(t, err, agent.ErrSimulatedJobNoRoom)
+	}
+	require.Zero(t, w.RunningJobCount())
+}
