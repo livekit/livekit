@@ -176,6 +176,16 @@ type FakeLocalParticipant struct {
 	closeReturnsOnCall map[int]struct {
 		result1 error
 	}
+	CloseDoneStub        func() <-chan struct{}
+	closeDoneMutex       sync.RWMutex
+	closeDoneArgsForCall []struct {
+	}
+	closeDoneReturns struct {
+		result1 <-chan struct{}
+	}
+	closeDoneReturnsOnCall map[int]struct {
+		result1 <-chan struct{}
+	}
 	CloseReasonStub        func() types.ParticipantCloseReason
 	closeReasonMutex       sync.RWMutex
 	closeReasonArgsForCall []struct {
@@ -2447,6 +2457,59 @@ func (fake *FakeLocalParticipant) CloseReturnsOnCall(i int, result1 error) {
 	}
 	fake.closeReturnsOnCall[i] = struct {
 		result1 error
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) CloseDone() <-chan struct{} {
+	fake.closeDoneMutex.Lock()
+	ret, specificReturn := fake.closeDoneReturnsOnCall[len(fake.closeDoneArgsForCall)]
+	fake.closeDoneArgsForCall = append(fake.closeDoneArgsForCall, struct {
+	}{})
+	stub := fake.CloseDoneStub
+	fakeReturns := fake.closeDoneReturns
+	fake.recordInvocation("CloseDone", []interface{}{})
+	fake.closeDoneMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) CloseDoneCallCount() int {
+	fake.closeDoneMutex.RLock()
+	defer fake.closeDoneMutex.RUnlock()
+	return len(fake.closeDoneArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) CloseDoneCalls(stub func() <-chan struct{}) {
+	fake.closeDoneMutex.Lock()
+	defer fake.closeDoneMutex.Unlock()
+	fake.CloseDoneStub = stub
+}
+
+func (fake *FakeLocalParticipant) CloseDoneReturns(result1 <-chan struct{}) {
+	fake.closeDoneMutex.Lock()
+	defer fake.closeDoneMutex.Unlock()
+	fake.CloseDoneStub = nil
+	fake.closeDoneReturns = struct {
+		result1 <-chan struct{}
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) CloseDoneReturnsOnCall(i int, result1 <-chan struct{}) {
+	fake.closeDoneMutex.Lock()
+	defer fake.closeDoneMutex.Unlock()
+	fake.CloseDoneStub = nil
+	if fake.closeDoneReturnsOnCall == nil {
+		fake.closeDoneReturnsOnCall = make(map[int]struct {
+			result1 <-chan struct{}
+		})
+	}
+	fake.closeDoneReturnsOnCall[i] = struct {
+		result1 <-chan struct{}
 	}{result1}
 }
 
