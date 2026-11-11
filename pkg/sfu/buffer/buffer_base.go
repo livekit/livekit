@@ -1133,6 +1133,10 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 				return err
 			}
 		} else if ddVal != nil {
+			if ddVal.Restarted && ddVal.Descriptor.AttachedStructure == nil {
+				// the restart dropped the structure, so later packets cannot be parsed until a key frame
+				b.StartKeyFrameSeeder()
+			}
 			ep.DependencyDescriptor = ddVal
 			ep.VideoLayer = videoLayer
 			videoSize = ExtractDependencyDescriptorVideoSize(ddVal.Descriptor)
