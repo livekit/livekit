@@ -244,6 +244,55 @@ func TestHandleStoreDataBlobRequest(t *testing.T) {
 	})
 }
 
+func TestHandleStoreDataBlobRequest_ReplacementLimit(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		contents string
+		allowed  bool
+	}{
+		{name: "replacement within limit", contents: "5678", allowed: true},
+		{name: "replacement over limit", contents: "56789", allowed: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			p := newParticipantWithDataBlob(t, true, 0, 5)
+			sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+			key := genericKey("a")
+			original := []byte("1234")
+
+			p.HandleStoreDataBlobRequest(&livekit.StoreDataBlobRequest{
+				RequestId: 1,
+				Blob:      &livekit.DataBlob{Key: key, Contents: original},
+			})
+
+			require.Equal(t, 1, sink.WriteMessageCallCount())
+			msg := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
+			require.IsType(t, &livekit.SignalResponse_StoreDataBlobResponse{}, msg.Message)
+			require.Equal(t, original, p.dataBlob.Get(key).Contents)
+
+			p.HandleStoreDataBlobRequest(&livekit.StoreDataBlobRequest{
+				RequestId: 2,
+				Blob:      &livekit.DataBlob{Key: genericKey("a"), Contents: []byte(test.contents)},
+			})
+
+			require.Equal(t, 2, sink.WriteMessageCallCount())
+			if test.allowed {
+				msg := sink.WriteMessageArgsForCall(1).(*livekit.SignalResponse)
+				response, ok := msg.Message.(*livekit.SignalResponse_StoreDataBlobResponse)
+				require.True(t, ok, "expected SignalResponse_StoreDataBlobResponse, got %T", msg.Message)
+				require.Equal(t, uint32(2), response.StoreDataBlobResponse.RequestId)
+				require.Equal(t, key, response.StoreDataBlobResponse.Key)
+				require.Equal(t, []byte(test.contents), p.dataBlob.Get(key).Contents)
+			} else {
+				rr := lastRequestResponse(t, sink, 1)
+				require.Equal(t, uint32(2), rr.RequestId)
+				require.Equal(t, livekit.RequestResponse_LIMIT_EXCEEDED, rr.Reason)
+				require.Equal(t, original, p.dataBlob.Get(key).Contents)
+			}
+			require.Len(t, p.dataBlob.GetAll(), 1)
+		})
+	}
+}
+
 func TestHandleGetDataBlobRequest(t *testing.T) {
 	t.Run("returns INVALID_REQUEST when key is missing", func(t *testing.T) {
 		p := newParticipantWithDataBlob(t, true, 0, 0)
