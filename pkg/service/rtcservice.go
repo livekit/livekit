@@ -62,7 +62,7 @@ type RTCService struct {
 	config        *config.Config
 	isDev         bool
 	limits        config.LimitConfig
-	telemetry     telemetry.TelemetryService
+	telemetry telemetry.TelemetryService
 
 	mu          sync.Mutex
 	connections map[*websocket.Conn]struct{}
@@ -75,13 +75,13 @@ func NewRTCService(
 	telemetry telemetry.TelemetryService,
 ) *RTCService {
 	s := &RTCService{
-		router:        router,
-		roomAllocator: ra,
-		config:        conf,
-		isDev:         conf.Development,
-		limits:        conf.Limit,
-		telemetry:     telemetry,
-		connections:   map[*websocket.Conn]struct{}{},
+		router:            router,
+		roomAllocator:     ra,
+		config:            conf,
+		isDev:             conf.Development,
+		limits:            conf.Limit,
+		telemetry:   telemetry,
+		connections: map[*websocket.Conn]struct{}{},
 	}
 
 	s.upgrader = websocket.Upgrader{
@@ -210,6 +210,20 @@ func (s *RTCService) validateInternal(
 
 			params.metadata = joinRequest.Metadata
 			params.attributes = joinRequest.ParticipantAttributes
+		}
+	}
+
+	// FK: gateway authenticates AT and sets x-account-id; require identity user-{accountId}.
+	{
+		claims := GetGrants(r.Context())
+		identity := ""
+		kind := livekit.ParticipantInfo_STANDARD
+		if claims != nil {
+			identity = claims.Identity
+			kind = claims.GetParticipantKind()
+		}
+		if err := ensureGatewayAccountMatchesIdentity(r.Header, identity, kind); err != nil {
+			return "", routing.ParticipantInit{}, http.StatusUnauthorized, err
 		}
 	}
 
