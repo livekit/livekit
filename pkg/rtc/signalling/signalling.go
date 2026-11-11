@@ -45,7 +45,7 @@ func (s *signalling) SignalJoinResponse(join *livekit.JoinResponse) proto.Messag
 	}
 }
 
-func (s *signalling) SignalParticipantUpdate(participants []*livekit.ParticipantInfo) proto.Message {
+func (s *signalling) SignalParticipantUpdate(participants []*livekit.ParticipantInfo, fullSnapshot bool) proto.Message {
 	if len(participants) == 0 {
 		return nil
 	}
@@ -54,6 +54,7 @@ func (s *signalling) SignalParticipantUpdate(participants []*livekit.Participant
 		Message: &livekit.SignalResponse_Update{
 			Update: &livekit.ParticipantUpdate{
 				Participants: participants,
+				FullSnapshot: fullSnapshot,
 			},
 		},
 	}

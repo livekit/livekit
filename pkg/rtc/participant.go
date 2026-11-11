@@ -322,6 +322,9 @@ type ParticipantImpl struct {
 	// queued participant updates before join response is sent
 	// guarded by updateLock
 	queuedUpdates []*livekit.ParticipantInfo
+	// set when a full snapshot was queued, so the flushed message keeps the flag
+	// guarded by updateLock
+	queuedFullSnapshot bool
 	// cache of recently sent updates, to ensure ordering by version
 	// guarded by updateLock
 	updateCache *lru.Cache[livekit.ParticipantID, participantUpdateInfo]

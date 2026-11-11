@@ -44,7 +44,7 @@ type ParticipantSignaller interface {
 
 type ParticipantSignalling interface {
 	SignalJoinResponse(join *livekit.JoinResponse) proto.Message
-	SignalParticipantUpdate(participants []*livekit.ParticipantInfo) proto.Message
+	SignalParticipantUpdate(participants []*livekit.ParticipantInfo, fullSnapshot bool) proto.Message
 	SignalSpeakerUpdate(speakers []*livekit.SpeakerInfo) proto.Message
 	SignalRoomUpdate(room *livekit.Room) proto.Message
 	SignalConnectionQualityUpdate(connectionQuality *livekit.ConnectionQualityUpdate) proto.Message

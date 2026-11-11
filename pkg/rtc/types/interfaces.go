@@ -578,6 +578,9 @@ type LocalParticipant interface {
 	// server sent messages
 	SendJoinResponse(joinResponse *livekit.JoinResponse) error
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error
+	// SendParticipantSnapshot sends every participant visible to this one, flagged so the
+	// client drops any remote participant that is not listed
+	SendParticipantSnapshot(participants []*livekit.ParticipantInfo) error
 	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo, force bool) error
 	SendDataMessage(kind livekit.DataPacket_Kind, data []byte, senderID livekit.ParticipantID, seq uint32) error
 	SendDataMessageUnlabeled(data []byte, useRaw bool, sender livekit.ParticipantIdentity) error

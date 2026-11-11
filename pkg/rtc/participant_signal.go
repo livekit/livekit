@@ -68,18 +68,36 @@ func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) e
 	if p.State() == livekit.ParticipantInfo_JOINING {
 		p.updateState(livekit.ParticipantInfo_JOINED)
 	}
-	queuedUpdates := p.queuedUpdates
-	p.queuedUpdates = nil
+	queuedUpdates, queuedFullSnapshot := p.takeQueuedUpdatesLocked()
 	p.updateLock.Unlock()
 
 	if len(queuedUpdates) > 0 {
-		return p.SendParticipantUpdate(queuedUpdates)
+		return p.sendParticipantUpdate(queuedUpdates, queuedFullSnapshot)
 	}
 
 	return nil
 }
 
+// takeQueuedUpdatesLocked returns and clears the queued updates, caller holds updateLock
+func (p *ParticipantImpl) takeQueuedUpdatesLocked() ([]*livekit.ParticipantInfo, bool) {
+	queuedUpdates, queuedFullSnapshot := p.queuedUpdates, p.queuedFullSnapshot
+	p.queuedUpdates, p.queuedFullSnapshot = nil, false
+	return queuedUpdates, queuedFullSnapshot
+}
+
 func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.ParticipantInfo) error {
+	return p.sendParticipantUpdate(participantsToUpdate, false)
+}
+
+func (p *ParticipantImpl) SendParticipantSnapshot(participants []*livekit.ParticipantInfo) error {
+	return p.sendParticipantUpdate(participants, true)
+}
+
+// sendParticipantUpdate sends participant infos, a full snapshot lists every visible
+// participant so the client can drop the ones that are missing. A snapshot keeps an entry
+// the cache knows a newer version of: the client ignores the stale fields by version but
+// must still see the participant as present.
+func (p *ParticipantImpl) sendParticipantUpdate(participantsToUpdate []*livekit.ParticipantInfo, fullSnapshot bool) error {
 	p.updateLock.Lock()
 	if p.IsDisconnected() {
 		p.updateLock.Unlock()
@@ -89,8 +107,10 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 	// read under the lock the flush takes, so an update either queues before the flush
 	// or goes out after the connection has opened
 	if !p.IsReady() || p.signaller.HandshakePending() {
-		// queue up updates
+		// queue up updates, a queued snapshot flags the whole flushed message: the earlier
+		// entries are applied in order and the snapshot still lists everyone present
 		p.queuedUpdates = append(p.queuedUpdates, participantsToUpdate...)
+		p.queuedFullSnapshot = p.queuedFullSnapshot || fullSnapshot
 		p.updateLock.Unlock()
 		return nil
 	}
@@ -101,7 +121,7 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 		if lastVersion, ok := p.updateCache.Get(pID); ok {
 			// this is a message delivered out of order, a more recent version of the message had already been
 			// sent.
-			if pi.Version < lastVersion.version {
+			if pi.Version < lastVersion.version && !fullSnapshot {
 				p.params.Logger.Debugw(
 					"skipping outdated participant update",
 					"otherParticipant", pi.Identity,
@@ -128,7 +148,7 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 	}
 	p.updateLock.Unlock()
 
-	return p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(validUpdates))
+	return p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(validUpdates, fullSnapshot))
 }
 
 // serverAttributePrefix marks attributes the server sets for its own use; older clients
@@ -233,7 +253,7 @@ func (p *ParticipantImpl) HandleReconnectAndSendResponse(
 
 	if p.params.ProtocolVersion.SupportsDisconnectedUpdate() {
 		if len(recentlyDisconnectedParticipants) != 0 {
-			if err := p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(recentlyDisconnectedParticipants)); err != nil {
+			if err := p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(recentlyDisconnectedParticipants, false)); err != nil {
 				return err
 			}
 		}
@@ -252,12 +272,11 @@ func (p *ParticipantImpl) reconnectResponseSentAndFlush() error {
 
 	p.updateLock.Lock()
 	p.reconnectResponseSent.Store(true)
-	queuedUpdates := p.queuedUpdates
-	p.queuedUpdates = nil
+	queuedUpdates, queuedFullSnapshot := p.takeQueuedUpdatesLocked()
 	p.updateLock.Unlock()
 
 	if len(queuedUpdates) > 0 {
-		return p.SendParticipantUpdate(queuedUpdates)
+		return p.sendParticipantUpdate(queuedUpdates, queuedFullSnapshot)
 	}
 
 	return nil
@@ -268,15 +287,14 @@ func (p *ParticipantImpl) reconnectResponseSentAndFlush() error {
 // ReconnectResponse having been written.
 func (p *ParticipantImpl) flushQueuedUpdates() {
 	p.updateLock.Lock()
-	queuedUpdates := p.queuedUpdates
-	p.queuedUpdates = nil
+	queuedUpdates, queuedFullSnapshot := p.takeQueuedUpdatesLocked()
 	p.updateLock.Unlock()
 
 	if len(queuedUpdates) == 0 {
 		return
 	}
 
-	if err := p.SendParticipantUpdate(queuedUpdates); err != nil {
+	if err := p.sendParticipantUpdate(queuedUpdates, queuedFullSnapshot); err != nil {
 		p.params.Logger.Warnw("could not send queued participant updates", err)
 	}
 }
@@ -284,7 +302,7 @@ func (p *ParticipantImpl) flushQueuedUpdates() {
 func (p *ParticipantImpl) sendDisconnectUpdatesForReconnect() error {
 	recentlyDisconnectedParticipants := p.GetRecentlyDisconnectedParticipants()
 	if len(recentlyDisconnectedParticipants) != 0 {
-		return p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(recentlyDisconnectedParticipants))
+		return p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(recentlyDisconnectedParticipants, false))
 	}
 	return nil
 }

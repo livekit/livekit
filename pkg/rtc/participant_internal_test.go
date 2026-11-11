@@ -554,6 +554,54 @@ func TestOutOfOrderUpdates(t *testing.T) {
 	require.Equal(t, "second update", sent.GetUpdate().Participants[0].Metadata)
 }
 
+func TestParticipantSnapshot(t *testing.T) {
+	// a snapshot lists every visible participant, the client drops the ones that are
+	// missing, so an entry must survive the version filter and the flag must survive
+	// the queue
+	t.Run("flagged and keeps an outdated entry", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		p.updateState(livekit.ParticipantInfo_JOINED)
+		sink := p.GetResponseSink().(*routingfakes.FakeMessageSink)
+		newer := &livekit.ParticipantInfo{Sid: "PA_other", Identity: "other", Version: 2}
+		older := &livekit.ParticipantInfo{Sid: "PA_other", Identity: "other", Version: 1}
+
+		require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{newer}))
+		require.NoError(t, p.SendParticipantSnapshot([]*livekit.ParticipantInfo{older}))
+
+		require.Equal(t, 2, sink.WriteMessageCallCount())
+		first := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse).GetUpdate()
+		require.False(t, first.FullSnapshot)
+		second := sink.WriteMessageArgsForCall(1).(*livekit.SignalResponse).GetUpdate()
+		require.True(t, second.FullSnapshot)
+		require.Len(t, second.Participants, 1)
+		require.EqualValues(t, 1, second.Participants[0].Version)
+	})
+
+	t.Run("a queued snapshot flags the flushed message", func(t *testing.T) {
+		p := newParticipantForTestWithOpts("test", &participantOpts{
+			migration:       true,
+			protocolVersion: 17,
+			clientInfo:      &livekit.ClientInfo{Sdk: livekit.ClientInfo_JS, Version: "2.15.2"},
+		})
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+
+		require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{{Sid: "PA_a", Identity: "a", Version: 1}}))
+		require.NoError(t, p.SendParticipantSnapshot([]*livekit.ParticipantInfo{{Sid: "PA_b", Identity: "b", Version: 1}}))
+		require.Zero(t, sink.WriteMessageCallCount())
+
+		require.NoError(t, p.HandleReconnectAndSendResponse(livekit.ReconnectReason_RR_UNKNOWN, &livekit.ReconnectResponse{}, nil))
+
+		require.Equal(t, 2, sink.WriteMessageCallCount())
+		update := sink.WriteMessageArgsForCall(1).(*livekit.SignalResponse).GetUpdate()
+		require.True(t, update.FullSnapshot)
+		require.Len(t, update.Participants, 2)
+
+		// the next update is incremental again
+		require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{{Sid: "PA_c", Identity: "c", Version: 1}}))
+		require.False(t, sink.WriteMessageArgsForCall(2).(*livekit.SignalResponse).GetUpdate().FullSnapshot)
+	})
+}
+
 func TestServerAttributesNotSent(t *testing.T) {
 	p := newParticipantForTest("test")
 	p.updateState(livekit.ParticipantInfo_JOINED)
