@@ -61,6 +61,11 @@ var (
 	promSubscribePaceShadow                *prometheus.HistogramVec
 
 	promPeerConnection *prometheus.CounterVec
+
+	// ICE step 5 (connectivity checks) + step 6 (nomination) — FK deep-dive.
+	promICEStep5CheckToNominate     *prometheus.HistogramVec
+	promICEStep6NominateToConnected *prometheus.HistogramVec
+	promICEStep56CheckToConnected   *prometheus.HistogramVec
 )
 
 func initRoomStats(nodeID string, nodeType livekit.NodeType) {
@@ -138,9 +143,10 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		Namespace:   livekitNamespace,
 		Subsystem:   "session",
 		Name:        "start_time_ms",
+		Help:        "Session start → participant ACTIVE. Tagged with ICE path when known.",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		Buckets:     prometheus.ExponentialBucketsRange(100, 10000, 15),
-	}, []string{"protocol_version", "warp", "sdk"})
+	}, []string{"protocol_version", "warp", "sdk", "local_candidate_type", "remote_candidate_type", "connection_type"})
 	// Join-path stage budgets (phone p95 < 300ms needs all three under ~120/150/80).
 	sessionStageBuckets := prometheus.ExponentialBucketsRange(10, 10000, 15)
 	promSessionOfferToAnswer = prometheus.NewHistogramVec(prometheus.HistogramOpts{
@@ -151,6 +157,8 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		Buckets:     sessionStageBuckets,
 	}, []string{"protocol_version", "sdk"})
+	// Post-ICE session stages carry candidate/connection tags for TURN vs UDP deep-dives.
+	sessionICELabels := []string{"protocol_version", "sdk", "local_candidate_type", "remote_candidate_type", "connection_type"}
 	promSessionAnswerToICE = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "session",
@@ -158,7 +166,7 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		Help:        "Subscriber answer received → primary ICE connected (TURN/ICE).",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		Buckets:     sessionStageBuckets,
-	}, []string{"protocol_version", "sdk"})
+	}, sessionICELabels)
 	promSessionICEToDTLS = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "session",
@@ -166,7 +174,7 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		Help:        "ICE connected → PeerConnection connected (DTLS handshake). Labeled by transport (PUBLISHER/SUBSCRIBER).",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		Buckets:     sessionStageBuckets,
-	}, []string{"protocol_version", "sdk", "transport"})
+	}, append([]string{"protocol_version", "sdk", "transport"}, "local_candidate_type", "remote_candidate_type", "connection_type"))
 	promSessionICEToActive = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "session",
@@ -174,7 +182,7 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		Help:        "Primary ICE connected → participant ACTIVE (includes DTLS on primary PC).",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		Buckets:     sessionStageBuckets,
-	}, []string{"protocol_version", "sdk"})
+	}, sessionICELabels)
 	promSessionJoinToOffer = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "session",
@@ -222,6 +230,34 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, []string{"transport", "state"})
 
+	// ICE step budgets: Checking → nominated pair → ICE Connected.
+	iceStepBuckets := prometheus.ExponentialBucketsRange(5, 5000, 15)
+	iceStepLabels := []string{"transport", "local_candidate_type", "remote_candidate_type", "connection_type"}
+	promICEStep5CheckToNominate = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "ice",
+		Name:        "step5_check_to_nominate_ms",
+		Help:        "Step 5: ICE Checking started → first nominated/selected candidate pair.",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+		Buckets:     iceStepBuckets,
+	}, iceStepLabels)
+	promICEStep6NominateToConnected = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "ice",
+		Name:        "step6_nominate_to_connected_ms",
+		Help:        "Step 6: first nominated/selected pair → ICE Connected.",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+		Buckets:     iceStepBuckets,
+	}, iceStepLabels)
+	promICEStep56CheckToConnected = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "ice",
+		Name:        "step5_6_check_to_connected_ms",
+		Help:        "Steps 5+6: ICE Checking started → ICE Connected (full SFU-side ICE).",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+		Buckets:     iceStepBuckets,
+	}, iceStepLabels)
+
 	prometheus.MustRegister(promRoomCurrent)
 	prometheus.MustRegister(promRoomDuration)
 	prometheus.MustRegister(promParticipantCurrent)
@@ -243,6 +279,9 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promPubSubTime)
 	prometheus.MustRegister(promPeerConnection)
 	prometheus.MustRegister(promSubscribePaceShadow)
+	prometheus.MustRegister(promICEStep5CheckToNominate)
+	prometheus.MustRegister(promICEStep6NominateToConnected)
+	prometheus.MustRegister(promICEStep56CheckToConnected)
 }
 
 func RoomStarted() {
@@ -436,8 +475,14 @@ func RecordSessionJoinLatency(protocolVersion int, d time.Duration) {
 	promSessionJoinLatency.WithLabelValues(strconv.Itoa(protocolVersion)).Observe(float64(d.Milliseconds()))
 }
 
-func RecordSessionStartTime(protocolVersion int, warp bool, sdk livekit.ClientInfo_SDK, d time.Duration) {
-	promSessionStartTime.WithLabelValues(strconv.Itoa(protocolVersion), strconv.FormatBool(warp), sdk.String()).Observe(float64(d.Milliseconds()))
+func RecordSessionStartTime(
+	protocolVersion int, warp bool, sdk livekit.ClientInfo_SDK, d time.Duration,
+	localType, remoteType, connectionType string,
+) {
+	promSessionStartTime.WithLabelValues(
+		strconv.Itoa(protocolVersion), strconv.FormatBool(warp), sdk.String(),
+		labelOrUnknown(localType), labelOrUnknown(remoteType), labelOrUnknown(connectionType),
+	).Observe(float64(d.Milliseconds()))
 }
 
 func RecordSessionOfferToAnswer(protocolVersion int, sdk livekit.ClientInfo_SDK, d time.Duration) {
@@ -447,27 +492,45 @@ func RecordSessionOfferToAnswer(protocolVersion int, sdk livekit.ClientInfo_SDK,
 	promSessionOfferToAnswer.WithLabelValues(strconv.Itoa(protocolVersion), sdk.String()).Observe(float64(d.Milliseconds()))
 }
 
-func RecordSessionAnswerToICE(protocolVersion int, sdk livekit.ClientInfo_SDK, d time.Duration) {
+func RecordSessionAnswerToICE(
+	protocolVersion int, sdk livekit.ClientInfo_SDK, d time.Duration,
+	localType, remoteType, connectionType string,
+) {
 	if d < 0 {
 		return
 	}
-	promSessionAnswerToICE.WithLabelValues(strconv.Itoa(protocolVersion), sdk.String()).Observe(float64(d.Milliseconds()))
+	promSessionAnswerToICE.WithLabelValues(
+		strconv.Itoa(protocolVersion), sdk.String(),
+		labelOrUnknown(localType), labelOrUnknown(remoteType), labelOrUnknown(connectionType),
+	).Observe(float64(d.Milliseconds()))
 }
 
 // RecordSessionICEToDTLS records ICE Connected → PeerConnection Connected (DTLS done).
 // transport is PUBLISHER or SUBSCRIBER (SignalTarget.String()).
-func RecordSessionICEToDTLS(protocolVersion int, sdk livekit.ClientInfo_SDK, transport string, d time.Duration) {
+func RecordSessionICEToDTLS(
+	protocolVersion int, sdk livekit.ClientInfo_SDK, transport string, d time.Duration,
+	localType, remoteType, connectionType string,
+) {
 	if d < 0 {
 		return
 	}
-	promSessionICEToDTLS.WithLabelValues(strconv.Itoa(protocolVersion), sdk.String(), transport).Observe(float64(d.Milliseconds()))
+	promSessionICEToDTLS.WithLabelValues(
+		strconv.Itoa(protocolVersion), sdk.String(), transport,
+		labelOrUnknown(localType), labelOrUnknown(remoteType), labelOrUnknown(connectionType),
+	).Observe(float64(d.Milliseconds()))
 }
 
-func RecordSessionICEToActive(protocolVersion int, sdk livekit.ClientInfo_SDK, d time.Duration) {
+func RecordSessionICEToActive(
+	protocolVersion int, sdk livekit.ClientInfo_SDK, d time.Duration,
+	localType, remoteType, connectionType string,
+) {
 	if d < 0 {
 		return
 	}
-	promSessionICEToActive.WithLabelValues(strconv.Itoa(protocolVersion), sdk.String()).Observe(float64(d.Milliseconds()))
+	promSessionICEToActive.WithLabelValues(
+		strconv.Itoa(protocolVersion), sdk.String(),
+		labelOrUnknown(localType), labelOrUnknown(remoteType), labelOrUnknown(connectionType),
+	).Observe(float64(d.Milliseconds()))
 }
 
 func RecordSessionJoinToOffer(protocolVersion int, sdk livekit.ClientInfo_SDK, d time.Duration) {
@@ -490,4 +553,31 @@ func RecordSessionDuration(protocolVersion int, d time.Duration) {
 
 func RecordPeerConnectionState(transport livekit.SignalTarget, state string) {
 	promPeerConnection.WithLabelValues(transport.String(), state).Inc()
+}
+
+// RecordICEStepLatencies records SFU-side ICE step 5/6 durations.
+// localType/remoteType are webrtc ICE candidate types (host/srflx/relay/prflx).
+// connectionType is LiveKit ICEConnectionType (udp/tcp/turn/…).
+func RecordICEStepLatencies(
+	transport livekit.SignalTarget,
+	localType, remoteType, connectionType string,
+	checkToNominate, nominateToConnected, checkToConnected time.Duration,
+) {
+	labels := []string{transport.String(), labelOrUnknown(localType), labelOrUnknown(remoteType), labelOrUnknown(connectionType)}
+	if checkToNominate >= 0 {
+		promICEStep5CheckToNominate.WithLabelValues(labels...).Observe(float64(checkToNominate.Milliseconds()))
+	}
+	if nominateToConnected >= 0 {
+		promICEStep6NominateToConnected.WithLabelValues(labels...).Observe(float64(nominateToConnected.Milliseconds()))
+	}
+	if checkToConnected >= 0 {
+		promICEStep56CheckToConnected.WithLabelValues(labels...).Observe(float64(checkToConnected.Milliseconds()))
+	}
+}
+
+func labelOrUnknown(s string) string {
+	if s == "" {
+		return "unknown"
+	}
+	return s
 }

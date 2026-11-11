@@ -315,19 +315,31 @@ func (t *TransportManager) SubscriberFirstConnectedAt() time.Time {
 // PrimaryICEFirstConnectedAt is first ICE Connected on the primary transport
 // (subscriber when SubscriberAsPrimary, else publisher / single PC).
 func (t *TransportManager) PrimaryICEFirstConnectedAt() time.Time {
-	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
-		if t.publisher != nil {
-			return t.publisher.ICEFirstConnectedAt()
-		}
-		return time.Time{}
-	}
-	if t.params.SubscriberAsPrimary && t.subscriber != nil {
-		return t.subscriber.ICEFirstConnectedAt()
-	}
-	if t.publisher != nil {
-		return t.publisher.ICEFirstConnectedAt()
+	if pc := t.primaryPCTransport(); pc != nil {
+		return pc.ICEFirstConnectedAt()
 	}
 	return time.Time{}
+}
+
+// PrimaryICEStepSummary returns SFU-side ICE step 5/6 timings on the primary PC.
+func (t *TransportManager) PrimaryICEStepSummary() ICEStepSummary {
+	if pc := t.primaryPCTransport(); pc != nil {
+		return pc.ICEStepSummary()
+	}
+	return ICEStepSummary{
+		CheckToNominateMs: -1, NominateToConnectedMs: -1, CheckToConnectedMs: -1,
+		LocalCandidateType: "unknown", RemoteCandidateType: "unknown", ConnectionType: "unknown",
+	}
+}
+
+func (t *TransportManager) primaryPCTransport() *PCTransport {
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
+		return t.publisher
+	}
+	if t.params.SubscriberAsPrimary && t.subscriber != nil {
+		return t.subscriber
+	}
+	return t.publisher
 }
 
 // PrimaryPeerConnectionFirstConnectedAt is first PC Connected on the primary

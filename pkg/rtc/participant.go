@@ -2808,6 +2808,7 @@ func (p *ParticipantImpl) recordJoinPathLatency() {
 
 	var offerToAnswer, answerToICE, iceToDTLS, iceToActive, joinToOffer time.Duration
 	var hasOffer, hasAnswer, hasICE, hasDTLS bool
+	iceStep := p.TransportManager.PrimaryICEStepSummary()
 
 	if offerAt := p.firstSubOfferAt.Load(); offerAt != nil {
 		hasOffer = true
@@ -2820,8 +2821,10 @@ func (p *ParticipantImpl) recordJoinPathLatency() {
 				hasICE = true
 				answerToICE = iceAt.Sub(*answerAt)
 				iceToActive = now.Sub(iceAt)
-				prometheus.RecordSessionAnswerToICE(proto, sdk, answerToICE)
-				prometheus.RecordSessionICEToActive(proto, sdk, iceToActive)
+				prometheus.RecordSessionAnswerToICE(proto, sdk, answerToICE,
+					iceStep.LocalCandidateType, iceStep.RemoteCandidateType, iceStep.ConnectionType)
+				prometheus.RecordSessionICEToActive(proto, sdk, iceToActive,
+					iceStep.LocalCandidateType, iceStep.RemoteCandidateType, iceStep.ConnectionType)
 				if pcAt := p.TransportManager.PrimaryPeerConnectionFirstConnectedAt(); !pcAt.IsZero() {
 					hasDTLS = true
 					iceToDTLS = pcAt.Sub(iceAt)
@@ -2832,7 +2835,8 @@ func (p *ParticipantImpl) recordJoinPathLatency() {
 	}
 
 	sessionStartMs := now.Sub(sessionStart)
-	prometheus.RecordSessionStartTime(proto, p.params.EnableWarp, sdk, sessionStartMs)
+	prometheus.RecordSessionStartTime(proto, p.params.EnableWarp, sdk, sessionStartMs,
+		iceStep.LocalCandidateType, iceStep.RemoteCandidateType, iceStep.ConnectionType)
 	prometheus.IncrementParticipantRtcSuccess(1, p.params.EnableWarp, sdk)
 
 	// Single INFO line — searchable without DEBUG. Do not include PII beyond participant IDs already in logger context.
@@ -2841,6 +2845,12 @@ func (p *ParticipantImpl) recordJoinPathLatency() {
 		"joinToOfferMs", joinToOffer.Milliseconds(),
 		"offerToAnswerMs", offerToAnswer.Milliseconds(),
 		"answerToICEMs", answerToICE.Milliseconds(),
+		"iceStep5CheckToNominateMs", iceStep.CheckToNominateMs,
+		"iceStep6NominateToConnectedMs", iceStep.NominateToConnectedMs,
+		"iceStep5_6CheckToConnectedMs", iceStep.CheckToConnectedMs,
+		"iceLocalCandidateType", iceStep.LocalCandidateType,
+		"iceRemoteCandidateType", iceStep.RemoteCandidateType,
+		"iceConnectionType", iceStep.ConnectionType,
 		"iceToDtlsMs", iceToDTLS.Milliseconds(),
 		"iceToActiveMs", iceToActive.Milliseconds(),
 		"hasOffer", hasOffer,
