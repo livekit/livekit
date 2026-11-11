@@ -196,6 +196,9 @@ type StreamAllocatorConfig struct {
 	ProbeMinBps     int64     `yaml:"probe_min_bps,omitempty"`
 
 	PausedMinWait time.Duration `yaml:"paused_min_wait,omitempty"`
+
+	// CameraMinTemporalLayer: for CAMERA tracks, spatial layers >= 1 are only allocated at temporal >= this value (0 = off)
+	CameraMinTemporalLayer int32 `yaml:"camera_min_temporal_layer,omitempty"`
 }
 
 var (
@@ -280,6 +283,10 @@ func NewStreamAllocator(params StreamAllocatorParams, enabled bool, allowPause b
 
 	s.params.BWE.SetBWEListener(s)
 	s.params.Pacer.SetPacerProbeObserverListener(s)
+
+	if params.Config.CameraMinTemporalLayer > 0 {
+		params.Logger.Infow(fmt.Sprintf("camera temporal floor configured floor=%d", params.Config.CameraMinTemporalLayer))
+	}
 
 	return s
 }
@@ -962,7 +969,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	//        track needing change is not currently streaming, i. e. it has to be resumed.
 	//
 	track.ProvisionalAllocatePrepare()
-	transition := track.ProvisionalAllocateGetCooperativeTransition(cFlagAllowOvershootWhileDeficient)
+	transition := track.ProvisionalAllocateGetCooperativeTransition(cFlagAllowOvershootWhileDeficient, s.params.Config.CameraMinTemporalLayer)
 
 	// downgrade, giving back bits
 	if transition.From.GreaterThan(transition.To) {
@@ -1009,6 +1016,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 					layer,
 					s.allowPause,
 					cFlagAllowOvershootWhileDeficient,
+					s.params.Config.CameraMinTemporalLayer,
 				)
 				if availableChannelCapacity < usedChannelCapacity {
 					break alloc_loop
@@ -1034,7 +1042,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		}
 
 		track.ProvisionalAllocateReset()
-		transition = track.ProvisionalAllocateGetCooperativeTransition(cFlagAllowOvershootWhileDeficient) // get transition again to reset above allocation attempt using available headroom
+		transition = track.ProvisionalAllocateGetCooperativeTransition(cFlagAllowOvershootWhileDeficient, s.params.Config.CameraMinTemporalLayer) // get transition again to reset above allocation attempt using available headroom
 	}
 
 	// if there is not enough headroom, try to redistribute starting with tracks that are closest to their desired.
@@ -1047,7 +1055,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	}
 
 	for _, t := range minDistanceSorted {
-		tx := t.ProvisionalAllocateGetBestWeightedTransition()
+		tx := t.ProvisionalAllocateGetBestWeightedTransition(s.params.Config.CameraMinTemporalLayer)
 		if tx.BandwidthDelta < 0 {
 			contributingTracks = append(contributingTracks, t)
 
@@ -1117,7 +1125,7 @@ func (s *StreamAllocator) maybeBoostDeficientTracks() {
 boost_loop:
 	for {
 		for idx, track := range sortedTracks {
-			allocation, boosted := track.AllocateNextHigher(availableChannelCapacity, cFlagAllowOvershootInCatchup)
+			allocation, boosted := track.AllocateNextHigher(availableChannelCapacity, cFlagAllowOvershootInCatchup, s.params.Config.CameraMinTemporalLayer)
 			if !boosted {
 				if idx == len(sortedTracks)-1 {
 					// all tracks tried
@@ -1214,7 +1222,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 				}
 
 				for _, track := range sorted {
-					_, usedChannelCapacity := track.ProvisionalAllocate(availableChannelCapacity, layer, s.allowPause, cFlagAllowOvershootWhileDeficient)
+					_, usedChannelCapacity := track.ProvisionalAllocate(availableChannelCapacity, layer, s.allowPause, cFlagAllowOvershootWhileDeficient, s.params.Config.CameraMinTemporalLayer)
 					availableChannelCapacity -= usedChannelCapacity
 					if availableChannelCapacity < 0 {
 						availableChannelCapacity = 0
@@ -1339,7 +1347,7 @@ func (s *StreamAllocator) maybeProbe() {
 func (s *StreamAllocator) maybeProbeWithMedia() {
 	// boost deficient track farthest from desired layer
 	for _, track := range s.getMaxDistanceSortedDeficientVideoTracks() {
-		allocation, boosted := track.AllocateNextHigher(cChannelCapacityInfinity, cFlagAllowOvershootInBoost)
+		allocation, boosted := track.AllocateNextHigher(cChannelCapacityInfinity, cFlagAllowOvershootInBoost, s.params.Config.CameraMinTemporalLayer)
 		if !boosted {
 			continue
 		}
@@ -1356,7 +1364,7 @@ func (s *StreamAllocator) maybeProbeWithMedia() {
 func (s *StreamAllocator) maybeProbeWithPadding() {
 	// use deficient track farthest from desired layer to find how much to probe
 	for _, track := range s.getMaxDistanceSortedDeficientVideoTracks() {
-		transition, available := track.GetNextHigherTransition(cFlagAllowOvershootInProbe)
+		transition, available := track.GetNextHigherTransition(cFlagAllowOvershootInProbe, s.params.Config.CameraMinTemporalLayer)
 		if !available || transition.BandwidthDelta < 0 {
 			continue
 		}

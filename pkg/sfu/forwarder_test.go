@@ -506,24 +506,24 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 
 	f.ProvisionalAllocatePrepare(nil, bitrates)
 
-	isCandidate, usedBitrate := f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 0, Temporal: 0}, true, false)
+	isCandidate, usedBitrate := f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 0, Temporal: 0}, true, false, 0)
 	require.True(t, isCandidate)
 	require.Equal(t, bitrates[0][0], usedBitrate)
 
-	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 2, Temporal: 3}, true, false)
+	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 2, Temporal: 3}, true, false, 0)
 	require.True(t, isCandidate)
 	require.Equal(t, bitrates[2][3]-bitrates[0][0], usedBitrate)
 
-	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 0, Temporal: 3}, true, false)
+	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 0, Temporal: 3}, true, false, 0)
 	require.True(t, isCandidate)
 	require.Equal(t, bitrates[0][3]-bitrates[2][3], usedBitrate)
 
-	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 1, Temporal: 2}, true, false)
+	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 1, Temporal: 2}, true, false, 0)
 	require.True(t, isCandidate)
 	require.Equal(t, bitrates[1][2]-bitrates[0][3], usedBitrate)
 
 	// available not enough to reach (2, 2), allocating at (2, 2) should not succeed
-	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][2]-bitrates[1][2]-1, buffer.VideoLayer{Spatial: 2, Temporal: 2}, true, false)
+	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][2]-bitrates[1][2]-1, buffer.VideoLayer{Spatial: 2, Temporal: 2}, true, false, 0)
 	require.False(t, isCandidate)
 	require.Equal(t, int64(0), usedBitrate)
 
@@ -551,7 +551,7 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 	// when nothing fits and pausing disallowed, should allocate (0, 0)
 	f.vls.SetTarget(buffer.InvalidLayer)
 	f.ProvisionalAllocatePrepare(nil, bitrates)
-	isCandidate, usedBitrate = f.ProvisionalAllocate(0, buffer.VideoLayer{Spatial: 0, Temporal: 0}, false, false)
+	isCandidate, usedBitrate = f.ProvisionalAllocate(0, buffer.VideoLayer{Spatial: 0, Temporal: 0}, false, false, 0)
 	require.True(t, isCandidate)
 	require.Equal(t, int64(1), usedBitrate)
 
@@ -589,17 +589,17 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 
 	f.ProvisionalAllocatePrepare(nil, bitrates)
 
-	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 0, Temporal: 0}, false, true)
+	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 0, Temporal: 0}, false, true, 0)
 	require.False(t, isCandidate)
 	require.Equal(t, int64(0), usedBitrate)
 
 	// overshoot should succeed
-	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 2, Temporal: 3}, false, true)
+	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 2, Temporal: 3}, false, true, 0)
 	require.True(t, isCandidate)
 	require.Equal(t, bitrates[2][3], usedBitrate)
 
 	// overshoot should succeed - this should win as this is lesser overshoot
-	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 1, Temporal: 3}, false, true)
+	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 1, Temporal: 3}, false, true, 0)
 	require.True(t, isCandidate)
 	require.Equal(t, bitrates[1][3]-bitrates[2][3], usedBitrate)
 
@@ -639,17 +639,17 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 	f.ProvisionalAllocatePrepare(nil, bitrates)
 
 	// all the provisional allocations should not succeed because the feed is dry
-	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 0, Temporal: 0}, false, true)
+	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 0, Temporal: 0}, false, true, 0)
 	require.False(t, isCandidate)
 	require.Equal(t, int64(0), usedBitrate)
 
 	// overshoot should not succeed
-	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 2, Temporal: 3}, false, true)
+	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 2, Temporal: 3}, false, true, 0)
 	require.False(t, isCandidate)
 	require.Equal(t, int64(0), usedBitrate)
 
 	// overshoot should not succeed
-	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 1, Temporal: 3}, false, true)
+	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 1, Temporal: 3}, false, true, 0)
 	require.False(t, isCandidate)
 	require.Equal(t, int64(0), usedBitrate)
 
@@ -680,17 +680,17 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 	f.ProvisionalAllocatePrepare(nil, bitrates)
 
 	// all the provisional allocations below should not succeed because the feed is dry
-	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 0, Temporal: 0}, false, true)
+	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 0, Temporal: 0}, false, true, 0)
 	require.False(t, isCandidate)
 	require.Equal(t, int64(0), usedBitrate)
 
 	// overshoot should not succeed
-	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 2, Temporal: 3}, false, true)
+	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 2, Temporal: 3}, false, true, 0)
 	require.False(t, isCandidate)
 	require.Equal(t, int64(0), usedBitrate)
 
 	// overshoot should not succeed
-	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 1, Temporal: 3}, false, true)
+	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 1, Temporal: 3}, false, true, 0)
 	require.False(t, isCandidate)
 	require.Equal(t, int64(0), usedBitrate)
 
@@ -728,11 +728,11 @@ func TestForwarderProvisionalAllocateMute(t *testing.T) {
 	f.Mute(true, true)
 	f.ProvisionalAllocatePrepare(nil, bitrates)
 
-	isCandidate, usedBitrate := f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 0, Temporal: 0}, true, false)
+	isCandidate, usedBitrate := f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 0, Temporal: 0}, true, false, 0)
 	require.False(t, isCandidate)
 	require.Equal(t, int64(0), usedBitrate)
 
-	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 1, Temporal: 2}, true, true)
+	isCandidate, usedBitrate = f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 1, Temporal: 2}, true, true, 0)
 	require.False(t, isCandidate)
 	require.Equal(t, int64(0), usedBitrate)
 
@@ -778,7 +778,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 		To:             buffer.VideoLayer{Spatial: 0, Temporal: 0},
 		BandwidthDelta: 1,
 	}
-	transition, al, brs := f.ProvisionalAllocateGetCooperativeTransition(false)
+	transition, al, brs := f.ProvisionalAllocateGetCooperativeTransition(false, 0)
 	require.Equal(t, expectedTransition, transition)
 	require.Equal(t, availableLayers, al)
 	require.Equal(t, bitrates, brs)
@@ -810,7 +810,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 		To:             targetLayer,
 		BandwidthDelta: 0,
 	}
-	transition, al, brs = f.ProvisionalAllocateGetCooperativeTransition(false)
+	transition, al, brs = f.ProvisionalAllocateGetCooperativeTransition(false, 0)
 	require.Equal(t, expectedTransition, transition)
 	require.Equal(t, availableLayers, al)
 	require.Equal(t, bitrates, brs)
@@ -840,7 +840,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 		To:             buffer.VideoLayer{Spatial: 2, Temporal: 1},
 		BandwidthDelta: 0,
 	}
-	transition, al, brs = f.ProvisionalAllocateGetCooperativeTransition(false)
+	transition, al, brs = f.ProvisionalAllocateGetCooperativeTransition(false, 0)
 	require.Equal(t, expectedTransition, transition)
 	require.Equal(t, availableLayers, al)
 	require.Equal(t, bitrates, brs)
@@ -857,7 +857,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 		To:             buffer.InvalidLayer,
 		BandwidthDelta: -10,
 	}
-	transition, al, brs = f.ProvisionalAllocateGetCooperativeTransition(false)
+	transition, al, brs = f.ProvisionalAllocateGetCooperativeTransition(false, 0)
 	require.Equal(t, expectedTransition, transition)
 	require.Equal(t, availableLayers, al)
 	require.Equal(t, bitrates, brs)
@@ -886,7 +886,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 		To:             buffer.VideoLayer{Spatial: 1, Temporal: 0},
 		BandwidthDelta: 5,
 	}
-	transition, al, brs = f.ProvisionalAllocateGetCooperativeTransition(true)
+	transition, al, brs = f.ProvisionalAllocateGetCooperativeTransition(true, 0)
 	require.Equal(t, expectedTransition, transition)
 	require.Equal(t, availableLayers, al)
 	require.Equal(t, bitrates, brs)
@@ -928,7 +928,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 		To:             buffer.VideoLayer{Spatial: 0, Temporal: 2},
 		BandwidthDelta: -5, // 5 was the bandwidth needed for the last allocation
 	}
-	transition, al, brs = f.ProvisionalAllocateGetCooperativeTransition(true)
+	transition, al, brs = f.ProvisionalAllocateGetCooperativeTransition(true, 0)
 	require.Equal(t, expectedTransition, transition)
 	require.Equal(t, []int32{}, al)
 	require.Equal(t, bitrates, brs)
@@ -986,7 +986,7 @@ func TestForwarderProvisionalAllocateGetBestWeightedTransition(t *testing.T) {
 		To:             buffer.VideoLayer{Spatial: 2, Temporal: 0},
 		BandwidthDelta: -2,
 	}
-	transition, al, brs := f.ProvisionalAllocateGetBestWeightedTransition()
+	transition, al, brs := f.ProvisionalAllocateGetBestWeightedTransition(0)
 	require.Equal(t, expectedTransition, transition)
 	require.Equal(t, availableLayers, al)
 	require.Equal(t, bitrates, brs)
@@ -1005,7 +1005,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		{0, 7, 0, 0},
 	}
 
-	result, boosted := f.AllocateNextHigher(100_000_000, nil, bitrates, false)
+	result, boosted := f.AllocateNextHigher(100_000_000, nil, bitrates, false, 0)
 	require.Equal(t, VideoAllocationDefault, result) // no layer for audio
 	require.False(t, boosted)
 
@@ -1016,7 +1016,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 	f.SetMaxTemporalLayerSeen(buffer.DefaultMaxLayerTemporal)
 
 	// when not in deficient state, does not boost
-	result, boosted = f.AllocateNextHigher(100_000_000, nil, bitrates, false)
+	result, boosted = f.AllocateNextHigher(100_000_000, nil, bitrates, false, 0)
 	require.Equal(t, VideoAllocationDefault, result)
 	require.False(t, boosted)
 
@@ -1025,7 +1025,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		Spatial:  0,
 		Temporal: 0,
 	})
-	result, boosted = f.AllocateNextHigher(100_000_000, nil, bitrates, false)
+	result, boosted = f.AllocateNextHigher(100_000_000, nil, bitrates, false, 0)
 	require.Equal(t, VideoAllocationDefault, result)
 	require.False(t, boosted)
 
@@ -1051,14 +1051,14 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		MaxLayer:            buffer.DefaultMaxLayer,
 		DistanceToDesired:   2.0,
 	}
-	result, boosted = f.AllocateNextHigher(100_000_000, nil, bitrates, false)
+	result, boosted = f.AllocateNextHigher(100_000_000, nil, bitrates, false, 0)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 	require.Equal(t, expectedTargetLayer, f.TargetLayer())
 	require.True(t, boosted)
 
 	// empty bitrates cannot increase layer, i. e. last allocation is left unchanged
-	result, boosted = f.AllocateNextHigher(100_000_000, nil, emptyBitrates, false)
+	result, boosted = f.AllocateNextHigher(100_000_000, nil, emptyBitrates, false, 0)
 	require.Equal(t, expectedResult, result)
 	require.False(t, boosted)
 
@@ -1079,7 +1079,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		MaxLayer:            buffer.DefaultMaxLayer,
 		DistanceToDesired:   1.25,
 	}
-	result, boosted = f.AllocateNextHigher(100_000_000, nil, bitrates, false)
+	result, boosted = f.AllocateNextHigher(100_000_000, nil, bitrates, false, 0)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 	require.Equal(t, expectedTargetLayer, f.TargetLayer())
@@ -1102,7 +1102,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		MaxLayer:            buffer.DefaultMaxLayer,
 		DistanceToDesired:   0.5,
 	}
-	result, boosted = f.AllocateNextHigher(100_000_000, nil, bitrates, false)
+	result, boosted = f.AllocateNextHigher(100_000_000, nil, bitrates, false, 0)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 	require.Equal(t, expectedTargetLayer, f.TargetLayer())
@@ -1124,7 +1124,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		MaxLayer:            buffer.DefaultMaxLayer,
 		DistanceToDesired:   0.0,
 	}
-	result, boosted = f.AllocateNextHigher(100_000_000, nil, bitrates, false)
+	result, boosted = f.AllocateNextHigher(100_000_000, nil, bitrates, false, 0)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 	require.Equal(t, expectedTargetLayer, f.TargetLayer())
@@ -1132,7 +1132,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 
 	// ask again, should return not boosted as there is no room to go higher
 	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 2, Temporal: 1})
-	result, boosted = f.AllocateNextHigher(100_000_000, nil, bitrates, false)
+	result, boosted = f.AllocateNextHigher(100_000_000, nil, bitrates, false, 0)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 	require.Equal(t, expectedTargetLayer, f.TargetLayer())
@@ -1158,7 +1158,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		MaxLayer:            buffer.DefaultMaxLayer,
 		DistanceToDesired:   2.25,
 	}
-	result, boosted = f.AllocateNextHigher(100_000_000, nil, bitrates, false)
+	result, boosted = f.AllocateNextHigher(100_000_000, nil, bitrates, false, 0)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 	require.Equal(t, expectedTargetLayer, f.TargetLayer())
@@ -1176,7 +1176,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		MaxLayer:            buffer.DefaultMaxLayer,
 		DistanceToDesired:   2.25,
 	}
-	result, boosted = f.AllocateNextHigher(0, nil, bitrates, false)
+	result, boosted = f.AllocateNextHigher(0, nil, bitrates, false, 0)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 	require.Equal(t, expectedTargetLayer, f.TargetLayer())
@@ -1211,7 +1211,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 		DistanceToDesired:   -1.0,
 	}
 	// overshoot should return (1, 0) even if there is not enough capacity
-	result, boosted = f.AllocateNextHigher(bitrates[1][0]-1, nil, bitrates, true)
+	result, boosted = f.AllocateNextHigher(bitrates[1][0]-1, nil, bitrates, true, 0)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 	require.Equal(t, expectedTargetLayer, f.TargetLayer())
@@ -1232,7 +1232,7 @@ func TestForwarderPause(t *testing.T) {
 	}
 
 	f.ProvisionalAllocatePrepare(nil, bitrates)
-	f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 0, Temporal: 0}, true, false)
+	f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 0, Temporal: 0}, true, false, 0)
 	// should have set target at (0, 0)
 	f.ProvisionalAllocateCommit()
 
@@ -1267,7 +1267,7 @@ func TestForwarderPauseMute(t *testing.T) {
 	}
 
 	f.ProvisionalAllocatePrepare(nil, bitrates)
-	f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 0, Temporal: 0}, true, true)
+	f.ProvisionalAllocate(bitrates[2][3], buffer.VideoLayer{Spatial: 0, Temporal: 0}, true, true, 0)
 	// should have set target at (0, 0)
 	f.ProvisionalAllocateCommit()
 
@@ -2813,7 +2813,7 @@ func TestForwarderSimulcastTemporalLayerAfterSwitch(t *testing.T) {
 			f.vls.SetTarget(tc.target)
 
 			// target pending (spatial switch not done yet): no higher transition
-			_, available := f.GetNextHigherTransition(bitrates, false)
+			_, available := f.GetNextHigherTransition(bitrates, false, 0)
 			require.False(t, available)
 
 			// key frame of the target spatial layer, temporal layer 0
@@ -2855,7 +2855,7 @@ func TestForwarderSimulcastTemporalLayerAfterSwitch(t *testing.T) {
 
 			require.Equal(t, tc.expectedCurrent, f.vls.GetCurrent())
 			// target reached: the next higher transition (and hence probing) is available
-			_, available = f.GetNextHigherTransition(bitrates, false)
+			_, available = f.GetNextHigherTransition(bitrates, false, 0)
 			require.True(t, available)
 		})
 	}
@@ -3139,4 +3139,318 @@ func TestForwarderSkipReferenceTSRestartNoOffset(t *testing.T) {
 	advance := int64(tp.rtp.extTimestamp - lastTS)
 	require.GreaterOrEqual(t, advance, int64(0))
 	require.Less(t, advance, int64(90000), "timestamp jumped %d ticks (%.1f s) on the switch after restart", advance, float64(advance)/90000)
+}
+
+// ---------------------------------------------------------------------------
+// camera temporal floor (spatial >= 1 => temporal >= floor)
+
+var (
+	// f-T0 is cheaper than h-T2: an estimate can fit f-T0 but not h-T2
+	floorBrsCheapF = Bitrates{
+		{50, 80, 100, 0},
+		{200, 300, 450, 0},
+		{400, 700, 1000, 0},
+	}
+	// monotonic ladder: f-T0 costs more than h-T2
+	floorBrsLadder = Bitrates{
+		{50, 80, 100, 0},
+		{200, 300, 450, 0},
+		{500, 700, 1000, 0},
+	}
+
+	floorQT0 = buffer.VideoLayer{Spatial: 0, Temporal: 0}
+	floorQT2 = buffer.VideoLayer{Spatial: 0, Temporal: 2}
+	floorHT0 = buffer.VideoLayer{Spatial: 1, Temporal: 0}
+	floorHT1 = buffer.VideoLayer{Spatial: 1, Temporal: 1}
+	floorHT2 = buffer.VideoLayer{Spatial: 1, Temporal: 2}
+	floorFT0 = buffer.VideoLayer{Spatial: 2, Temporal: 0}
+	floorFT1 = buffer.VideoLayer{Spatial: 2, Temporal: 1}
+	floorFT2 = buffer.VideoLayer{Spatial: 2, Temporal: 2}
+)
+
+func newFloorForwarder(maxTemporal int32, maxTemporalSeen int32) *Forwarder {
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f.SetMaxSpatialLayer(buffer.DefaultMaxLayerSpatial)
+	f.SetMaxTemporalLayer(maxTemporal)
+	f.SetMaxPublishedLayer(buffer.DefaultMaxLayerSpatial)
+	f.SetMaxTemporalLayerSeen(maxTemporalSeen)
+	return f
+}
+
+// floorWalk mirrors the single-track walk of StreamAllocator.allocateAllTracks: bottom-up, last fitting layer wins.
+func floorWalk(f *Forwarder, brs Bitrates, capacity int64, allowPause bool, floor int32) VideoAllocation {
+	f.ProvisionalAllocatePrepare(nil, brs)
+	for s := int32(0); s <= buffer.DefaultMaxLayerSpatial; s++ {
+		for tl := int32(0); tl <= buffer.DefaultMaxLayerTemporal; tl++ {
+			_, used := f.ProvisionalAllocate(capacity, buffer.VideoLayer{Spatial: s, Temporal: tl}, allowPause, false, floor)
+			capacity = max(0, capacity-used)
+		}
+	}
+	return f.ProvisionalAllocateCommit()
+}
+
+func TestForwarderCameraTemporalFloor(t *testing.T) {
+	noTemporal := Bitrates{
+		{50, 0, 0, 0},
+		{200, 0, 0, 0},
+		{400, 0, 0, 0},
+	}
+	cases := []struct {
+		name            string
+		maxTemporal     int32
+		maxTemporalSeen int32
+		brs             Bitrates
+		capacity        int64
+		allowPause      bool
+		floor           int32
+		want            buffer.VideoLayer
+	}{
+		// precondition: stock picks f-T0 when it fits and h-T2 does not
+		{"stock fits f-T0 not h-T2", 3, 3, floorBrsCheapF, 420, false, 0, floorFT0},
+		{"floor 1 fits f-T0 not h-T2 picks h-T1", 3, 3, floorBrsCheapF, 420, false, 1, floorHT1},
+		{"floor 1 fits f-T0 not h-T2 pause allowed picks h-T1", 3, 3, floorBrsCheapF, 420, true, 1, floorHT1},
+		{"floor 1 fits h-T2 not f-T1 picks h-T2", 3, 3, floorBrsCheapF, 600, false, 1, floorHT2},
+		{"stock fits h-T0 only", 3, 3, floorBrsCheapF, 250, false, 0, floorHT0},
+		{"floor 1 fits h-T0 only falls to q-T2", 3, 3, floorBrsCheapF, 250, false, 1, floorQT2},
+		{"floor 1 fits h-T0 only falls to q-T2 pause allowed", 3, 3, floorBrsCheapF, 250, true, 1, floorQT2},
+		{"floor 1 fits only q layers picks q-T2", 3, 3, floorBrsCheapF, 120, false, 1, floorQT2},
+		{"stock nothing fits no pause takes q-T0", 3, 3, floorBrsCheapF, 30, false, 0, floorQT0},
+		{"floor 1 nothing fits no pause takes q-T0", 3, 3, floorBrsCheapF, 30, false, 1, floorQT0},
+		{"stock nothing fits pause allowed pauses", 3, 3, floorBrsCheapF, 30, true, 0, buffer.InvalidLayer},
+		{"floor 1 nothing fits pause allowed pauses", 3, 3, floorBrsCheapF, 30, true, 1, buffer.InvalidLayer},
+		{"floor 1 everything fits picks f-T2", 3, 3, floorBrsCheapF, 5000, false, 1, floorFT2},
+		// the floor never asks for temporal layers the publisher has not shown or the subscriber does not allow
+		{"floor 1 publisher without temporal layers keeps f-T0", 3, 0, noTemporal, 420, false, 1, floorFT0},
+		{"floor 1 subscriber max temporal 0 keeps f-T0", 0, 3, floorBrsCheapF, 420, false, 1, floorFT0},
+		{"floor 2 clamped to subscriber max temporal 1 picks h-T1", 1, 3, floorBrsCheapF, 420, false, 2, floorHT1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFloorForwarder(c.maxTemporal, c.maxTemporalSeen)
+			alloc := floorWalk(f, c.brs, c.capacity, c.allowPause, c.floor)
+			require.Equal(t, c.want, alloc.TargetLayer)
+			require.Equal(t, c.want, f.TargetLayer())
+		})
+	}
+}
+
+func TestForwarderCameraTemporalFloorNextHigher(t *testing.T) {
+	setup := func(target buffer.VideoLayer, maxSpatial int32) *Forwarder {
+		f := newFloorForwarder(buffer.DefaultMaxLayerTemporal, buffer.DefaultMaxLayerTemporal)
+		f.SetMaxSpatialLayer(maxSpatial)
+		f.vls.SetTarget(target)
+		f.vls.SetCurrent(target)
+		f.lastAllocation.IsDeficient = true
+		return f
+	}
+
+	cases := []struct {
+		name           string
+		from           buffer.VideoLayer
+		maxSpatial     int32
+		allowOvershoot bool
+		floor          int32
+		want           buffer.VideoLayer
+	}{
+		{"stock spatial step from h-T2", floorHT2, 2, false, 0, floorFT0},
+		{"floor 1 spatial step from h-T2", floorHT2, 2, false, 1, floorFT1},
+		{"stock overshoot from q-T2", floorQT2, 0, true, 0, floorHT0},
+		{"floor 1 overshoot from q-T2", floorQT2, 0, true, 1, floorHT1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			// probe goal
+			f := setup(c.from, c.maxSpatial)
+			transition, available := f.GetNextHigherTransition(floorBrsLadder, c.allowOvershoot, c.floor)
+			require.True(t, available)
+			require.Equal(t, c.from, transition.From)
+			require.Equal(t, c.want, transition.To)
+
+			// boost target
+			f = setup(c.from, c.maxSpatial)
+			alloc, boosted := f.AllocateNextHigher(100_000_000, nil, floorBrsLadder, c.allowOvershoot, c.floor)
+			require.True(t, boosted)
+			require.Equal(t, c.want, alloc.TargetLayer)
+
+			// parity: the probe chases exactly the layer the boost takes
+			require.Equal(t, transition.To, alloc.TargetLayer)
+		})
+	}
+}
+
+func TestForwarderCameraTemporalFloorBestWeighted(t *testing.T) {
+	bitrates := Bitrates{
+		{1, 2, 3, 4},
+		{5, 6, 7, 8},
+		{9, 10, 11, 12},
+	}
+	for _, c := range []struct {
+		floor     int32
+		wantTo    buffer.VideoLayer
+		wantDelta int64
+	}{
+		{0, floorFT0, -2},
+		{1, floorFT1, -1},
+	} {
+		f := newFloorForwarder(buffer.DefaultMaxLayerTemporal, buffer.DefaultMaxLayerTemporal)
+		f.ProvisionalAllocatePrepare(nil, bitrates)
+		f.vls.SetTarget(floorFT2)
+		f.lastAllocation.BandwidthRequested = bitrates[2][2]
+
+		transition, _, _ := f.ProvisionalAllocateGetBestWeightedTransition(c.floor)
+		require.Equal(t, floorFT2, transition.From)
+		require.Equal(t, c.wantTo, transition.To, "floor %d", c.floor)
+		require.Equal(t, c.wantDelta, transition.BandwidthDelta, "floor %d", c.floor)
+		if c.floor > 0 {
+			require.False(t, transition.To.Spatial >= 1 && transition.To.Temporal < c.floor)
+		}
+	}
+}
+
+func TestForwarderCameraTemporalFloorCooperative(t *testing.T) {
+	cases := []struct {
+		name           string
+		existing       buffer.VideoLayer
+		maxSpatial     int32
+		allowOvershoot bool
+		brs            Bitrates
+		floor          int32
+		want           buffer.VideoLayer
+	}{
+		{
+			"stock higher temporals dry moves down to f-T0", floorFT2, 2, false,
+			Bitrates{{50, 80, 100, 0}, {200, 300, 450, 0}, {400, 0, 0, 0}}, 0, floorFT0,
+		},
+		{
+			"floor 1 higher temporals dry moves down to h-T2", floorFT2, 2, false,
+			Bitrates{{50, 80, 100, 0}, {200, 300, 450, 0}, {400, 0, 0, 0}}, 1, floorHT2,
+		},
+		{
+			"stock not streaming minimal h-T0", buffer.InvalidLayer, 2, false,
+			Bitrates{{0, 0, 0, 0}, {200, 300, 450, 0}, {400, 700, 1000, 0}}, 0, floorHT0,
+		},
+		{
+			"floor 1 not streaming minimal h-T1", buffer.InvalidLayer, 2, false,
+			Bitrates{{0, 0, 0, 0}, {200, 300, 450, 0}, {400, 700, 1000, 0}}, 1, floorHT1,
+		},
+		{
+			"stock not streaming overshoot h-T0", buffer.InvalidLayer, 0, true,
+			Bitrates{{0, 0, 0, 0}, {200, 300, 450, 0}, {400, 700, 1000, 0}}, 0, floorHT0,
+		},
+		{
+			"floor 1 not streaming overshoot h-T1", buffer.InvalidLayer, 0, true,
+			Bitrates{{0, 0, 0, 0}, {200, 300, 450, 0}, {400, 700, 1000, 0}}, 1, floorHT1,
+		},
+		{
+			"stock preserves streaming f-T0", floorFT0, 2, false, floorBrsCheapF, 0, floorFT0,
+		},
+		{
+			"floor 1 does not preserve a floor-excluded f-T0", floorFT0, 2, false, floorBrsCheapF, 1, floorHT1,
+		},
+		{
+			"floor 1 preserves streaming f-T1", floorFT1, 2, false, floorBrsCheapF, 1, floorFT1,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFloorForwarder(buffer.DefaultMaxLayerTemporal, buffer.DefaultMaxLayerTemporal)
+			f.SetMaxSpatialLayer(c.maxSpatial)
+			f.vls.SetTarget(c.existing)
+			if c.existing.IsValid() {
+				f.lastAllocation.BandwidthRequested = c.brs[c.existing.Spatial][c.existing.Temporal]
+			}
+			f.ProvisionalAllocatePrepare(nil, c.brs)
+
+			transition, _, _ := f.ProvisionalAllocateGetCooperativeTransition(c.allowOvershoot, c.floor)
+			require.Equal(t, c.want, transition.To)
+		})
+	}
+}
+
+// A target below the floor moves to the highest floor-compliant layer, highest spatial first, that costs no more
+// than the target; when every compliant layer costs more, the target is preserved as stock does.
+func TestForwarderCameraTemporalFloorCooperativeNeverCostsMore(t *testing.T) {
+	// every floor-compliant layer costs more than f-T0 (h-T0 is below the floor)
+	allCostMore := Bitrates{
+		{450, 500, 550, 0},
+		{420, 500, 600, 0},
+		{400, 0, 0, 0},
+	}
+	cases := []struct {
+		name      string
+		brs       Bitrates
+		floor     int32
+		want      buffer.VideoLayer
+		wantDelta int64
+	}{
+		{"stock preserves streaming f-T0", floorBrsCheapF, 0, floorFT0, 0},
+		{"floor 1 moves to cheapest compliant h-T1 not h-T2", floorBrsCheapF, 1, floorHT1, 300 - 400},
+		{"stock preserves f-T0 when everything costs more", allCostMore, 0, floorFT0, 0},
+		{"floor 1 preserves f-T0 when every compliant layer costs more", allCostMore, 1, floorFT0, 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFloorForwarder(buffer.DefaultMaxLayerTemporal, buffer.DefaultMaxLayerTemporal)
+			f.vls.SetTarget(floorFT0)
+			f.lastAllocation.BandwidthRequested = c.brs[2][0]
+			f.ProvisionalAllocatePrepare(nil, c.brs)
+
+			// precondition: streaming f-T0, which is below the floor whenever the floor is on
+			require.Equal(t, floorFT0, f.vls.GetTarget())
+			require.Equal(t, int64(400), c.brs[2][0])
+			require.Equal(t, c.floor > 0, belowTemporalFloor(floorFT0, c.floor))
+
+			transition, _, _ := f.ProvisionalAllocateGetCooperativeTransition(false, c.floor)
+			require.Equal(t, floorFT0, transition.From)
+			require.Equal(t, c.want, transition.To)
+			require.Equal(t, c.wantDelta, transition.BandwidthDelta)
+			require.LessOrEqual(t, c.brs[c.want.Spatial][c.want.Temporal], c.brs[2][0])
+		})
+	}
+}
+
+// A below-floor target is preserved only while it is within the subscriber limit; above the limit it always moves
+// under the limit, with its real delta. Per spatial the highest compliant temporal that fits the target bitrate wins.
+func TestForwarderCameraTemporalFloorCooperativeLimit(t *testing.T) {
+	cases := []struct {
+		name       string
+		brs        Bitrates
+		maxSpatial int32
+		floor      int32
+		want       buffer.VideoLayer
+		wantDelta  int64
+	}{
+		// stock above the limit: down move to the maximal layer under it, even when it costs more
+		{"stock limit 1 moves to h-T2", floorBrsCheapF, 1, 0, floorHT2, 450 - 400},
+		{"floor 1 limit 1, every compliant layer costs more, moves to cheapest q-T0", Bitrates{{450, 0, 0, 0}, {300, 500, 0, 0}, {400, 0, 0, 0}}, 1, 1, floorQT0, 450 - 400},
+		{"floor 1 limit 0, q-T0 costs more, moves to q-T0", Bitrates{{450, 0, 0, 0}, {300, 500, 0, 0}, {400, 0, 0, 0}}, 0, 1, floorQT0, 450 - 400},
+		{"floor 1 limit 1, nothing compliant, stock maximal h-T0", Bitrates{{0, 0, 0, 0}, {300, 0, 0, 0}, {400, 0, 0, 0}}, 1, 1, floorHT0, 300 - 400},
+		// within the limit: highest compliant temporal that fits on the first spatial layer that has one
+		{"floor 1 h-T1 costs more, q-T2 fits", Bitrates{{100, 150, 200, 0}, {300, 450, 0, 0}, {400, 0, 0, 0}}, 2, 1, floorQT2, 200 - 400},
+		// target layer stopped (bitrate 0): highest compliant layer below it, as stock does with no floor
+		{"floor 1 limit 2, f-T0 stopped, moves to h-T2", Bitrates{{100, 150, 200, 0}, {300, 450, 600, 0}, {0, 0, 0, 0}}, 2, 1, floorHT2, 600 - 400},
+		{"floor 1 limit 1, f-T0 stopped, moves to h-T2", Bitrates{{100, 150, 200, 0}, {300, 450, 600, 0}, {0, 0, 0, 0}}, 1, 1, floorHT2, 600 - 400},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFloorForwarder(buffer.DefaultMaxLayerTemporal, buffer.DefaultMaxLayerTemporal)
+			f.SetMaxSpatialLayer(c.maxSpatial)
+			f.vls.SetTarget(floorFT0)
+			f.lastAllocation.BandwidthRequested = 400
+			f.ProvisionalAllocatePrepare(nil, c.brs)
+
+			// precondition: f-T0 allocated at 400 (streaming at 400 or stopped), below the floor when it is on,
+			// above the limit when maxSpatial < 2
+			require.Equal(t, floorFT0, f.vls.GetTarget())
+			require.Contains(t, []int64{0, 400}, c.brs[2][0])
+			require.Equal(t, c.floor > 0, belowTemporalFloor(floorFT0, c.floor))
+			require.Equal(t, c.maxSpatial, f.provisional.maxLayer.Spatial)
+
+			transition, _, _ := f.ProvisionalAllocateGetCooperativeTransition(false, c.floor)
+			require.Equal(t, floorFT0, transition.From)
+			require.Equal(t, c.want, transition.To)
+			require.Equal(t, c.wantDelta, transition.BandwidthDelta)
+			require.LessOrEqual(t, transition.To.Spatial, c.maxSpatial, "never above the subscriber limit")
+		})
+	}
 }

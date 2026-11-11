@@ -165,6 +165,7 @@ type VideoAllocationProvisional struct {
 	maxLayer        buffer.VideoLayer
 	currentLayer    buffer.VideoLayer
 	allocatedLayer  buffer.VideoLayer
+	temporalFloor   int32
 }
 
 // -------------------------------------------------------------------
@@ -1136,6 +1137,7 @@ func (f *Forwarder) ProvisionalAllocatePrepare(availableLayers []int32, bitrates
 	p.bitrates = bitrates
 	p.maxLayer = f.vls.GetMax()
 	p.currentLayer = f.vls.GetCurrent()
+	p.temporalFloor = 0
 	if cap(p.availableLayers) >= len(availableLayers) {
 		p.availableLayers = p.availableLayers[:len(availableLayers)]
 	} else {
@@ -1151,7 +1153,7 @@ func (f *Forwarder) ProvisionalAllocateReset() {
 	f.provisional.allocatedLayer = buffer.InvalidLayer
 }
 
-func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layer buffer.VideoLayer, allowPause bool, allowOvershoot bool) (bool, int64) {
+func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layer buffer.VideoLayer, allowPause bool, allowOvershoot bool, minTemporalLayer int32) (bool, int64) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -1165,6 +1167,11 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layer bu
 
 	requiredBitrate := f.provisional.bitrates[layer.Spatial][layer.Temporal]
 	if requiredBitrate == 0 {
+		return false, 0
+	}
+
+	f.provisional.temporalFloor = temporalFloor(minTemporalLayer, f.provisional.maxLayer, f.provisional.maxSeenLayer)
+	if belowTemporalFloor(layer, f.provisional.temporalFloor) {
 		return false, 0
 	}
 
@@ -1195,7 +1202,7 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layer bu
 	return false, 0
 }
 
-func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot bool) (VideoTransition, []int32, Bitrates) {
+func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot bool, minTemporalLayer int32) (VideoTransition, []int32, Bitrates) {
 	//
 	// This is called when a track needs a change (could be mute/unmute, subscribed layers changed, published layers changed)
 	// when channel is congested.
@@ -1219,6 +1226,8 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 	defer f.lock.Unlock()
 
 	existingTargetLayer := f.vls.GetTarget()
+	floor := temporalFloor(minTemporalLayer, f.provisional.maxLayer, f.provisional.maxSeenLayer)
+	f.provisional.temporalFloor = floor
 	if f.provisional.muted || f.provisional.pubMuted {
 		f.provisional.allocatedLayer = buffer.InvalidLayer
 		return VideoTransition{
@@ -1233,17 +1242,73 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 		// what is the highest that is available
 		maximalLayer := buffer.InvalidLayer
 		maximalBandwidthRequired := int64(0)
-		for s := f.provisional.maxLayer.Spatial; s >= 0; s-- {
-			for t := f.provisional.maxLayer.Temporal; t >= 0; t-- {
-				if f.provisional.bitrates[s][t] != 0 {
-					maximalLayer = buffer.VideoLayer{Spatial: s, Temporal: t}
-					maximalBandwidthRequired = f.provisional.bitrates[s][t]
-					break
+		existingBelowFloor := belowTemporalFloor(existingTargetLayer, floor)
+		existingWithinLimit := existingTargetLayer.Spatial <= f.provisional.maxLayer.Spatial &&
+			existingTargetLayer.Temporal <= f.provisional.maxLayer.Temporal
+		if existingBelowFloor {
+			// a target below the camera temporal floor moves down to the first spatial layer (highest first) with a
+			// floor-compliant layer that costs no more than the target (any, when the target has stopped), taking the
+			// highest such temporal layer.
+			// Within the subscriber limit, the target is otherwise preserved (never a costlier move); above the
+			// limit, it otherwise moves to the cheapest floor-compliant layer under the limit, whatever it costs.
+			existingBitrate := f.provisional.bitrates[existingTargetLayer.Spatial][existingTargetLayer.Temporal]
+			cheapestLayer := buffer.InvalidLayer
+			cheapestBandwidthRequired := int64(0)
+			for s := min(f.provisional.maxLayer.Spatial, existingTargetLayer.Spatial-1); s >= 0 && !maximalLayer.IsValid(); s-- {
+				lowestLayer := buffer.InvalidLayer
+				for t := f.provisional.maxLayer.Temporal; t >= 0; t-- {
+					layer := buffer.VideoLayer{Spatial: s, Temporal: t}
+					bitrate := f.provisional.bitrates[s][t]
+					if bitrate == 0 || belowTemporalFloor(layer, floor) {
+						continue
+					}
+					if existingBitrate == 0 || bitrate <= existingBitrate {
+						maximalLayer = layer
+						maximalBandwidthRequired = bitrate
+						break
+					}
+					lowestLayer = layer
+				}
+				if lowestLayer.IsValid() {
+					bitrate := f.provisional.bitrates[lowestLayer.Spatial][lowestLayer.Temporal]
+					if !cheapestLayer.IsValid() || bitrate < cheapestBandwidthRequired {
+						cheapestLayer = lowestLayer
+						cheapestBandwidthRequired = bitrate
+					}
 				}
 			}
+			if !maximalLayer.IsValid() {
+				if existingWithinLimit && existingBitrate != 0 {
+					f.provisional.allocatedLayer = existingTargetLayer
+					return VideoTransition{
+						From:           existingTargetLayer,
+						To:             existingTargetLayer,
+						BandwidthDelta: 0,
+					}, f.provisional.availableLayers, f.provisional.bitrates
+				}
+				maximalLayer = cheapestLayer
+				maximalBandwidthRequired = cheapestBandwidthRequired
+			}
+		}
+		if !maximalLayer.IsValid() && (!existingBelowFloor || !existingWithinLimit) {
+			// stock: the highest layer available under the limit; for a below-floor target above the limit with
+			// nothing floor-compliant under it, the floor is not applied
+			for s := f.provisional.maxLayer.Spatial; s >= 0; s-- {
+				for t := f.provisional.maxLayer.Temporal; t >= 0; t-- {
+					layer := buffer.VideoLayer{Spatial: s, Temporal: t}
+					if !existingBelowFloor && belowTemporalFloor(layer, floor) {
+						continue
+					}
+					if f.provisional.bitrates[s][t] != 0 {
+						maximalLayer = layer
+						maximalBandwidthRequired = f.provisional.bitrates[s][t]
+						break
+					}
+				}
 
-			if maximalBandwidthRequired != 0 {
-				break
+				if maximalBandwidthRequired != 0 {
+					break
+				}
 			}
 		}
 
@@ -1279,7 +1344,7 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 		bw := int64(0)
 		for s := minSpatial; s <= maxSpatial; s++ {
 			for t := minTemporal; t <= maxTemporal; t++ {
-				if f.provisional.bitrates[s][t] != 0 {
+				if f.provisional.bitrates[s][t] != 0 && !belowTemporalFloor(buffer.VideoLayer{Spatial: s, Temporal: t}, floor) {
 					layers = buffer.VideoLayer{Spatial: s, Temporal: t}
 					bw = f.provisional.bitrates[s][t]
 					break
@@ -1330,7 +1395,7 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 	}, f.provisional.availableLayers, f.provisional.bitrates
 }
 
-func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() (VideoTransition, []int32, Bitrates) {
+func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition(minTemporalLayer int32) (VideoTransition, []int32, Bitrates) {
 	//
 	// This is called when a track needs a change (could be mute/unmute, subscribed layers changed, published layers changed)
 	// when channel is congested. This is called on tracks other than the one needing the change. When the track
@@ -1350,6 +1415,8 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() (VideoTransit
 	defer f.lock.Unlock()
 
 	targetLayer := f.vls.GetTarget()
+	floor := temporalFloor(minTemporalLayer, f.provisional.maxLayer, f.provisional.maxSeenLayer)
+	f.provisional.temporalFloor = floor
 	if f.provisional.muted || f.provisional.pubMuted {
 		f.provisional.allocatedLayer = buffer.InvalidLayer
 		return VideoTransition{
@@ -1394,6 +1461,10 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() (VideoTransit
 		for t := int32(0); t <= targetLayer.Temporal; t++ {
 			if s == targetLayer.Spatial && t == targetLayer.Temporal {
 				break
+			}
+
+			if belowTemporalFloor(buffer.VideoLayer{Spatial: s, Temporal: t}, floor) {
+				continue
 			}
 
 			bandwidthDelta := max(0, existingBandwidthNeeded-f.provisional.bitrates[s][t])
@@ -1503,10 +1574,19 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 		}
 	}
 
+	if f.provisional.temporalFloor > 0 && alloc.TargetLayer != f.lastAllocation.TargetLayer {
+		f.logger.Debugw(
+			"camera temporal floor",
+			"floor", f.provisional.temporalFloor,
+			"targetLayer", alloc.TargetLayer,
+			"lastTargetLayer", f.lastAllocation.TargetLayer,
+			"reason", "cooperative",
+		)
+	}
 	return f.updateAllocation(alloc, "cooperative")
 }
 
-func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, availableLayers []int32, brs Bitrates, allowOvershoot bool) (VideoAllocation, bool) {
+func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, availableLayers []int32, brs Bitrates, allowOvershoot bool, minTemporalLayer int32) (VideoAllocation, bool) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -1522,6 +1602,7 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, available
 	maxLayer := f.vls.GetMax()
 	maxSeenLayer := f.vls.GetMaxSeen()
 	optimalBandwidthNeeded := getOptimalBandwidthNeeded(f.muted, f.pubMuted, maxSeenLayer.Spatial, brs, maxLayer)
+	floor := temporalFloor(minTemporalLayer, maxLayer, maxSeenLayer)
 
 	alreadyAllocated := int64(0)
 	targetLayer := f.vls.GetTarget()
@@ -1536,7 +1617,7 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, available
 		for s := minSpatial; s <= maxSpatial; s++ {
 			for t := minTemporal; t <= maxTemporal; t++ {
 				bandwidthRequested := brs[s][t]
-				if bandwidthRequested == 0 {
+				if bandwidthRequested == 0 || belowTemporalFloor(buffer.VideoLayer{Spatial: s, Temporal: t}, floor) {
 					continue
 				}
 
@@ -1569,6 +1650,15 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, available
 					alloc.IsDeficient = false
 				}
 
+				if floor > 0 {
+					f.logger.Debugw(
+						"camera temporal floor",
+						"floor", floor,
+						"targetLayer", newTargetLayer,
+						"lastTargetLayer", targetLayer,
+						"reason", "next-higher",
+					)
+				}
 				return true, f.updateAllocation(alloc, "next-higher"), true
 			}
 		}
@@ -1613,7 +1703,7 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, available
 	return f.lastAllocation, false
 }
 
-func (f *Forwarder) GetNextHigherTransition(brs Bitrates, allowOvershoot bool) (VideoTransition, bool) {
+func (f *Forwarder) GetNextHigherTransition(brs Bitrates, allowOvershoot bool, minTemporalLayer int32) (VideoTransition, bool) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -1637,6 +1727,9 @@ func (f *Forwarder) GetNextHigherTransition(brs Bitrates, allowOvershoot bool) (
 		alreadyAllocated = brs[targetLayer.Spatial][targetLayer.Temporal]
 	}
 
+	// same camera temporal floor as AllocateNextHigher, so the probe goal is the layer the boost takes
+	floor := temporalFloor(minTemporalLayer, f.vls.GetMax(), f.vls.GetMaxSeen())
+
 	findNextHigher := func(
 		minSpatial, maxSpatial int32,
 		minTemporal, maxTemporal int32,
@@ -1647,7 +1740,7 @@ func (f *Forwarder) GetNextHigherTransition(brs Bitrates, allowOvershoot bool) (
 				// traverse till finding a layer requiring more bits.
 				// NOTE: it possible that higher temporal layer of lower spatial layer
 				//       could use more bits than lower temporal layer of higher spatial layer.
-				if bandwidthRequested == 0 || bandwidthRequested < alreadyAllocated {
+				if bandwidthRequested == 0 || bandwidthRequested < alreadyAllocated || belowTemporalFloor(buffer.VideoLayer{Spatial: s, Temporal: t}, floor) {
 					continue
 				}
 
@@ -1700,6 +1793,17 @@ func (f *Forwarder) GetNextHigherTransition(brs Bitrates, allowOvershoot bool) (
 	}
 
 	return VideoTransition{}, false
+}
+
+// temporalFloor clamps a requested camera temporal floor to the temporal layers the subscriber allows (maxLayer)
+// and the publisher has shown (maxSeenLayer), so it never asks for a temporal layer that cannot be forwarded. 0 = off.
+func temporalFloor(minTemporalLayer int32, maxLayer buffer.VideoLayer, maxSeenLayer buffer.VideoLayer) int32 {
+	return max(0, min(minTemporalLayer, maxLayer.Temporal, maxSeenLayer.Temporal))
+}
+
+// belowTemporalFloor: spatial layers >= 1 need temporal >= floor; spatial layer 0 is never filtered.
+func belowTemporalFloor(layer buffer.VideoLayer, floor int32) bool {
+	return floor > 0 && layer.Spatial >= 1 && layer.Temporal < floor
 }
 
 func (f *Forwarder) Pause(availableLayers []int32, brs Bitrates) VideoAllocation {
