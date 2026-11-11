@@ -74,7 +74,7 @@
         "/(^|/)Dockerfile$/",
         "/(^|/)[^/]*\\.Dockerfile$/"
       ],
-      "matchStrings": ["FROM golang:(?<currentValue>\\d+\\.\\d+\\.\\d+-alpine\\d+\\.\\d+)@(?<currentDigest>sha256:[0-9a-f]+)"],
+      "matchStrings": ["FROM (?:--platform=\\S+\\s+)?golang:(?<currentValue>\\d+\\.\\d+\\.\\d+-alpine\\d+\\.\\d+)@(?<currentDigest>sha256:[0-9a-f]+)"],
       "datasourceTemplate": "docker",
       "depNameTemplate": "golang",
       "versioningTemplate": "regex:^(?<compatibility>\\d+\\.\\d+\\.\\d+)-alpine(?<major>\\d+)\\.(?<minor>\\d+)$"
