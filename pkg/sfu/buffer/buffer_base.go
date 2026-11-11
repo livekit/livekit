@@ -1121,7 +1121,12 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 	ep.Temporal = 0
 	var videoSize []codec.VideoSize
 	if b.ddParser != nil {
+		restartGeneration := b.ddParser.restartGeneration
 		ddVal, videoLayer, err := b.ddParser.Parse(ep.Packet)
+		if b.ddParser.restartGeneration != restartGeneration {
+			// the restart dropped the structure, so later packets cannot be parsed until a key frame
+			b.StartKeyFrameSeeder()
+		}
 		if err != nil {
 			if errors.Is(err, ErrDDExtentionNotFound) {
 				if b.mime == mime.MimeTypeVP8 || b.mime == mime.MimeTypeVP9 {
