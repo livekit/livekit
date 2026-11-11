@@ -33,6 +33,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
+	"github.com/pion/transport/v5/packetio"
 	"github.com/pion/webrtc/v4"
 	"github.com/thoas/go-funk"
 	"go.uber.org/atomic"
@@ -66,6 +67,7 @@ type RTCClient struct {
 	enabledCodecs           []*livekit.Codec
 	forceRelay              bool
 	enableFlexFEC           bool
+	subscriberRTPFilter     func(pkt *rtp.Packet) bool
 	transportReady          chan struct{}
 	// sid => track
 	localTracks        map[string]webrtc.TrackLocal
@@ -145,6 +147,11 @@ type Options struct {
 	RTCServicePath            string
 	ForceRelay                bool
 	EnableFlexFEC             bool
+	// SubscriberRTPFilter is called with every RTP packet received from the
+	// SFU before it reaches the receive buffer; returning false drops it.
+	// Used to simulate loss. The packet aliases the receive buffer, so clone
+	// anything that is kept.
+	SubscriberRTPFilter func(pkt *rtp.Packet) bool
 }
 
 func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
@@ -281,6 +288,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 		c.signalResponseInterceptor = opts.SignalResponseInterceptor
 		c.forceRelay = opts.ForceRelay
 		c.enableFlexFEC = opts.EnableFlexFEC
+		c.subscriberRTPFilter = opts.SubscriberRTPFilter
 	}
 
 	return c, nil
@@ -298,6 +306,16 @@ func (c *RTCClient) createTransport(rtcconf webrtc.Configuration) error {
 	conf.SettingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleClient)
 	ff := buffer.NewFactoryOfBufferFactory(500, 200)
 	conf.SetBufferFactory(ff.CreateBufferFactory())
+	if filter := c.subscriberRTPFilter; filter != nil {
+		getOrNew := conf.SettingEngine.BufferFactory
+		conf.SettingEngine.BufferFactory = func(kind packetio.BufferPacketType, ssrc uint32) io.ReadWriteCloser {
+			rw := getOrNew(kind, ssrc)
+			if kind != packetio.RTPBufferPacket {
+				return rw
+			}
+			return &filteredRTPWriter{ReadWriteCloser: rw, filter: filter}
+		}
+	}
 
 	if c.enableFlexFEC {
 		fecConfig := rtc.FlexFECDirectionConfig{
@@ -1133,6 +1151,24 @@ func (c *RTCClient) GetPublishedTrackIDs() []string {
 	return trackIDs
 }
 
+// SubscriberRemoteDescription returns the SDP the SFU last sent for the
+// subscriber connection.
+func (c *RTCClient) SubscriberRemoteDescription() *webrtc.SessionDescription {
+	if c.subscriber == nil {
+		return nil
+	}
+	return c.subscriber.CurrentRemoteDescription()
+}
+
+// SubscriberLocalDescription returns the SDP this client last sent for the
+// subscriber connection, i.e. what it negotiated.
+func (c *RTCClient) SubscriberLocalDescription() *webrtc.SessionDescription {
+	if c.subscriber == nil {
+		return nil
+	}
+	return c.subscriber.CurrentLocalDescription()
+}
+
 // LastAnswer return SDP of the last answer for the publisher connection
 func (c *RTCClient) LastAnswer() *webrtc.SessionDescription {
 	return c.publisher.CurrentRemoteDescription()
@@ -1454,4 +1490,19 @@ func createNegotiatedDataChannels(t *rtc.PCTransport) error {
 		Negotiated:     &negotiated,
 		ID:             &dataTrackID,
 	})
+}
+
+// filteredRTPWriter drops RTP packets rejected by filter before they reach
+// the wrapped receive buffer.
+type filteredRTPWriter struct {
+	io.ReadWriteCloser
+	filter func(pkt *rtp.Packet) bool
+}
+
+func (w *filteredRTPWriter) Write(raw []byte) (int, error) {
+	var pkt rtp.Packet
+	if err := pkt.Unmarshal(raw); err == nil && !w.filter(&pkt) {
+		return len(raw), nil
+	}
+	return w.ReadWriteCloser.Write(raw)
 }
