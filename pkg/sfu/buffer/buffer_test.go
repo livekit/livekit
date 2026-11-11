@@ -237,6 +237,27 @@ func TestNackOnRTX(t *testing.T) {
 	require.Equal(t, []uint16{1}, nacked)
 }
 
+func TestVP9EmptyFramePayload(t *testing.T) {
+	vp9Codec := webrtc.RTPCodecParameters{
+		RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: "video/vp9", ClockRate: 90000},
+		PayloadType:        98,
+	}
+	buff := NewBuffer(123, 1, 1)
+	buff.codecType = webrtc.RTPCodecTypeVideo
+	require.NoError(t, buff.Bind(webrtc.RTPParameters{
+		Codecs: []webrtc.RTPCodecParameters{vp9Codec},
+	}, vp9Codec.RTPCodecCapability, 0))
+
+	// B bit set and no VP9 frame bytes, which parses to an empty VP9 payload
+	pkt := rtp.Packet{
+		Header:  rtp.Header{Version: 2, PayloadType: 98, SequenceNumber: 1, Timestamp: 1, SSRC: 123},
+		Payload: []byte{0x08},
+	}
+	b, err := pkt.Marshal()
+	require.NoError(t, err)
+	require.NotPanics(t, func() { _, _ = buff.Write(b) })
+}
+
 func TestNewBuffer(t *testing.T) {
 	tests := []struct {
 		name string

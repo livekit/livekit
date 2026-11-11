@@ -445,7 +445,7 @@ func (r *RoomManager) StartSession(
 	rtcConf := *r.rtcConfig
 	rtcConf.SetBufferFactory(room.GetBufferFactory())
 	if pi.DisableICELite {
-		rtcConf.SettingEngine.SetLite(false)
+		rtcConf.DisableICELite()
 	}
 	rtcConf.UpdatePublisherConfig(pi.UseSinglePeerConnection)
 

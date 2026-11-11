@@ -30,7 +30,7 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/sdp/v3"
-	"github.com/pion/transport/v4/packetio"
+	"github.com/pion/transport/v5/packetio"
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
 	"go.uber.org/zap/zapcore"
@@ -233,6 +233,7 @@ type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
 type DownTrackParams struct {
 	Codecs                         []webrtc.RTPCodecParameters
+	BindableCodecs                 []webrtc.RTPCodecParameters // subset of Codecs that Bind can pick, all of Codecs if empty
 	IsEncrypted                    bool
 	Source                         livekit.TrackSource
 	Receiver                       TrackReceiver
@@ -465,27 +466,12 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	// so keep a copy of the codec parameters here to use it later
 	d.negotiatedCodecParameters = append([]webrtc.RTPCodecParameters{}, t.CodecParameters()...)
 	var codec, matchedUpstreamCodec webrtc.RTPCodecParameters
-	for _, c := range d.upstreamCodecs {
+	for _, c := range d.BindableCodecs() {
 		matchCodec, err := utils.CodecParametersFuzzySearch(c, d.negotiatedCodecParameters)
 		if err == nil {
 			codec = matchCodec
 			matchedUpstreamCodec = c
 			break
-		} else {
-			// for encrypyted tracks, should match on primary codec,
-			// i. e. codec at index 0 if the combination of upstream codecs is opus and RED
-			if d.params.IsEncrypted {
-				isRedAndOpus := true
-				for _, u := range d.upstreamCodecs {
-					if !mime.IsMimeTypeStringOpus(u.MimeType) || !mime.IsMimeTypeStringRED(u.MimeType) {
-						isRedAndOpus = false
-						break
-					}
-				}
-				if isRedAndOpus {
-					break
-				}
-			}
 		}
 	}
 
@@ -775,6 +761,14 @@ func (d *DownTrack) ID() string { return string(d.id) }
 // Codec returns current track codec capability
 func (d *DownTrack) Codec() webrtc.RTPCodecCapability {
 	return d.codec.Load().(webrtc.RTPCodecCapability)
+}
+
+// BindableCodecs returns the upstream codecs Bind can pick, in preference order
+func (d *DownTrack) BindableCodecs() []webrtc.RTPCodecParameters {
+	if len(d.params.BindableCodecs) != 0 {
+		return d.params.BindableCodecs
+	}
+	return d.upstreamCodecs
 }
 
 func (d *DownTrack) Mime() mime.MimeType {
@@ -1084,7 +1078,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 
 	trailerStripped := 0
 	if d.params.StripPacketTrailer {
-		if trailerStripped = packettrailer.StripTrailer(payload, tp.marker || tp.isEndOfLayerFrame); trailerStripped > 0 {
+		if trailerStripped = packettrailer.StripTrailer(payload, d.Mime(), tp.marker || tp.isEndOfLayerFrame); trailerStripped > 0 {
 			payload = payload[:len(payload)-trailerStripped]
 		}
 	}
@@ -2352,6 +2346,12 @@ func (d *DownTrack) retransmitPacket(epm *extPacketMeta, sourcePkt []byte, isPro
 		if int(epm.trailerStripped) > len(payload)-rtxOffset {
 			d.params.Logger.Warnw(
 				"recorded packet trailer size overflows payload", errPayloadOverflow,
+				"trailerStripped", epm.trailerStripped,
+				"payloadSize", len(payload)-rtxOffset,
+			)
+		} else if !packettrailer.ShrinkLastAggregatedNALU(payload[rtxOffset:], d.Mime(), int(epm.trailerStripped)) {
+			d.params.Logger.Warnw(
+				"could not shrink aggregated NAL unit for packet trailer", nil,
 				"trailerStripped", epm.trailerStripped,
 				"payloadSize", len(payload)-rtxOffset,
 			)

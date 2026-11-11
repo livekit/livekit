@@ -137,6 +137,7 @@ func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) 
 	stripPacketTrailer := params.MediaTrack.HasPacketTrailer() && !subSupportsPacketTrailer
 	downTrack, err := sfu.NewDownTrack(sfu.DownTrackParams{
 		Codecs:             codecs,
+		BindableCodecs:     params.WrappedReceiver.BindableCodecs(),
 		IsEncrypted:        isEncrypted,
 		Source:             params.MediaTrack.Source(),
 		Receiver:           params.WrappedReceiver,
@@ -349,6 +350,8 @@ func (t *SubscribedTrack) applySettings() {
 
 	t.settingsVersion = t.versionGenerator.Next()
 	settingsVersion := t.settingsVersion
+	// settings is replaced, never mutated, so the snapshot can be read without the lock
+	settings := t.settings
 	t.settingsLock.Unlock()
 
 	dt := t.DownTrack()
@@ -356,15 +359,15 @@ func (t *SubscribedTrack) applySettings() {
 	temporal := buffer.InvalidLayerTemporal
 	if dt.Kind() == webrtc.RTPCodecTypeVideo {
 		mt := t.MediaTrack()
-		quality := t.settings.Quality
+		quality := settings.Quality
 		mimeType := dt.Mime()
-		if t.settings.Width > 0 {
-			quality = mt.GetQualityForDimension(mimeType, t.settings.Width, t.settings.Height)
+		if settings.Width > 0 {
+			quality = mt.GetQualityForDimension(mimeType, settings.Width, settings.Height)
 		}
 
 		spatial = buffer.GetSpatialLayerForVideoQuality(mimeType, quality, mt.ToProto())
-		if t.settings.Fps > 0 {
-			temporal = mt.GetTemporalLayerForSpatialFps(mimeType, spatial, t.settings.Fps)
+		if settings.Fps > 0 {
+			temporal = mt.GetTemporalLayerForSpatialFps(mimeType, spatial, settings.Fps)
 		}
 	}
 

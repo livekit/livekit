@@ -890,3 +890,22 @@ func TestNormalizeVideoLayersRid(t *testing.T) {
 		})
 	}
 }
+
+func TestLayerPresenceFromTrackInfoOutOfRangeQuality(t *testing.T) {
+	trackInfo := &livekit.TrackInfo{
+		Codecs: []*livekit.SimulcastCodecInfo{
+			{
+				MimeType: mime.MimeTypeVP8.String(),
+				Layers: []*livekit.VideoLayer{
+					{Quality: livekit.VideoQuality(-1)},
+					{Quality: livekit.VideoQuality_LOW},
+				},
+			},
+		},
+	}
+	lp := LayerPresenceFromTrackInfo(mime.MimeTypeVP8, trackInfo)
+	require.NotNil(t, lp)
+	require.True(t, lp[livekit.VideoQuality_LOW])
+	require.False(t, lp[livekit.VideoQuality_MEDIUM])
+	require.False(t, lp[livekit.VideoQuality_HIGH])
+}

@@ -819,6 +819,11 @@ func (f *Forwarder) getRefLayer() (int32, int32) {
 }
 
 func (f *Forwarder) SetRefSenderReport(layer int32, srData *livekit.RTCPSenderReportState) {
+	// a stream restart can clear the publisher report between the report callback and this read
+	if srData == nil {
+		return
+	}
+
 	f.lock.Lock()
 	defer f.lock.Unlock()
 

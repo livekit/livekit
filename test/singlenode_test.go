@@ -29,7 +29,7 @@ import (
 
 	"github.com/jxskiss/base62"
 	"github.com/pion/sdp/v3"
-	"github.com/pion/stun/v3"
+	"github.com/pion/stun/v4"
 	"github.com/pion/turn/v5"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
@@ -864,6 +864,7 @@ func TestSingleNodeAttributes(t *testing.T) {
 				if pubRemote == nil {
 					return "could not find remote publisher"
 				}
+				// the server-set join request time is not sent to clients
 				attrs := pubRemote.Attributes
 				if !reflect.DeepEqual(attrs, map[string]string{
 					"a": "0",
@@ -1518,12 +1519,10 @@ func TestTurnAuthFailure(t *testing.T) {
 			_, allocErr := client.Allocate()
 			require.Error(t, allocErr)
 
-			// pion's TURN server replies with 400 Bad Request for any
-			// authenticated-allocate failure (unknown user or integrity check
-			// mismatch); the initial unauthenticated probe is what returns 401.
+			// pion's TURN server replies with 401 Unauthorized for any authenticated-allocate failure (unknown user or integrity mismatch)
 			var turnErr *stun.TurnError
 			require.ErrorAs(t, allocErr, &turnErr)
-			require.Equal(t, stun.CodeBadRequest, turnErr.ErrorCodeAttr.Code)
+			require.Equal(t, stun.CodeUnauthorized, turnErr.ErrorCodeAttr.Code)
 		})
 	}
 }

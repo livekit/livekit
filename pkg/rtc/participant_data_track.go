@@ -25,6 +25,10 @@ import (
 	"github.com/livekit/protocol/utils/guid"
 )
 
+func isValidDataTrackHandle(h uint32) bool {
+	return h > 0 && h <= 65535
+}
+
 func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishDataTrackRequest) {
 	if !p.CanPublishData() || !p.params.EnableDataTracks {
 		p.pubLogger.Warnw("no permission to publish data track", nil, "req", logger.Proto(req))
@@ -38,7 +42,7 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 		return
 	}
 
-	if req.PubHandle == 0 || req.PubHandle > 65535 {
+	if !isValidDataTrackHandle(req.PubHandle) {
 		p.pubLogger.Warnw("invalid data track handle", nil, "req", logger.Proto(req))
 		p.sendRequestResponse(&livekit.RequestResponse{
 			Reason:  livekit.RequestResponse_INVALID_HANDLE,
@@ -139,6 +143,18 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 }
 
 func (p *ParticipantImpl) HandleUnpublishDataTrackRequest(req *livekit.UnpublishDataTrackRequest) {
+	if !isValidDataTrackHandle(req.PubHandle) {
+		p.pubLogger.Warnw("invalid data track handle", nil, "req", logger.Proto(req))
+		p.sendRequestResponse(&livekit.RequestResponse{
+			Reason:  livekit.RequestResponse_INVALID_HANDLE,
+			Message: "handle should be > 0 AND < 65536",
+			Request: &livekit.RequestResponse_UnpublishDataTrack{
+				UnpublishDataTrack: proto.CloneOf(req),
+			},
+		})
+		return
+	}
+
 	dt := p.UpDataTrackManager.GetPublishedDataTrack(uint16(req.PubHandle))
 	if dt == nil {
 		p.pubLogger.Warnw("unpublish data track not found", nil, "req", logger.Proto(req))

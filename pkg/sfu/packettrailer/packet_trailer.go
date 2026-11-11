@@ -14,12 +14,21 @@
 
 package packettrailer
 
+import (
+	"encoding/binary"
+
+	"github.com/livekit/protocol/codecs/mime"
+)
+
 var Magic = [4]byte{'L', 'K', 'T', 'S'}
 
 const (
 	xorByte = 0xFF
 
 	envelopeSize = 5 // 1B trailer_len + 4B magic
+
+	h264STAPA = 0x18
+	h265AP    = 0x30
 )
 
 // StripTrailer returns the number of bytes to strip from the end of an RTP
@@ -28,7 +37,11 @@ const (
 // immediately before it. isEndOfFrame must be set only for packets ending an
 // encoded frame, i. e. where a trailer could have been appended. Returns 0 if
 // absent or ineligible.
-func StripTrailer(payload []byte, isEndOfFrame bool) int {
+//
+// The trailer is appended to the encoded frame before packetization, so in an
+// aggregation packet it is counted in the size of the last NAL unit. That size
+// is reduced in place, see ShrinkLastAggregatedNALU.
+func StripTrailer(payload []byte, mimeType mime.MimeType, isEndOfFrame bool) int {
 	if !isEndOfFrame || len(payload) < envelopeSize {
 		return 0
 	}
@@ -44,5 +57,40 @@ func StripTrailer(payload []byte, isEndOfFrame bool) int {
 		return 0
 	}
 
+	if !ShrinkLastAggregatedNALU(payload, mimeType, trailerLen) {
+		return 0
+	}
+
 	return trailerLen
+}
+
+// ShrinkLastAggregatedNALU reduces, in place, the size field of the last NAL
+// unit in an H.264 STAP-A or H.265 aggregation packet by n bytes, so that the
+// packet stays well formed once n bytes are cut from its end. Other payloads
+// are left untouched. Returns false if the payload is an aggregation packet
+// whose last NAL unit does not end the payload or is not longer than n.
+func ShrinkLastAggregatedNALU(payload []byte, mimeType mime.MimeType, n int) bool {
+	var offset int
+	switch {
+	case mimeType == mime.MimeTypeH264 && len(payload) >= 1 && payload[0]&0x1F == h264STAPA:
+		offset = 1
+	case mimeType == mime.MimeTypeH265 && len(payload) >= 2 && (payload[0]>>1)&0x3F == h265AP:
+		offset = 2
+	default:
+		return true
+	}
+
+	for offset+2 <= len(payload) {
+		size := int(binary.BigEndian.Uint16(payload[offset:]))
+		end := offset + 2 + size
+		if end == len(payload) {
+			if size <= n {
+				return false
+			}
+			binary.BigEndian.PutUint16(payload[offset:], uint16(size-n))
+			return true
+		}
+		offset = end
+	}
+	return false
 }

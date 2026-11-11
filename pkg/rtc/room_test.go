@@ -16,6 +16,9 @@ package rtc
 
 import (
 	"fmt"
+	"runtime"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -773,6 +776,53 @@ func TestDataChannel(t *testing.T) {
 		}
 	})
 
+	t.Run("unlabeled broadcast without source", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
+		defer rm.Close(types.RoomCloseReasonUnknown)
+
+		BroadcastDataMessageForRoom(rm, nil, []byte("relayed"), rm.logger)
+
+		for _, op := range rm.GetParticipants() {
+			fp := op.(*typesfakes.FakeLocalParticipant)
+			require.Equal(t, 1, fp.SendDataMessageUnlabeledCallCount())
+			got, _, sender := fp.SendDataMessageUnlabeledArgsForCall(0)
+			require.Equal(t, []byte("relayed"), got)
+			require.Empty(t, sender)
+		}
+	})
+
+	t.Run("unlabeled broadcast from a remote identity", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
+		defer rm.Close(types.RoomCloseReasonUnknown)
+
+		BroadcastDataMessageForRoomFrom(rm, "", "remote", []byte("relayed"), rm.logger)
+
+		for _, op := range rm.GetParticipants() {
+			fp := op.(*typesfakes.FakeLocalParticipant)
+			require.Equal(t, 1, fp.SendDataMessageUnlabeledCallCount())
+			got, _, sender := fp.SendDataMessageUnlabeledArgsForCall(0)
+			require.Equal(t, []byte("relayed"), got)
+			require.Equal(t, livekit.ParticipantIdentity("remote"), sender)
+		}
+	})
+
+	t.Run("unlabeled broadcast from a local id skips the source", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
+		defer rm.Close(types.RoomCloseReasonUnknown)
+
+		participants := rm.GetParticipants()
+		p := participants[0].(*typesfakes.FakeLocalParticipant)
+		BroadcastDataMessageForRoomFrom(rm, p.ID(), p.Identity(), []byte("local"), rm.logger)
+
+		require.Zero(t, p.SendDataMessageUnlabeledCallCount())
+		for _, op := range participants[1:] {
+			fp := op.(*typesfakes.FakeLocalParticipant)
+			require.Equal(t, 1, fp.SendDataMessageUnlabeledCallCount())
+			_, _, sender := fp.SendDataMessageUnlabeledArgsForCall(0)
+			require.Equal(t, p.Identity(), sender)
+		}
+	})
+
 	t.Run("publishing disallowed", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
 		defer rm.Close(types.RoomCloseReasonUnknown)
@@ -920,4 +970,63 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
 		})
 	}
 	return rm
+}
+
+const parkedReaderDeadline = 5 * time.Second
+
+// a reader parked in RLock has wait reason RWMutex.RLock in its runtime.Stack header, also
+// under CI's deadlock wrapper; the match omits the package so CI's rewrite cannot edit it
+func waitForParkedReader(t *testing.T, frame string) {
+	deadline := time.Now().Add(parkedReaderDeadline)
+	buf := make([]byte, 1<<20)
+	for {
+		n := runtime.Stack(buf, true)
+		for n == len(buf) {
+			buf = make([]byte, 2*len(buf))
+			n = runtime.Stack(buf, true)
+		}
+		for _, g := range strings.Split(string(buf[:n]), "\n\n") {
+			header, _, _ := strings.Cut(g, "\n")
+			if strings.Contains(header, "RWMutex.RLock]") && strings.Contains(g, frame) {
+				return
+			}
+		}
+		require.Less(t, time.Now(), deadline, "no goroutine parked in RLock under %s", frame)
+		runtime.Gosched()
+	}
+}
+
+func TestSyncStateWhileTrackMovesToPublished(t *testing.T) {
+	const cid = "C"
+	p := newParticipantForTest("test")
+	p.AddTrack(&livekit.AddTrackRequest{Cid: cid, Name: "mic", Type: livekit.TrackType_AUDIO})
+	sid := p.pendingTracks[cid].trackInfos[0].Sid
+
+	// the mover takes pendingTracksLock, then parks in AddPublishedTrack on the lock held here
+	p.UpTrackManager.lock.Lock()
+	release := sync.OnceFunc(p.UpTrackManager.lock.Unlock)
+	defer release()
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		p.pendingTracksLock.Lock()
+		defer p.pendingTracksLock.Unlock()
+		signalCid, ti, _, _, _ := p.getPendingTrack(cid, livekit.TrackType_AUDIO, true)
+		p.addMediaTrack(signalCid, ti)
+	})
+	deadline := time.Now().Add(parkedReaderDeadline)
+	for p.pendingTracksLock.RWMutex.TryRLock() {
+		p.pendingTracksLock.RWMutex.RUnlock()
+		require.Less(t, time.Now(), deadline, "move never took pendingTracksLock")
+		runtime.Gosched()
+	}
+
+	wg.Go(func() {
+		(&Room{}).onSyncState(p, &livekit.SyncState{
+			PublishTracks: []*livekit.TrackPublishedResponse{{Track: &livekit.TrackInfo{Sid: sid}}},
+		})
+	})
+	waitForParkedReader(t, "(*Room).onSyncState")
+	release()
+	wg.Wait()
+	require.False(t, p.IsClosed(), "resume forced a full reconnect for a track that moved to published")
 }

@@ -36,7 +36,7 @@ import (
 
 	"github.com/pion/rtp"
 	"github.com/pion/sdp/v3"
-	"github.com/pion/transport/v4/vnet"
+	"github.com/pion/transport/v5/vnet"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 

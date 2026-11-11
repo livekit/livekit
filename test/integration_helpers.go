@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pion/transport/v4/vnet"
+	"github.com/pion/transport/v5/vnet"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 	"github.com/twitchtv/twirp"

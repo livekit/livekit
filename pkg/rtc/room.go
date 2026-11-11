@@ -625,9 +625,7 @@ func (r *Room) onSyncState(participant types.LocalParticipant, state *livekit.Sy
 	pLogger.Infow("setting sync state", "state", logger.Proto(state))
 
 	shouldReconnect := false
-	pubTracks := state.GetPublishTracks()
-	existingPubTracks := participant.GetPublishedTracks()
-	for _, pubTrack := range pubTracks {
+	for _, pubTrack := range state.GetPublishTracks() {
 		// client may not have sent TrackInfo for each published track
 		ti := pubTrack.Track
 		if ti == nil {
@@ -636,18 +634,10 @@ func (r *Room) onSyncState(participant types.LocalParticipant, state *livekit.Sy
 			break
 		}
 
-		found := false
-		for _, existingPubTrack := range existingPubTracks {
-			if existingPubTrack.ID() == livekit.TrackID(ti.Sid) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			// is there a pending track?
-			found = participant.GetPendingTrack(livekit.TrackID(ti.Sid)) != nil
-		}
-		if !found {
+		// pending first cannot miss a track moving to published; one published then closed in between reads as unknown,
+		// which is fine since signals are handled sequentially per participant, so only participant close can do that
+		trackID := livekit.TrackID(ti.Sid)
+		if participant.GetPendingTrack(trackID) == nil && participant.GetPublishedTrack(trackID) == nil {
 			pLogger.Warnw("unknown track during resume", nil, "trackID", ti.Sid)
 			shouldReconnect = true
 			break
@@ -2180,12 +2170,32 @@ func BroadcastDataPacketForRoom(
 }
 
 func BroadcastDataMessageForRoom(r types.Room, source types.LocalParticipant, data []byte, logger logger.Logger) {
+	// source is nil for data relayed from a remote node
+	var sourceID livekit.ParticipantID
+	var sourceIdentity livekit.ParticipantIdentity
+	if source != nil {
+		sourceID = source.ID()
+		sourceIdentity = source.Identity()
+	}
+
+	BroadcastDataMessageForRoomFrom(r, sourceID, sourceIdentity, data, logger)
+}
+
+// BroadcastDataMessageForRoomFrom sends an unlabeled data message to every local participant, stamping
+// sourceIdentity as the sender and skipping the local participant with sourceID, if there is one.
+func BroadcastDataMessageForRoomFrom(
+	r types.Room,
+	sourceID livekit.ParticipantID,
+	sourceIdentity livekit.ParticipantIdentity,
+	data []byte,
+	logger logger.Logger,
+) {
 	utils.ParallelExec(r.GetLocalParticipants(), dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
-		if source != nil && op.ID() == source.ID() {
+		if sourceID != "" && op.ID() == sourceID {
 			return
 		}
 
-		op.SendDataMessageUnlabeled(data, false, source.Identity())
+		op.SendDataMessageUnlabeled(data, false, sourceIdentity)
 	})
 }
 

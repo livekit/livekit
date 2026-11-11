@@ -376,13 +376,9 @@ func (t *TransportManager) SendDataMessage(kind livekit.DataPacket_Kind, data []
 	return t.handleSendDataResult(t.getTransport(true).SendDataMessage(kind, data), kind.String(), len(data))
 }
 
-func (t *TransportManager) SendDataMessageUnlabeled(data []byte, useRaw bool, sender livekit.ParticipantIdentity) error {
+func (t *TransportManager) SendDataMessageUnlabeled(data []byte) error {
 	// downstream data is sent via primary peer connection
-	return t.handleSendDataResult(
-		t.getTransport(true).SendDataMessageUnlabeled(data, useRaw, sender),
-		"unlabeled",
-		len(data),
-	)
+	return t.handleSendDataResult(t.getTransport(true).SendDataMessageUnlabeled(data), "unlabeled", len(data))
 }
 
 func (t *TransportManager) handleSendDataResult(err error, kind string, size int) error {
@@ -542,7 +538,7 @@ func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels [
 }
 
 func (t *TransportManager) GetUnmatchMediaForOffer(parsedOffer *sdp.SessionDescription, mediaType string) (unmatched []*sdp.MediaDescription, err error) {
-	var lastMatchedMid string
+	matchedMids := make(map[string]struct{})
 	if lastAnswer := t.publisher.CurrentLocalDescription(); lastAnswer != nil {
 		parsedAnswer, err1 := lastAnswer.Unmarshal()
 		if err1 != nil {
@@ -551,22 +547,20 @@ func (t *TransportManager) GetUnmatchMediaForOffer(parsedOffer *sdp.SessionDescr
 			return unmatched, err1
 		}
 
-		for i := len(parsedAnswer.MediaDescriptions) - 1; i >= 0; i-- {
-			media := parsedAnswer.MediaDescriptions[i]
-			if media.MediaName.Media == mediaType {
-				lastMatchedMid, _ = media.Attribute(sdp.AttrKeyMID)
-				break
+		for _, media := range parsedAnswer.MediaDescriptions {
+			if mid, ok := media.Attribute(sdp.AttrKeyMID); ok {
+				matchedMids[mid] = struct{}{}
 			}
 		}
 	}
 
 	for i := len(parsedOffer.MediaDescriptions) - 1; i >= 0; i-- {
 		media := parsedOffer.MediaDescriptions[i]
-		if media.MediaName.Media == mediaType {
-			mid, _ := media.Attribute(sdp.AttrKeyMID)
-			if mid == lastMatchedMid {
-				break
-			}
+		if media.MediaName.Media != mediaType {
+			continue
+		}
+		mid, _ := media.Attribute(sdp.AttrKeyMID)
+		if _, ok := matchedMids[mid]; !ok {
 			unmatched = append(unmatched, media)
 		}
 	}

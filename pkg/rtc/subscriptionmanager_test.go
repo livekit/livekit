@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
@@ -669,6 +670,38 @@ func TestSubscriptionLimits(t *testing.T) {
 	require.Equal(t, 3, tl.OnTrackSubscribeRequestedCallCount())
 	require.Equal(t, 2, tl.OnTrackSubscribeFailedCallCount())
 	require.Len(t, sm.GetSubscribedTracks(), 1)
+}
+
+func TestFailTrackBind(t *testing.T) {
+	sm := newTestSubscriptionManager()
+	defer sm.Close(false)
+	resolver := newTestResolver(true, true, "pub", "pubID")
+	sm.params.TrackResolver = resolver.Resolve
+	var subErr atomic.Error
+	sm.params.OnSubscriptionError = func(trackID livekit.TrackID, fatal bool, err error) {
+		subErr.Store(err)
+	}
+
+	sm.SubscribeToTrack("track", false)
+	s := sm.subscriptions["track"]
+	require.Eventually(t, func() bool {
+		return s.getSubscribedTrack() != nil
+	}, subSettleTimeout, subCheckInterval, "track was not subscribed")
+
+	sm.FailTrackBind("track", webrtc.ErrUnsupportedCodec)
+
+	tl := sm.params.Participant.GetTelemetryListener().(*typesfakes.FakeParticipantTelemetryListener)
+	require.Equal(t, 1, tl.OnTrackSubscribeFailedCallCount())
+	_, trackID, err, isUserError := tl.OnTrackSubscribeFailedArgsForCall(0)
+	require.Equal(t, livekit.TrackID("track"), trackID)
+	require.ErrorIs(t, err, webrtc.ErrUnsupportedCodec)
+	require.True(t, isUserError)
+	require.ErrorIs(t, subErr.Load(), webrtc.ErrUnsupportedCodec)
+	require.False(t, s.isDesired())
+
+	// an unknown track is ignored
+	sm.FailTrackBind("unknown", webrtc.ErrUnsupportedCodec)
+	require.Equal(t, 1, tl.OnTrackSubscribeFailedCallCount())
 }
 
 func TestSubscribeDataTrack(t *testing.T) {

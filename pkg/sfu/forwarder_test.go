@@ -97,6 +97,17 @@ func TestForwarderLayersAudio(t *testing.T) {
 	require.Equal(t, buffer.InvalidLayer, f.MaxLayer())
 }
 
+func TestForwarderSetRefSenderReportNil(t *testing.T) {
+	f := newForwarder(testutils.TestOpusCodec, webrtc.RTPCodecTypeAudio)
+	f.lastSSRC = 1234 // makes layer 0 the reference layer
+
+	sr := &livekit.RTCPSenderReportState{RtpTimestamp: 1000, RtpTimestampExt: 1000}
+	f.SetRefSenderReport(0, sr)
+
+	require.NotPanics(t, func() { f.SetRefSenderReport(0, nil) })
+	require.Equal(t, sr, f.refInfos[0].senderReport)
+}
+
 func TestForwarderLayersVideo(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 

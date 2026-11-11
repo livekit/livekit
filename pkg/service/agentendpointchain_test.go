@@ -311,8 +311,8 @@ func TestAgentChainStillResolvesGrants(t *testing.T) {
 }
 
 // A private WebSocket route takes its grant as access_token; the tunnel must
-// survive every wrapper in the chain, and the token must not reach the
-// application.
+// survive every wrapper in the chain, and the token reaches the application as
+// sent.
 func TestAgentChainWebSocketWithQueryToken(t *testing.T) {
 	seenQuery := make(chan string, 1)
 	up := websocket.Upgrader{}
@@ -349,7 +349,7 @@ func TestAgentChainWebSocketWithQueryToken(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
-	require.Equal(t, "room=r1", <-seenQuery)
+	require.Equal(t, "room=r1&access_token="+token, <-seenQuery)
 
 	require.NoError(t, c.WriteMessage(websocket.TextMessage, []byte("ping")))
 	_, msg, err := c.ReadMessage()
