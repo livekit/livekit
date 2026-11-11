@@ -25,6 +25,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/protocol/agent"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -96,6 +97,9 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		}
 		if !s.limitConf.CheckAttributesSize(ad.Attributes) {
 			return nil, twirp.InvalidArgumentError(ErrAttributeExceedsLimits.Error(), strconv.Itoa(int(s.limitConf.MaxAttributesSize)))
+		}
+		if err := agent.ValidateThreadID(ad.GetThreadId()); err != nil {
+			return nil, twirp.InvalidArgumentError("thread_id", err.Error())
 		}
 	}
 

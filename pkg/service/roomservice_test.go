@@ -27,6 +27,7 @@ import (
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/rpc/rpcfakes"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -191,6 +192,77 @@ func TestAgentDispatchMetadataLimits(t *testing.T) {
 		require.ErrorIs(t, err, service.ErrRoomNameExceedsLimits)
 		require.Zero(t, router.CreateRoomCallCount())
 	})
+}
+
+var invalidThreadIDs = []string{"AT_not-valid", "AT_0123456789ab", "AT_api"}
+
+func requireTwirpInvalidArgument(t *testing.T, err error) {
+	t.Helper()
+	terr, ok := err.(twirp.Error)
+	require.True(t, ok, "expected twirp error, got %T (%v)", err, err)
+	require.Equal(t, twirp.InvalidArgument, terr.Code())
+	require.Equal(t, "thread_id", terr.Meta("argument"))
+}
+
+func TestAgentDispatchThreadID(t *testing.T) {
+	ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{
+		Video: &auth.VideoGrant{Room: "testroom", RoomAdmin: true},
+	}, "")
+	allocator := &servicefakes.FakeRoomAllocator{}
+	allocator.AutoCreateEnabledReturns(false)
+	dispatchClient := &rpcfakes.FakeTypedAgentDispatchInternalClient{}
+	svc := service.NewAgentDispatchService(
+		config.LimitConfig{},
+		dispatchClient,
+		rpc.NewTopicFormatter(),
+		allocator,
+		&routingfakes.FakeRouter{},
+	)
+
+	for _, threadID := range invalidThreadIDs {
+		_, err := svc.CreateDispatch(ctx, &livekit.CreateAgentDispatchRequest{
+			Room:      "testroom",
+			AgentName: "front-desk",
+			ThreadId:  threadID,
+		})
+		requireTwirpInvalidArgument(t, err)
+	}
+	require.Zero(t, dispatchClient.CreateDispatchCallCount())
+
+	threadID := guid.New(guid.AgentThreadPrefix)
+	_, err := svc.CreateDispatch(ctx, &livekit.CreateAgentDispatchRequest{
+		Room:      "testroom",
+		AgentName: "front-desk",
+		ThreadId:  threadID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, dispatchClient.CreateDispatchCallCount())
+	_, _, dispatch, _ := dispatchClient.CreateDispatchArgsForCall(0)
+	require.Equal(t, threadID, dispatch.ThreadId)
+}
+
+func TestCreateRoomAgentThreadID(t *testing.T) {
+	ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{Video: &auth.VideoGrant{RoomCreate: true}}, "")
+	svc := newTestRoomService(config.LimitConfig{})
+
+	for _, threadID := range invalidThreadIDs {
+		_, err := svc.CreateRoom(ctx, &livekit.CreateRoomRequest{
+			Name:   "testroom",
+			Agents: []*livekit.RoomAgentDispatch{{AgentName: "front-desk", ThreadId: threadID}},
+		})
+		requireTwirpInvalidArgument(t, err)
+	}
+	require.Zero(t, svc.router.CreateRoomCallCount())
+
+	threadID := guid.New(guid.AgentThreadPrefix)
+	_, err := svc.CreateRoom(ctx, &livekit.CreateRoomRequest{
+		Name:   "testroom",
+		Agents: []*livekit.RoomAgentDispatch{{AgentName: "front-desk", ThreadId: threadID}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, svc.router.CreateRoomCallCount())
+	_, req := svc.router.CreateRoomArgsForCall(0)
+	require.Equal(t, threadID, req.Agents[0].ThreadId)
 }
 
 func newTestAgentDispatchService(limitConf config.LimitConfig) *service.AgentDispatchService {

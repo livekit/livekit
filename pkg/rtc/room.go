@@ -1789,6 +1789,7 @@ func (r *Room) launchRoomAgents(ads []*agentDispatch) {
 				DispatchId: ad.Id,
 				Deployment: ad.Deployment,
 				Attributes: ad.Attributes,
+				ThreadId:   ad.ThreadId,
 			})
 			r.handleNewJobs(ad.AgentDispatch, inc)
 			done()
@@ -1814,6 +1815,7 @@ func (r *Room) launchTargetAgents(ads []*agentDispatch, p types.Participant, job
 				DispatchId:  ad.Id,
 				Deployment:  ad.Deployment,
 				Attributes:  ad.Attributes,
+				ThreadId:    ad.ThreadId,
 			})
 			r.handleNewJobs(ad.AgentDispatch, inc)
 			done()
@@ -1881,6 +1883,7 @@ func (r *Room) createAgentDispatchFromRoomDispatch(rad *livekit.RoomAgentDispatc
 		RestartPolicy: rad.GetRestartPolicy(),
 		Deployment:    rad.GetDeployment(),
 		Attributes:    rad.GetAttributes(),
+		ThreadId:      rad.GetThreadId(),
 	})
 }
 
