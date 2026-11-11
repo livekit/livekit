@@ -967,7 +967,8 @@ func TestDependencyDescriptorResumeAfterLongPause(t *testing.T) {
 }
 
 // A stream that resumes after a gap without a key frame cannot be parsed once the parser
-// restarts, so the buffer asks the publisher for one.
+// restarts, so the buffer asks the publisher for one. A stream that resumes with a key frame
+// has its structure and needs no request.
 func TestDependencyDescriptorRestartRequestsKeyFrame(t *testing.T) {
 	w := newDDBufferWriter(t)
 	var plis atomic.Int32
@@ -989,6 +990,17 @@ func TestDependencyDescriptorRestartRequestsKeyFrame(t *testing.T) {
 	time.Sleep(1500 * time.Millisecond)
 	plis.Store(0)
 
+	// resume with a key frame, longer than a seeder tick
+	w.pause()
+	fn++
+	ep = w.write(fn, newL1T1Structure(1))
+	require.NotNil(t, ep)
+	require.True(t, ep.DependencyDescriptor.Restarted)
+	ReleaseExtPacket(ep)
+	time.Sleep(1500 * time.Millisecond)
+	require.Zero(t, plis.Load())
+
+	// resume with delta frames
 	w.pause()
 	for range 3 {
 		fn++
