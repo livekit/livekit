@@ -267,6 +267,7 @@ type ParticipantImpl struct {
 
 	state        atomic.Value // livekit.ParticipantInfo_State
 	disconnected chan struct{}
+	closeDone    chan struct{}
 
 	// a migrating in participant resumes on a reconnect response, the client takes it
 	// only as the first message on the resumed signal connection
@@ -387,6 +388,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p := &ParticipantImpl{
 		params:       params,
 		disconnected: make(chan struct{}),
+		closeDone:    make(chan struct{}),
 		pubRTCPQueue: sutils.NewTypedOpsQueue[postRtcpOp](sutils.OpsQueueParams{
 			Name:    "pub-rtcp",
 			MinSize: 64,
@@ -646,6 +648,11 @@ func (p *ParticipantImpl) IsDisconnected() bool {
 
 func (p *ParticipantImpl) Disconnected() <-chan struct{} {
 	return p.disconnected
+}
+
+// CloseDone is closed after Close runs its close callbacks, which a second Close does not wait for
+func (p *ParticipantImpl) CloseDone() <-chan struct{} {
+	return p.closeDone
 }
 
 func (p *ParticipantImpl) IsIdle() bool {
@@ -1647,6 +1654,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	for _, cb := range onClose {
 		cb(p)
 	}
+	close(p.closeDone)
 
 	// Close peer connections without blocking participant Close. If peer connections are gathering candidates
 	// Close will block.

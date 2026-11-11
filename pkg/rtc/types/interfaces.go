@@ -490,6 +490,7 @@ type LocalParticipant interface {
 	IsReady() bool
 	ActiveAt() time.Time
 	Disconnected() <-chan struct{}
+	CloseDone() <-chan struct{}
 	IsConnectionCanceled(closeReason ParticipantCloseReason) bool
 	IsIdle() bool
 	SubscriberAsPrimary() bool

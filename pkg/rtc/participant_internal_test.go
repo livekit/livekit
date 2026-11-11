@@ -627,6 +627,32 @@ func TestDisconnectTiming(t *testing.T) {
 	})
 }
 
+// a second Close returns while the first runs the close callbacks; CloseDone waits for them
+func TestCloseDone(t *testing.T) {
+	p := newParticipantForTest("test")
+	inCallback, release := make(chan struct{}), make(chan struct{})
+	p.AddOnClose("test", func(types.LocalParticipant) {
+		close(inCallback)
+		<-release
+	})
+	go func() { _ = p.Close(false, types.ParticipantCloseReasonClientRequestLeave, false) }()
+	<-inCallback
+
+	require.NoError(t, p.Close(false, types.ParticipantCloseReasonRoomClosed, false))
+	select {
+	case <-p.CloseDone():
+		t.Fatal("close done before its callbacks finished")
+	default:
+	}
+
+	close(release)
+	select {
+	case <-p.CloseDone():
+	case <-time.After(time.Second):
+		t.Fatal("close not done after its callbacks finished")
+	}
+}
+
 func TestCorrectJoinedAt(t *testing.T) {
 	p := newParticipantForTest("test")
 	info := p.ToProto()
