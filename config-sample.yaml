@@ -276,6 +276,10 @@ keys:
 #   urls:
 #     - https://your-host.com/handler
 
+# FK: icap-gateway authenticates Kevlar on /rtc and injects x-account-id.
+# SFU requires x-account-id and that it matches join identity user-{accountId}
+# (agents skipped). Missing/mismatch → 401.
+
 # Signal Relay
 # since v1.4.0, a more reliable, psrpc based signal relay is available
 # this gives us the ability to reliably proxy messages between a signal server and RTC node

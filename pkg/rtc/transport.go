@@ -225,7 +225,9 @@ type PCTransport struct {
 	unlabeledDataChannels   []*datachannel.DataChannelWriter[*webrtc.DataChannel]
 
 	iceFirstStartedAt              time.Time
+	iceFirstNominatedAt            time.Time // first selected/nominated candidate pair (step 6)
 	iceFirstConnectedAt            time.Time
+	iceStepObsRecorded             bool // metrics/logs for first ICE connect recorded once
 	peerConnectionFirstConnectedAt time.Time
 	peerConnectionLastconnectedAt  time.Time
 	tcpICETimer                    *time.Timer
@@ -240,6 +242,7 @@ type PCTransport struct {
 	lastNegotiate      time.Time
 
 	onNegotiationStateChanged func(state transport.NegotiationState)
+	onICEConnected            func()
 
 	rtxInfoExtractorFactory *sfuinterceptor.RTXInfoExtractorFactory
 
@@ -435,6 +438,14 @@ func newPeerConnection(
 		return context.WithTimeout(context.Background(), dtlsHandshakeTimeout)
 	})
 	se.SetICETimeouts(iceDisconnectedTimeout, iceFailedTimeout, iceKeepaliveInterval)
+
+	// pion's controlling selector refuses to nominate a candidate until a per-type
+	// minimum wait elapses (prflx 1s, relay 2s), so that a better path still trickling
+	// in can win. Behind a forced TURN relay there is only ever one viable path, so the
+	// wait is dead time. It lands on the subscriber PeerConnection because the SFU
+	// offers that one and is therefore the controlling agent; the publisher is unaffected.
+	se.SetPrflxAcceptanceMinWait(0)
+	se.SetRelayAcceptanceMinWait(0)
 
 	// if client don't support prflx over relay, we should not expose private address to it, use single external ip as host candidate
 	if !params.ClientInfo.SupportsPrflxOverRelay() && len(params.Config.NAT1To1IPs) > 0 {
@@ -673,6 +684,9 @@ func (t *PCTransport) createPeerConnection() (cc.BandwidthEstimator, error) {
 				"ice reconnected or switched pair",
 				"existingPair", wrappedICECandidatePairLogger{existingPair},
 				"newPair", wrappedICECandidatePairLogger{pair})
+		} else {
+			// First nomination = winning candidate pair selected.
+			t.recordICEPairNominated(pair)
 		}
 		t.selectedPair.Store(pair)
 	})
@@ -697,7 +711,9 @@ func (t *PCTransport) SetSignalingRTT(rtt uint32) {
 
 func (t *PCTransport) setICEStartedAt(at time.Time) {
 	t.lock.Lock()
+	first := false
 	if t.iceFirstStartedAt.IsZero() {
+		first = true
 		t.iceFirstStartedAt = at
 
 		// checklist of ice agent will be cleared on ice failed, get stats before that
@@ -725,9 +741,24 @@ func (t *PCTransport) setICEStartedAt(at time.Time) {
 		}
 	}
 	t.lock.Unlock()
+
+	if first {
+		// SFU ICE agent starts connectivity checks on candidate pairs.
+		t.params.Logger.Infow("ice_check_started",
+			"transport", t.params.Transport.String(),
+		)
+	}
+}
+
+func (t *PCTransport) OnICEConnected(f func()) {
+	t.lock.Lock()
+	t.onICEConnected = f
+	t.lock.Unlock()
 }
 
 func (t *PCTransport) setICEConnectedAt(at time.Time) {
+	var onICEConnected func()
+	recordStepObs := false
 	t.lock.Lock()
 	if t.iceFirstConnectedAt.IsZero() {
 		//
@@ -735,6 +766,11 @@ func (t *PCTransport) setICEConnectedAt(at time.Time) {
 		// This prevents reset of iceFirstConnectedAt if ICE goes `Connected` -> `Disconnected` -> `Connected`.
 		//
 		t.iceFirstConnectedAt = at
+		onICEConnected = t.onICEConnected
+		if !t.iceStepObsRecorded {
+			t.iceStepObsRecorded = true
+			recordStepObs = true
+		}
 
 		// set failure timer for dtls handshake
 		iceDuration := at.Sub(t.iceFirstStartedAt)
@@ -764,6 +800,196 @@ func (t *PCTransport) setICEConnectedAt(at time.Time) {
 	}
 	t.mayFailedICEStats = nil
 	t.lock.Unlock()
+
+	if recordStepObs {
+		t.recordICEConnectedSummary(at)
+	}
+
+	if onICEConnected != nil {
+		onICEConnected()
+	}
+}
+
+// recordICEPairNominated logs the first selected candidate pair (ICE nomination).
+func (t *PCTransport) recordICEPairNominated(pair *webrtc.ICECandidatePair) {
+	now := time.Now()
+	t.lock.Lock()
+	if !t.iceFirstNominatedAt.IsZero() {
+		t.lock.Unlock()
+		return
+	}
+	t.iceFirstNominatedAt = now
+	startedAt := t.iceFirstStartedAt
+	t.lock.Unlock()
+
+	localType, remoteType := icePairCandidateTypes(pair)
+	checkToNominateMs := int64(-1)
+	if !startedAt.IsZero() {
+		checkToNominateMs = now.Sub(startedAt).Milliseconds()
+	}
+
+	t.params.Logger.Infow("ice_pair_nominated",
+		"transport", t.params.Transport.String(),
+		"iceCheckToNominateMs", checkToNominateMs,
+		"localCandidateType", localType,
+		"remoteCandidateType", remoteType,
+		"pair", wrappedICECandidatePairLogger{pair},
+	)
+}
+
+// recordICEConnectedSummary emits ICE check/nominate latency metrics + INFO at ICE Connected.
+func (t *PCTransport) recordICEConnectedSummary(connectedAt time.Time) {
+	t.lock.RLock()
+	startedAt := t.iceFirstStartedAt
+	nominatedAt := t.iceFirstNominatedAt
+	t.lock.RUnlock()
+
+	pair := t.selectedPair.Load()
+	localType, remoteType := icePairCandidateTypes(pair)
+	connType := t.connectionDetails.GetConnectionType().String()
+
+	checkToNominate := time.Duration(-1)
+	nominateToConnected := time.Duration(-1)
+	checkToConnected := time.Duration(-1)
+	if !startedAt.IsZero() {
+		checkToConnected = connectedAt.Sub(startedAt)
+	}
+	if !startedAt.IsZero() && !nominatedAt.IsZero() {
+		checkToNominate = nominatedAt.Sub(startedAt)
+	}
+	if !nominatedAt.IsZero() {
+		nominateToConnected = connectedAt.Sub(nominatedAt)
+	}
+
+	prometheus.RecordICEStepLatencies(
+		t.params.Transport,
+		localType, remoteType, connType,
+		checkToNominate, nominateToConnected, checkToConnected,
+	)
+
+	fields := []any{
+		"transport", t.params.Transport.String(),
+		"iceCheckToNominateMs", durationMsOrNeg(checkToNominate),
+		"iceNominateToConnectedMs", durationMsOrNeg(nominateToConnected),
+		"iceCheckToConnectedMs", durationMsOrNeg(checkToConnected),
+		"localCandidateType", localType,
+		"remoteCandidateType", remoteType,
+		"connectionType", connType,
+		"pair", wrappedICECandidatePairLogger{pair},
+	}
+	if rtt, ok := t.GetRTT(); ok {
+		fields = append(fields, "selectedPairRTTSec", rtt)
+	}
+	if stats, ok := t.selectedPairCheckStats(); ok {
+		fields = append(fields,
+			"pairRequestsSent", stats.RequestsSent,
+			"pairResponsesReceived", stats.ResponsesReceived,
+			"pairRequestsReceived", stats.RequestsReceived,
+			"pairResponsesSent", stats.ResponsesSent,
+			"pairNominated", stats.Nominated,
+			"pairState", string(stats.State),
+		)
+	}
+
+	t.params.Logger.Infow("ice_connected_summary", fields...)
+}
+
+func icePairCandidateTypes(pair *webrtc.ICECandidatePair) (localType, remoteType string) {
+	localType, remoteType = "unknown", "unknown"
+	if pair == nil {
+		return
+	}
+	if pair.Local != nil {
+		localType = pair.Local.Typ.String()
+	}
+	if pair.Remote != nil {
+		remoteType = pair.Remote.Typ.String()
+	}
+	return
+}
+
+func durationMsOrNeg(d time.Duration) int64 {
+	if d < 0 {
+		return -1
+	}
+	return d.Milliseconds()
+}
+
+// selectedPairCheckStats returns ICE candidate-pair stats for a nominated (or succeeded) pair.
+func (t *PCTransport) selectedPairCheckStats() (webrtc.ICECandidatePairStats, bool) {
+	if t.pc == nil {
+		return webrtc.ICECandidatePairStats{}, false
+	}
+	var succeeded webrtc.ICECandidatePairStats
+	foundSucceeded := false
+	for _, s := range t.pc.GetStats() {
+		ps, ok := s.(webrtc.ICECandidatePairStats)
+		if !ok {
+			continue
+		}
+		if ps.Nominated {
+			return ps, true
+		}
+		if !foundSucceeded && ps.State == webrtc.StatsICECandidatePairStateSucceeded {
+			succeeded = ps
+			foundSucceeded = true
+		}
+	}
+	if foundSucceeded {
+		return succeeded, true
+	}
+	return webrtc.ICECandidatePairStats{}, false
+}
+
+func (t *PCTransport) ICEFirstStartedAt() time.Time {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+	return t.iceFirstStartedAt
+}
+
+func (t *PCTransport) ICEFirstNominatedAt() time.Time {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+	return t.iceFirstNominatedAt
+}
+
+// ICEStepSummary is SFU-side ICE step 5/6 timing for join_path_summary.
+type ICEStepSummary struct {
+	CheckToNominateMs     int64
+	NominateToConnectedMs int64
+	CheckToConnectedMs    int64
+	LocalCandidateType    string
+	RemoteCandidateType   string
+	ConnectionType        string
+}
+
+func (t *PCTransport) ICEStepSummary() ICEStepSummary {
+	t.lock.RLock()
+	startedAt := t.iceFirstStartedAt
+	nominatedAt := t.iceFirstNominatedAt
+	connectedAt := t.iceFirstConnectedAt
+	t.lock.RUnlock()
+
+	pair := t.selectedPair.Load()
+	localType, remoteType := icePairCandidateTypes(pair)
+	s := ICEStepSummary{
+		CheckToNominateMs:     -1,
+		NominateToConnectedMs: -1,
+		CheckToConnectedMs:    -1,
+		LocalCandidateType:    localType,
+		RemoteCandidateType:   remoteType,
+		ConnectionType:        t.connectionDetails.GetConnectionType().String(),
+	}
+	if !startedAt.IsZero() && !nominatedAt.IsZero() {
+		s.CheckToNominateMs = nominatedAt.Sub(startedAt).Milliseconds()
+	}
+	if !nominatedAt.IsZero() && !connectedAt.IsZero() {
+		s.NominateToConnectedMs = connectedAt.Sub(nominatedAt).Milliseconds()
+	}
+	if !startedAt.IsZero() && !connectedAt.IsZero() {
+		s.CheckToConnectedMs = connectedAt.Sub(startedAt).Milliseconds()
+	}
+	return s
 }
 
 func (t *PCTransport) logMayFailedICEStats() {
@@ -805,7 +1031,9 @@ func (t *PCTransport) resetShortConn() {
 	t.params.Logger.Infow("resetting short connection on ICE restart")
 	t.lock.Lock()
 	t.iceFirstStartedAt = time.Time{}
+	t.iceFirstNominatedAt = time.Time{}
 	t.iceFirstConnectedAt = time.Time{}
+	t.iceStepObsRecorded = false
 	t.peerConnectionLastconnectedAt = time.Time{}
 	if t.connectAfterICETimer != nil {
 		t.connectAfterICETimer.Stop()
@@ -839,9 +1067,35 @@ func (t *PCTransport) setPeerConnectionConnectedAt(at time.Time) bool {
 	}
 
 	t.peerConnectionFirstConnectedAt = at
+	iceAt := t.iceFirstConnectedAt
 	prometheus.RecordServiceOperationSuccess("peer_connection")
 	prometheus.RecordPeerConnectionState(t.params.Transport, "connected")
 	t.lock.Unlock()
+
+	// PeerConnection Connected ⇒ DTLS handshake finished (WebRTC).
+	if !iceAt.IsZero() {
+		dtlsMs := at.Sub(iceAt)
+		sdk := livekit.ClientInfo_UNKNOWN
+		if t.params.ClientInfo.ClientInfo != nil {
+			sdk = t.params.ClientInfo.GetSdk()
+		}
+		localType, remoteType := icePairCandidateTypes(t.selectedPair.Load())
+		connType := t.connectionDetails.GetConnectionType().String()
+		prometheus.RecordSessionICEToDTLS(
+			int(t.params.ProtocolVersion),
+			sdk,
+			t.params.Transport.String(),
+			dtlsMs,
+			localType, remoteType, connType,
+		)
+		t.params.Logger.Infow("dtls_handshake_complete",
+			"transport", t.params.Transport.String(),
+			"iceToDtlsMs", dtlsMs.Milliseconds(),
+			"localCandidateType", localType,
+			"remoteCandidateType", remoteType,
+			"connectionType", connType,
+		)
+	}
 	return true
 }
 
@@ -1491,6 +1745,13 @@ func (t *PCTransport) PeerConnectionFirstConnectedAt() time.Time {
 	defer t.lock.RUnlock()
 
 	return t.peerConnectionFirstConnectedAt
+}
+
+func (t *PCTransport) ICEFirstConnectedAt() time.Time {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.iceFirstConnectedAt
 }
 
 func (t *PCTransport) GetICEConnectionInfo() *types.ICEConnectionInfo {
@@ -3032,7 +3293,8 @@ func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription, 
 	if t.negotiationState == transport.NegotiationStateRetry {
 		t.setNegotiationState(transport.NegotiationStateNone)
 
-		t.params.Logger.Debugw("re-negotiate after receiving answer")
+		t.params.Logger.Infow("re-negotiate after receiving answer")
+		prometheus.RecordSessionJoinPathEvent("renegotiate_after_answer", 0, livekit.ClientInfo_UNKNOWN)
 		return t.createAndSendOffer(nil)
 	}
 
