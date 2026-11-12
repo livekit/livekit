@@ -847,10 +847,9 @@ func (conf *Config) ToCLIFlagNames(existingFlags []cli.Flag) map[string]reflect.
 func (conf *Config) ValidateKeys() error {
 	// prefer keyfile if set
 	if conf.KeyFile != "" {
-		var otherFilter os.FileMode = 0o007
-		if st, err := os.Stat(conf.KeyFile); err != nil {
+		if others, err := HasOthersPermission(conf.KeyFile); err != nil {
 			return err
-		} else if st.Mode().Perm()&otherFilter != 0o000 {
+		} else if others {
 			return ErrKeyFileIncorrectPermission
 		}
 		f, err := os.Open(conf.KeyFile)
@@ -882,7 +881,6 @@ func (conf *Config) ValidateKeys() error {
 }
 
 func (conf *Config) LoadTURNSecrets() error {
-	var otherFilter os.FileMode = 0o007
 	for i, s := range conf.RTC.TURNServers {
 		// trim first so a blank inline secret falls back to secret_file rather than being treated as set
 		inlineSecret := strings.TrimSpace(s.Secret)
@@ -892,11 +890,11 @@ func (conf *Config) LoadTURNSecrets() error {
 				"host", s.Host, "port", s.Port)
 			conf.RTC.TURNServers[i].Secret = inlineSecret
 		case s.SecretFile != "":
-			st, err := os.Stat(s.SecretFile)
+			others, err := HasOthersPermission(s.SecretFile)
 			if err != nil {
 				return err
 			}
-			if st.Mode().Perm()&otherFilter != 0o000 {
+			if others {
 				return ErrTURNSecretFileIncorrectPermission
 			}
 			data, err := os.ReadFile(s.SecretFile)
@@ -919,11 +917,11 @@ func (conf *Config) LoadTURNSecrets() error {
 				logger.Warnw(turnCredentialsInlineWarning, nil,
 					"host", s.Host, "port", s.Port)
 			} else {
-				st, err := os.Stat(s.CredentialsFile)
+				others, err := HasOthersPermission(s.CredentialsFile)
 				if err != nil {
 					return err
 				}
-				if st.Mode().Perm()&otherFilter != 0o000 {
+				if others {
 					return ErrTURNCredentialFileIncorrectPermission
 				}
 				data, err := os.ReadFile(s.CredentialsFile)

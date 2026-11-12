@@ -357,7 +357,28 @@ func writeSecretFile(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "secret")
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	setSecretFilePermissions(t, path, 0o600)
 	return path
+}
+
+func TestValidateKeysKeyFile(t *testing.T) {
+	writeKeyFile := func(t *testing.T, mode os.FileMode) string {
+		path := filepath.Join(t.TempDir(), "keys.yaml")
+		require.NoError(t, os.WriteFile(path, []byte("key1: secret1\n"), mode))
+		setSecretFilePermissions(t, path, mode)
+		return path
+	}
+
+	t.Run("owner-only key file is loaded", func(t *testing.T) {
+		conf := &Config{KeyFile: writeKeyFile(t, 0o600)}
+		require.NoError(t, conf.ValidateKeys())
+		require.Equal(t, map[string]string{"key1": "secret1"}, conf.Keys)
+	})
+
+	t.Run("key file readable by others is rejected", func(t *testing.T) {
+		conf := &Config{KeyFile: writeKeyFile(t, 0o604)}
+		require.ErrorIs(t, conf.ValidateKeys(), ErrKeyFileIncorrectPermission)
+	})
 }
 
 func TestLoadTURNSecrets(t *testing.T) {
@@ -467,6 +488,7 @@ func TestTURNCredentialsFile(t *testing.T) {
 				require.NoError(t, os.Mkdir(path, 0o700))
 			case !tc.missing:
 				require.NoError(t, os.WriteFile(path, []byte(tc.data), tc.mode))
+				setSecretFilePermissions(t, path, tc.mode)
 			}
 			conf, err := NewConfig(fmt.Sprintf(configFormat, path, tc.inline), true, nil, nil)
 			require.NoError(t, err)

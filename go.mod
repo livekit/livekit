@@ -60,6 +60,7 @@ require (
 	go.uber.org/zap v1.28.0
 	golang.org/x/mod v0.43.0
 	golang.org/x/sync v0.25.0
+	golang.org/x/sys v0.50.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -155,7 +156,6 @@ require (
 	go.uber.org/zap/exp v0.3.0 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/net v0.62.0
-	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/tools v0.52.1-0.20261106145633-d407941a339a // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261110000943-09e21b237f2c // indirect
