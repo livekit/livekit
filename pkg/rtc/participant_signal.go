@@ -80,6 +80,16 @@ func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) e
 }
 
 func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.ParticipantInfo) error {
+	return p.sendParticipantUpdate(participantsToUpdate, false)
+}
+
+// SendParticipantSnapshot sends every participant visible to this one, flagged so that the
+// client drops any remote participant it holds that is not listed.
+func (p *ParticipantImpl) SendParticipantSnapshot(participants []*livekit.ParticipantInfo) error {
+	return p.sendParticipantUpdate(participants, true)
+}
+
+func (p *ParticipantImpl) sendParticipantUpdate(participantsToUpdate []*livekit.ParticipantInfo, fullSnapshot bool) error {
 	p.updateLock.Lock()
 	if p.IsDisconnected() {
 		p.updateLock.Unlock()
@@ -89,46 +99,52 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 	// read under the lock the flush takes, so an update either queues before the flush
 	// or goes out after the connection has opened
 	if !p.IsReady() || p.signaller.HandshakePending() {
-		// queue up updates
+		// queue up updates, a queued snapshot is flushed as an incremental update
 		p.queuedUpdates = append(p.queuedUpdates, participantsToUpdate...)
 		p.updateLock.Unlock()
 		return nil
 	}
 	validUpdates := make([]*livekit.ParticipantInfo, 0, len(participantsToUpdate))
 	for _, pi := range participantsToUpdate {
-		isValid := true
+		isValid, isOutdated := true, false
 		pID := livekit.ParticipantID(pi.Sid)
 		if lastVersion, ok := p.updateCache.Get(pID); ok {
 			// this is a message delivered out of order, a more recent version of the message had already been
 			// sent.
 			if pi.Version < lastVersion.version {
-				p.params.Logger.Debugw(
-					"skipping outdated participant update",
-					"otherParticipant", pi.Identity,
-					"otherPID", pi.Sid,
-					"version", pi.Version,
-					"lastVersion", lastVersion,
-				)
-				isValid = false
+				isOutdated = true
+				// a snapshot lists everyone still present, the client ignores the stale fields by version
+				if !fullSnapshot || lastVersion.state == livekit.ParticipantInfo_DISCONNECTED {
+					p.params.Logger.Debugw(
+						"skipping outdated participant update",
+						"otherParticipant", pi.Identity,
+						"otherPID", pi.Sid,
+						"version", pi.Version,
+						"lastVersion", lastVersion,
+					)
+					isValid = false
+				}
 			}
 		}
 		if pi.Permission != nil && pi.Permission.Hidden && pi.Sid != string(p.ID()) {
 			p.params.Logger.Debugw("skipping hidden participant update", "otherParticipant", pi.Identity)
 			isValid = false
 		}
-		if isValid {
+		if isValid && !isOutdated {
 			p.updateCache.Add(pID, participantUpdateInfo{
 				identity:  livekit.ParticipantIdentity(pi.Identity),
 				version:   pi.Version,
 				state:     pi.State,
 				updatedAt: time.Now(),
 			})
+		}
+		if isValid {
 			validUpdates = append(validUpdates, withoutServerAttributes(pi))
 		}
 	}
 	p.updateLock.Unlock()
 
-	return p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(validUpdates))
+	return p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(validUpdates, fullSnapshot))
 }
 
 // serverAttributePrefix marks attributes the server sets for its own use; older clients
@@ -233,7 +249,7 @@ func (p *ParticipantImpl) HandleReconnectAndSendResponse(
 
 	if p.params.ProtocolVersion.SupportsDisconnectedUpdate() {
 		if len(recentlyDisconnectedParticipants) != 0 {
-			if err := p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(recentlyDisconnectedParticipants)); err != nil {
+			if err := p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(recentlyDisconnectedParticipants, false)); err != nil {
 				return err
 			}
 		}
@@ -284,7 +300,7 @@ func (p *ParticipantImpl) flushQueuedUpdates() {
 func (p *ParticipantImpl) sendDisconnectUpdatesForReconnect() error {
 	recentlyDisconnectedParticipants := p.GetRecentlyDisconnectedParticipants()
 	if len(recentlyDisconnectedParticipants) != 0 {
-		return p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(recentlyDisconnectedParticipants))
+		return p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(recentlyDisconnectedParticipants, false))
 	}
 	return nil
 }

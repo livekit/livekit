@@ -28,7 +28,7 @@ func (u *signallingUnimplemented) SignalJoinResponse(join *livekit.JoinResponse)
 	return nil
 }
 
-func (u *signallingUnimplemented) SignalParticipantUpdate(participants []*livekit.ParticipantInfo) proto.Message {
+func (u *signallingUnimplemented) SignalParticipantUpdate(participants []*livekit.ParticipantInfo, fullSnapshot bool) proto.Message {
 	return nil
 }
 

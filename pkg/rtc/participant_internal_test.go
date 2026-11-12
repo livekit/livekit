@@ -554,6 +554,35 @@ func TestOutOfOrderUpdates(t *testing.T) {
 	require.Equal(t, "second update", sent.GetUpdate().Participants[0].Metadata)
 }
 
+func TestParticipantSnapshot(t *testing.T) {
+	p := newParticipantForTest("test")
+	p.updateState(livekit.ParticipantInfo_JOINED)
+	sink := p.GetResponseSink().(*routingfakes.FakeMessageSink)
+	lastUpdate := func() *livekit.ParticipantUpdate {
+		return sink.WriteMessageArgsForCall(sink.WriteMessageCallCount() - 1).(*livekit.SignalResponse).GetUpdate()
+	}
+
+	present := &livekit.ParticipantInfo{Sid: "PA_present", Identity: "present", Version: 2}
+	left := &livekit.ParticipantInfo{Sid: "PA_left", Identity: "left", Version: 2, State: livekit.ParticipantInfo_DISCONNECTED}
+	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{present, left}))
+	require.False(t, lastUpdate().FullSnapshot)
+
+	// the snapshot was built before the newer versions went out
+	require.NoError(t, p.SendParticipantSnapshot([]*livekit.ParticipantInfo{
+		{Sid: "PA_present", Identity: "present", Version: 1},
+		{Sid: "PA_left", Identity: "left", Version: 1},
+	}))
+	update := lastUpdate()
+	require.True(t, update.FullSnapshot)
+	// a participant still present is listed, one that left is not
+	require.Len(t, update.Participants, 1)
+	require.Equal(t, "PA_present", update.Participants[0].Sid)
+
+	// the stale snapshot entry does not lower the cached version
+	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{{Sid: "PA_present", Identity: "present", Version: 1}}))
+	require.Equal(t, 2, sink.WriteMessageCallCount())
+}
+
 func TestServerAttributesNotSent(t *testing.T) {
 	p := newParticipantForTest("test")
 	p.updateState(livekit.ParticipantInfo_JOINED)
