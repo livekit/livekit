@@ -1853,6 +1853,43 @@ func TestUpdateVideoTrackWritesPendingUnderWriteLock(t *testing.T) {
 	})
 }
 
+func TestUpdateTrackOfOtherKindLeavesPendingTrackUnchanged(t *testing.T) {
+	pendingInfo := func(p *ParticipantImpl) *livekit.TrackInfo {
+		return p.pendingTracks[pendingTrackCid].trackInfos[0]
+	}
+
+	t.Run("video update on an audio track", func(t *testing.T) {
+		p, sid := newParticipantWithPendingTrack(t, livekit.TrackType_AUDIO)
+		before := proto.CloneOf(pendingInfo(p))
+		require.Error(t, p.UpdateVideoTrack(&livekit.UpdateLocalVideoTrack{TrackSid: sid, Width: 1920, Height: 1080}))
+		require.True(t, proto.Equal(before, pendingInfo(p)), "pending audio track changed: %v", pendingInfo(p))
+	})
+
+	t.Run("audio update on a video track", func(t *testing.T) {
+		p, sid := newParticipantWithPendingTrack(t, livekit.TrackType_VIDEO)
+		before := proto.CloneOf(pendingInfo(p))
+		require.Error(t, p.UpdateAudioTrack(&livekit.UpdateLocalAudioTrack{
+			TrackSid: sid,
+			Features: []livekit.AudioTrackFeature{livekit.AudioTrackFeature_TF_STEREO, livekit.AudioTrackFeature_TF_NO_DTX},
+		}))
+		require.True(t, proto.Equal(before, pendingInfo(p)), "pending video track changed: %v", pendingInfo(p))
+	})
+
+	t.Run("update of the same kind still applies", func(t *testing.T) {
+		p, sid := newParticipantWithPendingTrack(t, livekit.TrackType_VIDEO)
+		require.NoError(t, p.UpdateVideoTrack(&livekit.UpdateLocalVideoTrack{TrackSid: sid, Width: 1920, Height: 1080}))
+		require.Equal(t, uint32(1920), pendingInfo(p).Width)
+		require.Equal(t, uint32(1080), pendingInfo(p).Height)
+
+		p, sid = newParticipantWithPendingTrack(t, livekit.TrackType_AUDIO)
+		require.NoError(t, p.UpdateAudioTrack(&livekit.UpdateLocalAudioTrack{
+			TrackSid: sid,
+			Features: []livekit.AudioTrackFeature{livekit.AudioTrackFeature_TF_STEREO},
+		}))
+		require.True(t, pendingInfo(p).Stereo)
+	})
+}
+
 // the publisher's renegotiation offer for the pending track, as pion parses it
 const pendingVideoOffer = "v=0\r\n" +
 	"o=- 1 1 IN IP4 127.0.0.1\r\n" +
