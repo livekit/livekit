@@ -44,6 +44,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	"github.com/livekit/livekit-server/pkg/sfu/flexfec"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/sfu/packettrailer"
 	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
@@ -189,6 +190,7 @@ type DownTrackState struct {
 	DeltaStatsRTXSenderSnapshotId uint32
 	ForwarderState                *livekit.RTPForwarderState
 	PlayoutDelayControllerState   PlayoutDelayControllerState
+	FECState                      flexfec.EncoderState
 }
 
 func (d DownTrackState) MarshalLogObject(e zapcore.ObjectEncoder) error {
@@ -198,6 +200,7 @@ func (d DownTrackState) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddUint32("DeltaStatsRTXSenderSnapshotId", d.DeltaStatsRTXSenderSnapshotId)
 	e.AddObject("ForwarderState", logger.Proto(d.ForwarderState))
 	e.AddObject("PlayoutDelayControllerState", d.PlayoutDelayControllerState)
+	e.AddObject("FECState", d.FECState)
 	return nil
 }
 
@@ -251,6 +254,8 @@ type DownTrackParams struct {
 	StripPacketTrailer             bool
 	EnableStartAtDesiredQuality    bool
 	RTXBudget                      RTXBudgetConfig
+	EnableFlexFEC                  bool
+	OnFECSent                      func(packets int, bytes int)
 	Listener                       DownTrackListener
 }
 
@@ -273,6 +278,12 @@ type DownTrack struct {
 	sequencer         *sequencer
 	rtxSequenceNumber atomic.Uint64
 	rtxBudget         *rtxBudget
+
+	fecLock              sync.Mutex
+	fecEncoder           atomic.Pointer[flexfec.Encoder]
+	fecProtectionPercent atomic.Uint32
+	fecNotifiedOverhead  atomic.Uint32
+	fecState             flexfec.EncoderState
 
 	receiverLock sync.RWMutex
 	receiver     TrackReceiver
@@ -387,6 +398,7 @@ func NewDownTrack(params DownTrackParams) (*DownTrack, error) {
 		receiver:            params.Receiver,
 		rtxBudget:           newRTXBudget(params.RTXBudget.forKind(kind)),
 	}
+	d.fecProtectionPercent.Store(flexfec.DefaultProtectionPercent)
 	d.lastUnmutedAt.Store(time.Now())
 
 	d.codec.Store(codec)
@@ -571,6 +583,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		)
 		d.params.Logger.Debugw("DownTrack.Bind", logFields...)
 
+		d.bindFEC(t)
 		d.writeStream = t.WriteStream()
 		if rr := d.params.BufferFactory.GetOrNew(packetio.RTCPBufferPacket, d.ssrc).(*buffer.RTCPReader); rr != nil {
 			rr.OnPacket(func(pkt []byte) {
@@ -721,6 +734,7 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 func (d *DownTrack) Unbind(_ webrtc.TrackLocalContext) error {
 	d.bindLock.Lock()
 	d.setBindStateLocked(bindStateUnbound)
+	d.closeFEC()
 	d.bindLock.Unlock()
 	return nil
 }
@@ -1100,6 +1114,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		Header:             hdr,
 		HeaderPool:         RTPHeaderFactory,
 		Payload:            payload,
+		FEC:                d.fecEncoder.Load(),
 		ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
 		AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 		TransportWideExtID: uint8(d.transportWideExtID),
@@ -1533,6 +1548,7 @@ func (d *DownTrack) CloseWithFlush(flush bool, isEnding bool) {
 
 	d.setBindStateLocked(bindStateUnbound)
 	d.Receiver().DeleteDownTrack(d.SubscriberID())
+	d.closeFEC()
 
 	if d.rtcpReader != nil && isEnding {
 		d.params.Logger.Debugw("downtrack close rtcp reader")
@@ -1613,6 +1629,7 @@ func (d *DownTrack) GetState() DownTrackState {
 		RTPStatsRTX:                   d.rtpStatsRTX,
 		DeltaStatsRTXSenderSnapshotId: d.deltaStatsRTXSenderSnapshotId,
 		ForwarderState:                d.forwarder.GetState(),
+		FECState:                      d.getFECState(),
 	}
 
 	if d.playoutDelay != nil {
@@ -1643,6 +1660,7 @@ func (d *DownTrack) SeedState(state DownTrackState) {
 		d.rtxSequenceNumber.Store(d.rtpStatsRTX.ExtHighestSequenceNumber())
 	}
 	d.forwarder.SeedState(state.ForwarderState)
+	d.seedFECState(state.FECState)
 }
 
 func (d *DownTrack) StopWriteAndGetState() DownTrackState {
@@ -1650,6 +1668,7 @@ func (d *DownTrack) StopWriteAndGetState() DownTrackState {
 	d.bindLock.Lock()
 	d.writable.Store(false)
 	d.writeStopped.Store(true)
+	d.closeFEC()
 	d.bindLock.Unlock()
 
 	return d.GetState()
@@ -1726,17 +1745,17 @@ func (d *DownTrack) IsDeficient() bool {
 }
 
 func (d *DownTrack) BandwidthRequested() int64 {
-	_, brs := d.Receiver().GetLayeredBitrate()
+	_, brs := d.getLayeredBitrateWithFEC()
 	return d.forwarder.BandwidthRequested(brs)
 }
 
 func (d *DownTrack) DistanceToDesired() float64 {
-	al, brs := d.Receiver().GetLayeredBitrate()
+	al, brs := d.getLayeredBitrateWithFEC()
 	return d.forwarder.DistanceToDesired(al, brs)
 }
 
 func (d *DownTrack) AllocateOptimal(allowOvershoot bool, hold bool) VideoAllocation {
-	al, brs := d.Receiver().GetLayeredBitrate()
+	al, brs := d.getLayeredBitrateWithFEC()
 	allocation := d.forwarder.AllocateOptimal(al, brs, allowOvershoot, hold)
 	d.postKeyFrameRequestEvent()
 	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired, allocation.PauseReason)
@@ -1744,7 +1763,7 @@ func (d *DownTrack) AllocateOptimal(allowOvershoot bool, hold bool) VideoAllocat
 }
 
 func (d *DownTrack) ProvisionalAllocatePrepare() {
-	al, brs := d.Receiver().GetLayeredBitrate()
+	al, brs := d.getLayeredBitrateWithFEC()
 	d.forwarder.ProvisionalAllocatePrepare(al, brs)
 }
 
@@ -1786,7 +1805,7 @@ func (d *DownTrack) ProvisionalAllocateCommit() VideoAllocation {
 }
 
 func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64, allowOvershoot bool) (VideoAllocation, bool) {
-	al, brs := d.Receiver().GetLayeredBitrate()
+	al, brs := d.getLayeredBitrateWithFEC()
 	allocation, available := d.forwarder.AllocateNextHigher(availableChannelCapacity, al, brs, allowOvershoot)
 	d.postKeyFrameRequestEvent()
 	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired, allocation.PauseReason)
@@ -1794,7 +1813,7 @@ func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64, allowOver
 }
 
 func (d *DownTrack) GetNextHigherTransition(allowOvershoot bool) (VideoTransition, bool) {
-	availableLayers, brs := d.Receiver().GetLayeredBitrate()
+	availableLayers, brs := d.getLayeredBitrateWithFEC()
 	transition, available := d.forwarder.GetNextHigherTransition(brs, allowOvershoot)
 	d.params.Logger.Debugw(
 		"stream: get next higher layer",
@@ -1807,7 +1826,7 @@ func (d *DownTrack) GetNextHigherTransition(allowOvershoot bool) (VideoTransitio
 }
 
 func (d *DownTrack) Pause() VideoAllocation {
-	al, brs := d.Receiver().GetLayeredBitrate()
+	al, brs := d.getLayeredBitrateWithFEC()
 	allocation := d.forwarder.Pause(al, brs)
 	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired, allocation.PauseReason)
 	return allocation

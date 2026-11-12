@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
+	"github.com/livekit/livekit-server/pkg/sfu/flexfec"
 	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/pion/rtp"
@@ -59,6 +60,8 @@ type Packet struct {
 	WriteStream        webrtc.TrackLocalWriter
 	Pool               *sync.Pool
 	PoolEntity         *[]byte
+	// FEC is set only on original video media, never padding, RTX or probes.
+	FEC *flexfec.Encoder
 
 	// per-packet scratch for header extensions held before Enqueue or patched at send time,
 	// the Packet is owned by one send until SendPacket returns
