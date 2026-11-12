@@ -383,9 +383,7 @@ func (b *Buffer) writeRTX(rtxPkt *rtp.Packet, arrivalTime int64) {
 
 	b.ingestLocked(b.rtxPktBuf[:n], &repairedPkt, arrivalTime, false, true)
 
-	// The repaired packet carries the RTX packet's header extensions, e.g. a
-	// MID the original lacked, so it differs from the media FlexFEC protected.
-	// Like libwebrtc, do not use it to recover other packets.
+	// the repaired packet is not the media FlexFEC protected, see markRTXRepairedLocked
 	b.markRTXRepairedLocked(repairedPkt.SequenceNumber)
 
 	rtcpPackets := b.getRTCPPackets(arrivalTime)
