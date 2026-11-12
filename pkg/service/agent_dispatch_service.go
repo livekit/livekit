@@ -28,6 +28,7 @@ import (
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/psrpc"
+	"github.com/twitchtv/twirp"
 )
 
 type AgentDispatchService struct {
@@ -74,6 +75,9 @@ func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit
 	if !ag.limitConf.CheckAttributesSize(req.Attributes) {
 		return nil, ErrAttributeExceedsLimits
 	}
+	if err := agent.ValidateThreadID(req.GetThreadId()); err != nil {
+		return nil, twirp.InvalidArgumentError("thread_id", err.Error())
+	}
 
 	if ag.roomAllocator.AutoCreateEnabled(ctx) {
 		err := ag.roomAllocator.SelectRoomNode(ctx, livekit.RoomName(req.Room), "")
@@ -95,6 +99,7 @@ func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit
 		RestartPolicy: req.RestartPolicy,
 		Deployment:    req.Deployment,
 		Attributes:    req.Attributes,
+		ThreadId:      req.ThreadId,
 	}
 	return ag.agentDispatchClient.CreateDispatch(ctx, ag.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), dispatch)
 }
