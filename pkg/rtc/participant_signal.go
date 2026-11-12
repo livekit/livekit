@@ -108,7 +108,7 @@ func (p *ParticipantImpl) SendParticipantSnapshot(build func() []*livekit.Partic
 	p.snapshotPending = true
 	p.updateLock.Unlock()
 
-	// built without the lock, the join path takes the room lock before updateLock
+	// built without the lock, so updateLock never waits on the room or other participants' locks
 	participants := build()
 
 	p.updateLock.Lock()
