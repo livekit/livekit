@@ -789,8 +789,7 @@ func (w *Worker) createJobToken(req *livekit.CreateJobTokenRequest, authorize Jo
 		return "", time.Time{}, errors.New("job is not running on this worker")
 	}
 
-	// TODO: whether a worker whose registration token has expired may still
-	// get tokens is open; the check would go here.
+	// A running job may request tokens after the worker's registration token expires.
 
 	grants, err := protoagent.ParseJobTokenClaims(req.Claims)
 	if err != nil {
