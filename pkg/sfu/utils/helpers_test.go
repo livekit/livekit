@@ -53,3 +53,62 @@ func TestFindRTXPayloadType(t *testing.T) {
 		})
 	}
 }
+
+func TestIsFECEnabled(t *testing.T) {
+	codec := func(mimeType mime.MimeType, fmtp string) webrtc.RTPCodecParameters {
+		return webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: mimeType.String(), SDPFmtpLine: fmtp},
+		}
+	}
+	opusOn := codec(mime.MimeTypeOpus, "minptime=10;useinbandfec=1")
+	opusOff := codec(mime.MimeTypeOpus, "minptime=10;useinbandfec=0")
+	red := codec(mime.MimeTypeRED, "111/111")
+	vp8 := codec(mime.MimeTypeVP8, "")
+
+	t.Run("fmtp", func(t *testing.T) {
+		tests := []struct {
+			fmtp     string
+			expected bool
+		}{
+			{"minptime=10;useinbandfec=1", true},
+			{"useinbandfec=1", true},
+			{"useinbandfec=1;stereo=1", true},
+			{"minptime=10; useinbandfec = 1", true},
+			{"minptime=10;  useinbandfec=1 ;stereo=1", true},
+			{"minptime=10;UseInbandFEC=1", true},
+			{"minptime=10;useinbandfec=0", false},
+			{"minptime=10;useinbandfec=10", false},
+			{"minptime=10;xuseinbandfec=1", false},
+			{"minptime=10", false},
+			{"", false},
+		}
+		for _, tc := range tests {
+			t.Run(tc.fmtp, func(t *testing.T) {
+				opus := codec(mime.MimeTypeOpus, tc.fmtp)
+				require.Equal(t, tc.expected, IsFECEnabled(opus, []webrtc.RTPCodecParameters{opus}))
+			})
+		}
+	})
+
+	t.Run("codecs", func(t *testing.T) {
+		tests := []struct {
+			name     string
+			codec    webrtc.RTPCodecParameters
+			codecs   []webrtc.RTPCodecParameters
+			expected bool
+		}{
+			{"opus with FEC", opusOn, []webrtc.RTPCodecParameters{opusOn}, true},
+			{"opus without FEC", opusOff, []webrtc.RTPCodecParameters{opusOff}, false},
+			{"RED over opus with FEC", red, []webrtc.RTPCodecParameters{red, opusOn}, true},
+			{"RED over opus without FEC", red, []webrtc.RTPCodecParameters{red, opusOff}, false},
+			{"RED without an opus codec", red, []webrtc.RTPCodecParameters{red}, false},
+			{"video", vp8, []webrtc.RTPCodecParameters{vp8}, false},
+			{"no codec", webrtc.RTPCodecParameters{}, []webrtc.RTPCodecParameters{opusOn}, false},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				require.Equal(t, tc.expected, IsFECEnabled(tc.codec, tc.codecs))
+			})
+		}
+	})
+}

@@ -17,6 +17,7 @@ package utils
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -64,6 +65,28 @@ func FindRTXPayloadType(needle webrtc.PayloadType, haystack []webrtc.RTPCodecPar
 	}
 
 	return webrtc.PayloadType(0)
+}
+
+// matches useinbandfec=1 as one fmtp parameter, ignoring case and spaces around the parameter and the "="
+var fecEnabledRegex = regexp.MustCompile(`(?i)(^|;)\s*useinbandfec\s*=\s*1\s*(;|$)`)
+
+// IsFECEnabled reports whether codec carries opus in-band FEC. For RED, it checks the opus codec in codecs.
+func IsFECEnabled(codec webrtc.RTPCodecParameters, codecs []webrtc.RTPCodecParameters) bool {
+	switch {
+	case mime.IsMimeTypeStringRED(codec.MimeType):
+		for _, c := range codecs {
+			if mime.IsMimeTypeStringOpus(c.MimeType) {
+				return fecEnabledRegex.MatchString(c.SDPFmtpLine)
+			}
+		}
+		return false
+
+	case mime.IsMimeTypeStringAudio(codec.MimeType):
+		return fecEnabledRegex.MatchString(codec.SDPFmtpLine)
+
+	default:
+		return false
+	}
 }
 
 // GetHeaderExtensionID returns the ID of a header extension, or 0 if not found

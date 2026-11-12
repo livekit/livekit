@@ -23,7 +23,6 @@ import (
 	"math"
 	"math/rand"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -511,7 +510,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			return
 		}
 
-		isFECEnabled := isUpstreamFECEnabled(matchedUpstreamCodec, d.upstreamCodecs)
+		isFECEnabled := utils.IsFECEnabled(matchedUpstreamCodec, d.upstreamCodecs)
 		if mime.IsMimeTypeStringRED(matchedUpstreamCodec.MimeType) {
 			d.isRED = true
 			for _, c := range d.upstreamCodecs {
@@ -695,7 +694,8 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 	d.rtpStats.SetClockRate(codec.RTPCodecCapability.ClockRate)
 	d.rtpStatsRTX.SetClockRate(codec.RTPCodecCapability.ClockRate)
 
-	isFECEnabled := isUpstreamFECEnabled(matchedUpstreamCodec, d.upstreamCodecs)
+	// FEC is what the publisher encodes, so check the upstream codec, not the negotiated one
+	isFECEnabled := utils.IsFECEnabled(matchedUpstreamCodec, d.upstreamCodecs)
 	d.bindLock.Unlock()
 
 	d.params.Logger.Infow(
@@ -712,27 +712,6 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 	d.forwarder.DetermineCodec(codec.RTPCodecCapability, receiver.HeaderExtensions(), receiver.VideoLayerMode())
 
 	d.connectionStats.UpdateCodec(d.Mime(), isFECEnabled)
-}
-
-// isUpstreamFECEnabled reports whether the publisher's audio carries opus in-band FEC.
-// FEC is a property of what the publisher encodes, so it is read from the upstream codecs,
-// not from the codec the subscriber negotiated. For RED, it is the FEC of the upstream opus codec.
-func isUpstreamFECEnabled(matchedUpstreamCodec webrtc.RTPCodecParameters, upstreamCodecs []webrtc.RTPCodecParameters) bool {
-	switch {
-	case mime.IsMimeTypeStringRED(matchedUpstreamCodec.MimeType):
-		for _, c := range upstreamCodecs {
-			if mime.IsMimeTypeStringOpus(c.MimeType) {
-				return strings.Contains(strings.ToLower(c.SDPFmtpLine), "useinbandfec=1")
-			}
-		}
-		return false
-
-	case mime.IsMimeTypeStringAudio(matchedUpstreamCodec.MimeType):
-		return strings.Contains(strings.ToLower(matchedUpstreamCodec.SDPFmtpLine), "useinbandfec=1")
-
-	default:
-		return false
-	}
 }
 
 // Unbind implements the teardown logic when the track is no longer needed. This happens
