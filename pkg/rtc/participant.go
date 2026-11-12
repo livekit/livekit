@@ -322,9 +322,9 @@ type ParticipantImpl struct {
 	// queued participant updates before join response is sent
 	// guarded by updateLock
 	queuedUpdates []*livekit.ParticipantInfo
-	// set while a full snapshot is built, updates queue so that they go out after it
+	// number of full snapshots being built, updates queue so that they go out after them
 	// guarded by updateLock
-	snapshotPending bool
+	snapshotsPending int
 	// cache of recently sent updates, to ensure ordering by version
 	// guarded by updateLock
 	updateCache *lru.Cache[livekit.ParticipantID, participantUpdateInfo]

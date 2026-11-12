@@ -555,38 +555,99 @@ func TestOutOfOrderUpdates(t *testing.T) {
 }
 
 func TestParticipantSnapshot(t *testing.T) {
-	p := newParticipantForTest("test")
-	p.updateState(livekit.ParticipantInfo_JOINED)
-	sink := p.GetResponseSink().(*routingfakes.FakeMessageSink)
-	sent := func(i int) *livekit.ParticipantUpdate {
-		return sink.WriteMessageArgsForCall(i).(*livekit.SignalResponse).GetUpdate()
+	setup := func() (*ParticipantImpl, *routingfakes.FakeMessageSink, func(i int) *livekit.ParticipantUpdate) {
+		p := newParticipantForTest("test")
+		p.updateState(livekit.ParticipantInfo_JOINED)
+		sink := p.GetResponseSink().(*routingfakes.FakeMessageSink)
+		return p, sink, func(i int) *livekit.ParticipantUpdate {
+			return sink.WriteMessageArgsForCall(i).(*livekit.SignalResponse).GetUpdate()
+		}
+	}
+	info := func(sid string, version uint32) *livekit.ParticipantInfo {
+		return &livekit.ParticipantInfo{Sid: "PA_" + sid, Identity: sid, Version: version}
+	}
+	left := func(sid string, version uint32) *livekit.ParticipantInfo {
+		pi := info(sid, version)
+		pi.State = livekit.ParticipantInfo_DISCONNECTED
+		return pi
 	}
 
-	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{{Sid: "PA_a", Identity: "a", Version: 1}}))
-	require.False(t, sent(0).FullSnapshot)
+	t.Run("an update during the build goes out after the snapshot", func(t *testing.T) {
+		p, sink, sent := setup()
+		require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{info("a", 1)}))
+		require.False(t, sent(0).FullSnapshot)
 
-	// an update that comes in while the snapshot is built goes out after the snapshot, not
-	// ahead of it. Sending it from build also shows build runs without the lock.
-	require.NoError(t, p.SendParticipantSnapshot(func() []*livekit.ParticipantInfo {
-		require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{
-			{Sid: "PA_a", Identity: "a", Version: 3, State: livekit.ParticipantInfo_DISCONNECTED},
+		// sending from build also shows build runs without the lock
+		require.NoError(t, p.SendParticipantSnapshot(func() []*livekit.ParticipantInfo {
+			require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{left("a", 3)}))
+			return []*livekit.ParticipantInfo{info("a", 2), info("b", 1)}
 		}))
-		return []*livekit.ParticipantInfo{
-			{Sid: "PA_a", Identity: "a", Version: 2},
-			{Sid: "PA_b", Identity: "b", Version: 1},
-		}
-	}))
-	require.Equal(t, 3, sink.WriteMessageCallCount())
-	snapshot := sent(1)
-	require.True(t, snapshot.FullSnapshot)
-	require.Len(t, snapshot.Participants, 2)
-	after := sent(2)
-	require.False(t, after.FullSnapshot)
-	require.Equal(t, livekit.ParticipantInfo_DISCONNECTED, after.Participants[0].State)
+		require.Equal(t, 3, sink.WriteMessageCallCount())
+		require.True(t, sent(1).FullSnapshot)
+		require.Len(t, sent(1).Participants, 2)
+		require.False(t, sent(2).FullSnapshot)
+		require.Equal(t, livekit.ParticipantInfo_DISCONNECTED, sent(2).Participants[0].State)
 
-	// updates go out directly again once the snapshot is sent
-	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{{Sid: "PA_b", Identity: "b", Version: 2}}))
-	require.Equal(t, 4, sink.WriteMessageCallCount())
+		// updates go out directly again once the snapshot is sent
+		require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{info("b", 2)}))
+		require.Equal(t, 4, sink.WriteMessageCallCount())
+	})
+
+	t.Run("an entry at the cached version stays", func(t *testing.T) {
+		p, _, sent := setup()
+		require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{info("a", 2)}))
+		require.NoError(t, p.SendParticipantSnapshot(func() []*livekit.ParticipantInfo {
+			return []*livekit.ParticipantInfo{info("a", 2)}
+		}))
+		require.True(t, sent(1).FullSnapshot)
+		require.Len(t, sent(1).Participants, 1)
+	})
+
+	t.Run("overlapping snapshots keep updates queued until both are sent", func(t *testing.T) {
+		p, sink, sent := setup()
+		require.NoError(t, p.SendParticipantSnapshot(func() []*livekit.ParticipantInfo {
+			require.NoError(t, p.SendParticipantSnapshot(func() []*livekit.ParticipantInfo {
+				return []*livekit.ParticipantInfo{info("a", 2)}
+			}))
+			// the inner snapshot is done, the outer one is still being built
+			require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{left("a", 3)}))
+			return []*livekit.ParticipantInfo{info("a", 2)}
+		}))
+		require.Equal(t, 3, sink.WriteMessageCallCount())
+		require.True(t, sent(0).FullSnapshot)
+		require.True(t, sent(1).FullSnapshot)
+		require.Len(t, sent(1).Participants, 1)
+		require.Equal(t, livekit.ParticipantInfo_DISCONNECTED, sent(2).Participants[0].State)
+	})
+
+	t.Run("a snapshot on a connection that is not open goes out as an update", func(t *testing.T) {
+		p, _, _ := setup()
+		resumed := &routingfakes.FakeMessageSink{}
+		p.SwapResponseSink(resumed, types.SignallingCloseReasonResume)
+
+		require.NoError(t, p.SendParticipantSnapshot(func() []*livekit.ParticipantInfo {
+			return []*livekit.ParticipantInfo{info("a", 1)}
+		}))
+		require.Zero(t, resumed.WriteMessageCallCount())
+
+		p.signaller.OpenHandshake()
+		require.Equal(t, 1, resumed.WriteMessageCallCount())
+		require.False(t, resumed.WriteMessageArgsForCall(0).(*livekit.SignalResponse).GetUpdate().FullSnapshot)
+
+		require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{info("a", 2)}))
+		require.Equal(t, 2, resumed.WriteMessageCallCount())
+	})
+
+	t.Run("a failed snapshot write still sends the queued updates", func(t *testing.T) {
+		p, sink, sent := setup()
+		sink.WriteMessageReturnsOnCall(0, routing.ErrChannelFull)
+		require.ErrorIs(t, p.SendParticipantSnapshot(func() []*livekit.ParticipantInfo {
+			require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{left("a", 3)}))
+			return []*livekit.ParticipantInfo{info("a", 2)}
+		}), routing.ErrChannelFull)
+		require.Equal(t, 2, sink.WriteMessageCallCount())
+		require.Equal(t, livekit.ParticipantInfo_DISCONNECTED, sent(1).Participants[0].State)
+	})
 }
 
 func TestServerAttributesNotSent(t *testing.T) {

@@ -81,23 +81,22 @@ func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) e
 
 func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.ParticipantInfo) error {
 	p.updateLock.Lock()
+	defer p.updateLock.Unlock()
 	if p.IsDisconnected() {
-		p.updateLock.Unlock()
 		return nil
 	}
 
 	// read under the lock the flush takes, so an update either queues before the flush
 	// or goes out after the connection has opened
-	if !p.IsReady() || p.signaller.HandshakePending() || p.snapshotPending {
+	if !p.IsReady() || p.signaller.HandshakePending() || p.snapshotsPending > 0 {
 		// queue up updates
 		p.queuedUpdates = append(p.queuedUpdates, participantsToUpdate...)
-		p.updateLock.Unlock()
 		return nil
 	}
-	validUpdates := p.filterUpdatesLocked(participantsToUpdate)
-	p.updateLock.Unlock()
 
-	return p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(validUpdates, false))
+	// written under the lock, so updates go out in the order their versions were checked.
+	// A participant update never opens the handshake, so the write does not take updateLock.
+	return p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(p.filterUpdatesLocked(participantsToUpdate, false), false))
 }
 
 // SendParticipantSnapshot sends every participant visible to this one, flagged so that the
@@ -105,14 +104,14 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 // build runs and go out after the snapshot, so no entry is older than a version already sent.
 func (p *ParticipantImpl) SendParticipantSnapshot(build func() []*livekit.ParticipantInfo) error {
 	p.updateLock.Lock()
-	p.snapshotPending = true
+	p.snapshotsPending++
 	p.updateLock.Unlock()
 
 	// built without the lock, so updateLock never waits on the room or other participants' locks
 	participants := build()
 
 	p.updateLock.Lock()
-	p.snapshotPending = false
+	p.snapshotsPending--
 	if p.IsDisconnected() {
 		p.updateLock.Unlock()
 		return nil
@@ -126,20 +125,21 @@ func (p *ParticipantImpl) SendParticipantSnapshot(build func() []*livekit.Partic
 	queuedUpdates := p.queuedUpdates
 	p.queuedUpdates = nil
 	// written under the lock, so nothing goes out between the build and the snapshot
-	err := p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(p.filterUpdatesLocked(participants), true))
+	err := p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(p.filterUpdatesLocked(participants, true), true))
 	p.updateLock.Unlock()
-	if err != nil {
-		return err
-	}
 
+	// sent even when the snapshot write failed, so the queued versions and states reach updateCache.
+	// They queue again while another snapshot is being built.
 	if len(queuedUpdates) > 0 {
-		return p.SendParticipantUpdate(queuedUpdates)
+		if flushErr := p.SendParticipantUpdate(queuedUpdates); err == nil {
+			err = flushErr
+		}
 	}
-	return nil
+	return err
 }
 
 // filterUpdatesLocked drops outdated and hidden entries, and records the sent versions
-func (p *ParticipantImpl) filterUpdatesLocked(participantsToUpdate []*livekit.ParticipantInfo) []*livekit.ParticipantInfo {
+func (p *ParticipantImpl) filterUpdatesLocked(participantsToUpdate []*livekit.ParticipantInfo, fullSnapshot bool) []*livekit.ParticipantInfo {
 	validUpdates := make([]*livekit.ParticipantInfo, 0, len(participantsToUpdate))
 	for _, pi := range participantsToUpdate {
 		isValid := true
@@ -148,13 +148,24 @@ func (p *ParticipantImpl) filterUpdatesLocked(participantsToUpdate []*livekit.Pa
 			// this is a message delivered out of order, a more recent version of the message had already been
 			// sent.
 			if pi.Version < lastVersion.version {
-				p.params.Logger.Debugw(
-					"skipping outdated participant update",
-					"otherParticipant", pi.Identity,
-					"otherPID", pi.Sid,
-					"version", pi.Version,
-					"lastVersion", lastVersion,
-				)
+				if fullSnapshot {
+					// the client takes a missing entry as a leave, so this breaks the version invariant
+					p.params.Logger.Warnw(
+						"dropping outdated participant from snapshot", nil,
+						"otherParticipant", pi.Identity,
+						"otherPID", pi.Sid,
+						"version", pi.Version,
+						"lastVersion", lastVersion,
+					)
+				} else {
+					p.params.Logger.Debugw(
+						"skipping outdated participant update",
+						"otherParticipant", pi.Identity,
+						"otherPID", pi.Sid,
+						"version", pi.Version,
+						"lastVersion", lastVersion,
+					)
+				}
 				isValid = false
 			}
 		}
