@@ -1861,14 +1861,14 @@ func TestUpdateTrackOfOtherKindLeavesPendingTrackUnchanged(t *testing.T) {
 	t.Run("video update on an audio track", func(t *testing.T) {
 		p, sid := newParticipantWithPendingTrack(t, livekit.TrackType_AUDIO)
 		before := proto.CloneOf(pendingInfo(p))
-		require.NoError(t, p.UpdateVideoTrack(&livekit.UpdateLocalVideoTrack{TrackSid: sid, Width: 1920, Height: 1080}))
+		require.Error(t, p.UpdateVideoTrack(&livekit.UpdateLocalVideoTrack{TrackSid: sid, Width: 1920, Height: 1080}))
 		require.True(t, proto.Equal(before, pendingInfo(p)), "pending audio track changed: %v", pendingInfo(p))
 	})
 
 	t.Run("audio update on a video track", func(t *testing.T) {
 		p, sid := newParticipantWithPendingTrack(t, livekit.TrackType_VIDEO)
 		before := proto.CloneOf(pendingInfo(p))
-		require.NoError(t, p.UpdateAudioTrack(&livekit.UpdateLocalAudioTrack{
+		require.Error(t, p.UpdateAudioTrack(&livekit.UpdateLocalAudioTrack{
 			TrackSid: sid,
 			Features: []livekit.AudioTrackFeature{livekit.AudioTrackFeature_TF_STEREO, livekit.AudioTrackFeature_TF_NO_DTX},
 		}))
