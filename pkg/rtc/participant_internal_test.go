@@ -558,42 +558,35 @@ func TestParticipantSnapshot(t *testing.T) {
 	p := newParticipantForTest("test")
 	p.updateState(livekit.ParticipantInfo_JOINED)
 	sink := p.GetResponseSink().(*routingfakes.FakeMessageSink)
-	lastUpdate := func() *livekit.ParticipantUpdate {
-		return sink.WriteMessageArgsForCall(sink.WriteMessageCallCount() - 1).(*livekit.SignalResponse).GetUpdate()
+	sent := func(i int) *livekit.ParticipantUpdate {
+		return sink.WriteMessageArgsForCall(i).(*livekit.SignalResponse).GetUpdate()
 	}
 
-	present := &livekit.ParticipantInfo{Sid: "PA_present", Identity: "present", Version: 2, Metadata: "current"}
-	left := &livekit.ParticipantInfo{Sid: "PA_left", Identity: "left", Version: 2, State: livekit.ParticipantInfo_DISCONNECTED}
-	changing := &livekit.ParticipantInfo{Sid: "PA_changing", Identity: "changing", Version: 2}
-	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{present, left, changing}))
-	require.False(t, lastUpdate().FullSnapshot)
+	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{{Sid: "PA_a", Identity: "a", Version: 1}}))
+	require.False(t, sent(0).FullSnapshot)
 
-	// the snapshot was built before the newer versions went out
-	current := map[livekit.ParticipantID]*livekit.ParticipantInfo{
-		"PA_present": present,
-		// still older than the version sent, as if it changes again on every read
-		"PA_changing": {Sid: "PA_changing", Identity: "changing", Version: 1},
-	}
-	require.NoError(t, p.SendParticipantSnapshot([]*livekit.ParticipantInfo{
-		{Sid: "PA_present", Identity: "present", Version: 1},
-		{Sid: "PA_left", Identity: "left", Version: 1},
-		{Sid: "PA_changing", Identity: "changing", Version: 1},
-	}, func(pID livekit.ParticipantID) *livekit.ParticipantInfo {
-		return current[pID]
+	// an update that comes in while the snapshot is built goes out after the snapshot, not
+	// ahead of it. Sending it from build also shows build runs without the lock.
+	require.NoError(t, p.SendParticipantSnapshot(func() []*livekit.ParticipantInfo {
+		require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{
+			{Sid: "PA_a", Identity: "a", Version: 3, State: livekit.ParticipantInfo_DISCONNECTED},
+		}))
+		return []*livekit.ParticipantInfo{
+			{Sid: "PA_a", Identity: "a", Version: 2},
+			{Sid: "PA_b", Identity: "b", Version: 1},
+		}
 	}))
-	update := lastUpdate()
-	require.True(t, update.FullSnapshot)
-	// a stale entry is replaced by the current info, one that left is dropped, and one
-	// that stays stale after the refreshes is kept so the participant is still listed
-	require.Len(t, update.Participants, 2)
-	require.Equal(t, "PA_present", update.Participants[0].Sid)
-	require.EqualValues(t, 2, update.Participants[0].Version)
-	require.Equal(t, "current", update.Participants[0].Metadata)
-	require.Equal(t, "PA_changing", update.Participants[1].Sid)
+	require.Equal(t, 3, sink.WriteMessageCallCount())
+	snapshot := sent(1)
+	require.True(t, snapshot.FullSnapshot)
+	require.Len(t, snapshot.Participants, 2)
+	after := sent(2)
+	require.False(t, after.FullSnapshot)
+	require.Equal(t, livekit.ParticipantInfo_DISCONNECTED, after.Participants[0].State)
 
-	// the stale snapshot entry does not lower the cached version
-	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{{Sid: "PA_changing", Identity: "changing", Version: 1}}))
-	require.Equal(t, 2, sink.WriteMessageCallCount())
+	// updates go out directly again once the snapshot is sent
+	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{{Sid: "PA_b", Identity: "b", Version: 2}}))
+	require.Equal(t, 4, sink.WriteMessageCallCount())
 }
 
 func TestServerAttributesNotSent(t *testing.T) {

@@ -80,67 +80,6 @@ func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) e
 }
 
 func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.ParticipantInfo) error {
-	return p.sendParticipantUpdate(participantsToUpdate, false)
-}
-
-// how many times a snapshot re-reads the entries that a newer update already went out for
-const snapshotRefreshAttempts = 3
-
-// SendParticipantSnapshot sends every participant visible to this one, flagged so that the
-// client drops any remote participant it holds that is not listed. refresh returns the
-// current info of a participant, nil when it has left.
-func (p *ParticipantImpl) SendParticipantSnapshot(
-	participants []*livekit.ParticipantInfo,
-	refresh func(livekit.ParticipantID) *livekit.ParticipantInfo,
-) error {
-	for range snapshotRefreshAttempts {
-		stale := p.staleSnapshotEntries(participants)
-		if len(stale) == 0 {
-			break
-		}
-		participants = patchSnapshot(participants, stale, refresh)
-	}
-	return p.sendParticipantUpdate(participants, true)
-}
-
-// staleSnapshotEntries returns the participants whose snapshot entry is older than the version already sent
-func (p *ParticipantImpl) staleSnapshotEntries(participants []*livekit.ParticipantInfo) map[livekit.ParticipantID]bool {
-	p.updateLock.Lock()
-	defer p.updateLock.Unlock()
-
-	var stale map[livekit.ParticipantID]bool
-	for _, pi := range participants {
-		pID := livekit.ParticipantID(pi.Sid)
-		if lastVersion, ok := p.updateCache.Peek(pID); ok && pi.Version < lastVersion.version {
-			if stale == nil {
-				stale = make(map[livekit.ParticipantID]bool)
-			}
-			stale[pID] = true
-		}
-	}
-	return stale
-}
-
-// patchSnapshot replaces the stale entries with current info, and drops the participants that have left
-func patchSnapshot(
-	participants []*livekit.ParticipantInfo,
-	stale map[livekit.ParticipantID]bool,
-	refresh func(livekit.ParticipantID) *livekit.ParticipantInfo,
-) []*livekit.ParticipantInfo {
-	patched := make([]*livekit.ParticipantInfo, 0, len(participants))
-	for _, pi := range participants {
-		pID := livekit.ParticipantID(pi.Sid)
-		if stale[pID] {
-			if pi = refresh(pID); pi == nil {
-				continue
-			}
-		}
-		patched = append(patched, pi)
-	}
-	return patched
-}
-
-func (p *ParticipantImpl) sendParticipantUpdate(participantsToUpdate []*livekit.ParticipantInfo, fullSnapshot bool) error {
 	p.updateLock.Lock()
 	if p.IsDisconnected() {
 		p.updateLock.Unlock()
@@ -149,54 +88,91 @@ func (p *ParticipantImpl) sendParticipantUpdate(participantsToUpdate []*livekit.
 
 	// read under the lock the flush takes, so an update either queues before the flush
 	// or goes out after the connection has opened
-	if !p.IsReady() || p.signaller.HandshakePending() {
-		// queue up updates, a queued snapshot is flushed as an incremental update
+	if !p.IsReady() || p.signaller.HandshakePending() || p.snapshotPending {
+		// queue up updates
 		p.queuedUpdates = append(p.queuedUpdates, participantsToUpdate...)
 		p.updateLock.Unlock()
 		return nil
 	}
+	validUpdates := p.filterUpdatesLocked(participantsToUpdate)
+	p.updateLock.Unlock()
+
+	return p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(validUpdates, false))
+}
+
+// SendParticipantSnapshot sends every participant visible to this one, flagged so that the
+// client drops any remote participant it holds that is not listed. Updates queue while
+// build runs and go out after the snapshot, so no entry is older than a version already sent.
+func (p *ParticipantImpl) SendParticipantSnapshot(build func() []*livekit.ParticipantInfo) error {
+	p.updateLock.Lock()
+	p.snapshotPending = true
+	p.updateLock.Unlock()
+
+	// built without the lock, the join path takes the room lock before updateLock
+	participants := build()
+
+	p.updateLock.Lock()
+	p.snapshotPending = false
+	if p.IsDisconnected() {
+		p.updateLock.Unlock()
+		return nil
+	}
+	if !p.IsReady() || p.signaller.HandshakePending() {
+		// not open, the roster goes out as an incremental update with the queued ones
+		p.queuedUpdates = append(p.queuedUpdates, participants...)
+		p.updateLock.Unlock()
+		return nil
+	}
+	queuedUpdates := p.queuedUpdates
+	p.queuedUpdates = nil
+	// written under the lock, so nothing goes out between the build and the snapshot
+	err := p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(p.filterUpdatesLocked(participants), true))
+	p.updateLock.Unlock()
+	if err != nil {
+		return err
+	}
+
+	if len(queuedUpdates) > 0 {
+		return p.SendParticipantUpdate(queuedUpdates)
+	}
+	return nil
+}
+
+// filterUpdatesLocked drops outdated and hidden entries, and records the sent versions
+func (p *ParticipantImpl) filterUpdatesLocked(participantsToUpdate []*livekit.ParticipantInfo) []*livekit.ParticipantInfo {
 	validUpdates := make([]*livekit.ParticipantInfo, 0, len(participantsToUpdate))
 	for _, pi := range participantsToUpdate {
-		isValid, isOutdated := true, false
+		isValid := true
 		pID := livekit.ParticipantID(pi.Sid)
 		if lastVersion, ok := p.updateCache.Get(pID); ok {
 			// this is a message delivered out of order, a more recent version of the message had already been
 			// sent.
 			if pi.Version < lastVersion.version {
-				isOutdated = true
-				// a snapshot lists everyone still present, an entry that went stale after the refresh
-				// keeps the participant listed and the client ignores the stale fields by version
-				if !fullSnapshot || lastVersion.state == livekit.ParticipantInfo_DISCONNECTED {
-					p.params.Logger.Debugw(
-						"skipping outdated participant update",
-						"otherParticipant", pi.Identity,
-						"otherPID", pi.Sid,
-						"version", pi.Version,
-						"lastVersion", lastVersion,
-					)
-					isValid = false
-				}
+				p.params.Logger.Debugw(
+					"skipping outdated participant update",
+					"otherParticipant", pi.Identity,
+					"otherPID", pi.Sid,
+					"version", pi.Version,
+					"lastVersion", lastVersion,
+				)
+				isValid = false
 			}
 		}
 		if pi.Permission != nil && pi.Permission.Hidden && pi.Sid != string(p.ID()) {
 			p.params.Logger.Debugw("skipping hidden participant update", "otherParticipant", pi.Identity)
 			isValid = false
 		}
-		if isValid && !isOutdated {
+		if isValid {
 			p.updateCache.Add(pID, participantUpdateInfo{
 				identity:  livekit.ParticipantIdentity(pi.Identity),
 				version:   pi.Version,
 				state:     pi.State,
 				updatedAt: time.Now(),
 			})
-		}
-		if isValid {
 			validUpdates = append(validUpdates, withoutServerAttributes(pi))
 		}
 	}
-	p.updateLock.Unlock()
-
-	return p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(validUpdates, fullSnapshot))
+	return validUpdates
 }
 
 // serverAttributePrefix marks attributes the server sets for its own use; older clients
