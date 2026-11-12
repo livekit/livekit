@@ -16,6 +16,7 @@ package service_test
 
 import (
 	"context"
+	"strconv"
 	"testing"
 
 	"github.com/livekit/protocol/auth"
@@ -207,10 +208,22 @@ func TestCreateSIPParticipantSourceCallUnsupported(t *testing.T) {
 func TestSIPInboundTrunkAllowedAddressValidation(t *testing.T) {
 	ctx, s, rs := newTestSIPService(t)
 
+	// Each trunk gets its own number. Trunks without numbers would conflict with each other,
+	// and the conflict is also InvalidArgument, which would hide the address checks.
+	lastNumber := 15550200000
+	nextNumber := func() string {
+		lastNumber++
+		return "+" + strconv.Itoa(lastNumber)
+	}
 	create := func(addrs ...string) (*livekit.SIPInboundTrunkInfo, error) {
 		return s.CreateSIPInboundTrunk(ctx, &livekit.CreateSIPInboundTrunkRequest{
-			Trunk: &livekit.SIPInboundTrunkInfo{Name: "trunk", AllowedAddresses: addrs},
+			Trunk: &livekit.SIPInboundTrunkInfo{Name: "trunk", Numbers: []string{nextNumber()}, AllowedAddresses: addrs},
 		})
+	}
+	requireInvalidAddress := func(t *testing.T, err error) {
+		t.Helper()
+		requireInvalidArgument(t, err)
+		require.ErrorContains(t, err, "invalid allowed address")
 	}
 	update := func(id string, u *livekit.SIPInboundTrunkUpdate) (*livekit.SIPInboundTrunkInfo, error) {
 		return s.UpdateSIPInboundTrunk(ctx, &livekit.UpdateSIPInboundTrunkRequest{
@@ -223,6 +236,7 @@ func TestSIPInboundTrunkAllowedAddressValidation(t *testing.T) {
 		require.NoError(t, rs.StoreSIPInboundTrunk(ctx, &livekit.SIPInboundTrunkInfo{
 			SipTrunkId:       id,
 			Name:             "legacy",
+			Numbers:          []string{nextNumber()},
 			AllowedAddresses: addrs,
 		}))
 		return id
@@ -255,7 +269,7 @@ func TestSIPInboundTrunkAllowedAddressValidation(t *testing.T) {
 		t.Run("create", func(t *testing.T) {
 			for _, addr := range []string{"sip.twilio.com", "*", "192.0.2.10:5060", "[2001:db8::1]"} {
 				_, err := create("192.0.2.10", addr)
-				requireInvalidArgument(t, err)
+				requireInvalidAddress(t, err)
 			}
 			tr, err := create("192.0.2.10", "192.0.2.0/24", "2001:db8::/32")
 			require.NoError(t, err)
@@ -269,16 +283,17 @@ func TestSIPInboundTrunkAllowedAddressValidation(t *testing.T) {
 			_, err = update(tr.SipTrunkId, &livekit.SIPInboundTrunkUpdate{
 				AllowedAddresses: &livekit.ListUpdate{Add: []string{"sip.twilio.com"}},
 			})
-			requireInvalidArgument(t, err)
+			requireInvalidAddress(t, err)
 
 			_, err = s.UpdateSIPInboundTrunk(ctx, &livekit.UpdateSIPInboundTrunkRequest{
 				SipTrunkId: tr.SipTrunkId,
 				Action: &livekit.UpdateSIPInboundTrunkRequest_Replace{Replace: &livekit.SIPInboundTrunkInfo{
 					Name:             "replace",
+					Numbers:          tr.Numbers,
 					AllowedAddresses: []string{"sip.twilio.com"},
 				}},
 			})
-			requireInvalidArgument(t, err)
+			requireInvalidAddress(t, err)
 
 			info, err := update(tr.SipTrunkId, &livekit.SIPInboundTrunkUpdate{
 				AllowedAddresses: &livekit.ListUpdate{Add: []string{"2001:db8::1"}},
@@ -292,7 +307,7 @@ func TestSIPInboundTrunkAllowedAddressValidation(t *testing.T) {
 
 			// Unrelated changes are rejected until the invalid entry is removed.
 			_, err := update(id, &livekit.SIPInboundTrunkUpdate{Name: proto.String("renamed")})
-			requireInvalidArgument(t, err)
+			requireInvalidAddress(t, err)
 
 			info, err := update(id, &livekit.SIPInboundTrunkUpdate{
 				AllowedAddresses: &livekit.ListUpdate{Remove: []string{"sip.twilio.com"}},
