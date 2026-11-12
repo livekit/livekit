@@ -100,10 +100,18 @@ type Buffer struct {
 	fecDecoder          *flexfec.Decoder
 	fecPktBuf           []byte
 	onFECRecovery       cbFECRecovery
+	// extended sequence numbers + 1 of packets repaired from RTX, indexed by
+	// sequence number modulo the history size; zero marks an empty slot
+	rtxRepairedSNs [rtxRepairedHistory]uint64
 
 	streamInfoProbe       *StreamInfoProbe
 	warnedPendingOverflow bool
 }
+
+// rtxRepairedHistory bounds how many recent sequence numbers are checked for
+// an RTX repair. FlexFEC masks span far fewer packets, and repairs arrive
+// close to the media they protect.
+const rtxRepairedHistory = 512
 
 // StreamInfoProbe identifies a stream from the mid/rid/rsid header extensions of its
 // packets. It runs on the write path, i. e. as SRTP pushes into this buffer, because
@@ -415,16 +423,17 @@ func (b *Buffer) writeRTX(rtxPkt *rtp.Packet, arrivalTime int64) {
 
 	b.ingestLocked(b.rtxPktBuf[:n], &repairedPkt, arrivalTime, false, true)
 
-	var fecDelta fecRecoveryDelta
-	var onFECRecovery cbFECRecovery
-	if b.fecDecoder != nil {
-		fecDelta, onFECRecovery = b.feedFECLocked(&repairedPkt, arrivalTime)
+	// The repaired packet carries the RTX packet's header extensions, e.g. a
+	// MID the original lacked, so it differs from the media FlexFEC protected.
+	// Like libwebrtc, do not use it to recover other packets.
+	if extSN, ok := b.publisherExtSequenceNumberLocked(repairedPkt.SequenceNumber); ok {
+		b.rtxRepairedSNs[extSN%rtxRepairedHistory] = extSN + 1
 	}
 
 	rtcpPackets := b.getRTCPPackets(arrivalTime)
 	b.Unlock()
 
-	b.packetPostProcess(rtcpPackets, fecDelta, onFECRecovery)
+	b.packetPostProcess(rtcpPackets, fecRecoveryDelta{}, nil)
 }
 
 func (b *Buffer) SetPrimaryBufferForFEC(primaryBuffer *Buffer) {
@@ -512,19 +521,31 @@ func (b *Buffer) getFECMediaPacketLocked(sequenceNumber uint16, dst []byte) (int
 	// removes padding-only packets from the downstream space, so resolve the
 	// original extended sequence number and apply the same adjustment used
 	// when the packet was inserted into the bucket.
-	highestSequenceNumber := b.rtpStats.ExtendedHighestSequenceNumber()
-	extendedSequenceNumber := int64(highestSequenceNumber) + int64(int16(sequenceNumber-uint16(highestSequenceNumber)))
-	if extendedSequenceNumber < 0 {
+	extendedSN, ok := b.publisherExtSequenceNumberLocked(sequenceNumber)
+	if !ok || b.rtxRepairedSNs[extendedSN%rtxRepairedHistory] == extendedSN+1 {
 		return 0, errFECMediaPacketNotFound
 	}
 
-	extendedSN := uint64(extendedSequenceNumber)
 	sequenceNumberAdjustment, err := b.snRangeMap.GetValue(extendedSN)
 	if err != nil || sequenceNumberAdjustment > extendedSN {
 		return 0, errFECMediaPacketNotFound
 	}
 
 	return b.bucket.GetPacket(dst, extendedSN-sequenceNumberAdjustment)
+}
+
+// publisherExtSequenceNumberLocked extends a sequence number of the
+// publisher's space relative to the highest one received.
+func (b *Buffer) publisherExtSequenceNumberLocked(sequenceNumber uint16) (uint64, bool) {
+	if b.rtpStats == nil {
+		return 0, false
+	}
+	highestSequenceNumber := b.rtpStats.ExtendedHighestSequenceNumber()
+	extendedSequenceNumber := int64(highestSequenceNumber) + int64(int16(sequenceNumber-uint16(highestSequenceNumber)))
+	if extendedSequenceNumber < 0 {
+		return 0, false
+	}
+	return uint64(extendedSequenceNumber), true
 }
 
 // OnFECRecovery is called with counter deltas whenever FEC packets are
