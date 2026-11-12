@@ -193,6 +193,10 @@ type BufferBase struct {
 
 	snRangeMap *utils.RangeMap[uint64, uint64]
 
+	// extended sequence numbers + 1 of packets repaired from RTX, indexed by
+	// sequence number modulo the history size; zero marks an empty slot
+	rtxRepairedSNs [rtxRepairedHistory]uint64
+
 	audioLevelConfig audio.AudioLevelConfig
 	audioLevel       *audio.AudioLevel
 	audioLevelExtID  uint8
@@ -578,6 +582,7 @@ func (b *BufferBase) restartStreamLocked(reason string, isDetected bool) {
 
 	// restart
 	b.snRangeMap = utils.NewRangeMap[uint64, uint64](100)
+	b.rtxRepairedSNs = [rtxRepairedHistory]uint64{}
 	b.setupRTPStats(b.clockRate)
 
 	b.bucket.ResyncOnNextPacket()
@@ -1657,3 +1662,40 @@ func (b *BufferBase) GetRtcpReceptionReportLocked(proxyLoss uint8) *rtcp.Recepti
 }
 
 // ---------------------------------------------------------------
+
+// rtxRepairedHistory bounds how many recent sequence numbers are checked for
+// an RTX repair. FlexFEC masks span far fewer packets, and repairs arrive
+// close to the media they protect.
+const rtxRepairedHistory = 512
+
+// markRTXRepairedLocked records that a packet was repaired from RTX. Its
+// header comes from the RTX packet: libwebrtc adds a MID to retransmissions
+// until the RTX SSRC is acknowledged and sets abs-send-time and transport-cc
+// at send time, so it differs from the media FlexFEC protected. Like
+// libwebrtc, such packets are not used to recover others, see
+// isRTXRepairedLocked. Packets recovered by FEC are exact and are not marked.
+func (b *BufferBase) markRTXRepairedLocked(sequenceNumber uint16) {
+	if extSN, ok := b.publisherExtSequenceNumberLocked(sequenceNumber); ok {
+		b.rtxRepairedSNs[extSN%rtxRepairedHistory] = extSN + 1
+	}
+}
+
+// isRTXRepairedLocked reports whether the packet with the given extended
+// sequence number of the publisher's space was repaired from RTX.
+func (b *BufferBase) isRTXRepairedLocked(extendedSN uint64) bool {
+	return b.rtxRepairedSNs[extendedSN%rtxRepairedHistory] == extendedSN+1
+}
+
+// publisherExtSequenceNumberLocked extends a sequence number of the
+// publisher's space relative to the highest one received.
+func (b *BufferBase) publisherExtSequenceNumberLocked(sequenceNumber uint16) (uint64, bool) {
+	if b.rtpStats == nil {
+		return 0, false
+	}
+	highestSequenceNumber := b.rtpStats.ExtendedHighestSequenceNumber()
+	extendedSequenceNumber := int64(highestSequenceNumber) + int64(int16(sequenceNumber-uint16(highestSequenceNumber)))
+	if extendedSequenceNumber < 0 {
+		return 0, false
+	}
+	return uint64(extendedSequenceNumber), true
+}

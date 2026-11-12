@@ -783,3 +783,32 @@ func TestBufferFECIgnoresRTXRepairedPackets(t *testing.T) {
 	_, ok := extSNBySN[media[retransmittedIdx].SequenceNumber]
 	assert.True(t, ok, "retransmitted packet not forwarded")
 }
+
+func TestBufferBaseRTXRepairedHistory(t *testing.T) {
+	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+	buff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
+	bindFECTestBuffer(t, buff)
+
+	media := rtptest.GenerateVP8Packets(100, 3, uint8(vp8Codec.PayloadType), fecTestMediaSSRC)
+	for i := range media {
+		writePacket(t, buff, &media[i])
+	}
+
+	buff.Lock()
+	defer buff.Unlock()
+
+	repairedSN, ok := buff.publisherExtSequenceNumberLocked(media[1].SequenceNumber)
+	require.True(t, ok)
+	otherSN, ok := buff.publisherExtSequenceNumberLocked(media[2].SequenceNumber)
+	require.True(t, ok)
+
+	buff.markRTXRepairedLocked(media[1].SequenceNumber)
+	require.True(t, buff.isRTXRepairedLocked(repairedSN))
+	require.False(t, buff.isRTXRepairedLocked(otherSN))
+	// a later sequence number sharing the slot is not mistaken for the repair
+	require.False(t, buff.isRTXRepairedLocked(repairedSN+rtxRepairedHistory))
+
+	// a stream restart starts a new sequence number space
+	buff.restartStreamLocked("test", false)
+	require.False(t, buff.isRTXRepairedLocked(repairedSN))
+}
