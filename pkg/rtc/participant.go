@@ -267,6 +267,7 @@ type ParticipantImpl struct {
 
 	state        atomic.Value // livekit.ParticipantInfo_State
 	disconnected chan struct{}
+	closeDone    chan struct{}
 
 	// a migrating in participant resumes on a reconnect response, the client takes it
 	// only as the first message on the resumed signal connection
@@ -387,6 +388,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p := &ParticipantImpl{
 		params:       params,
 		disconnected: make(chan struct{}),
+		closeDone:    make(chan struct{}),
 		pubRTCPQueue: sutils.NewTypedOpsQueue[postRtcpOp](sutils.OpsQueueParams{
 			Name:    "pub-rtcp",
 			MinSize: 64,
@@ -646,6 +648,11 @@ func (p *ParticipantImpl) IsDisconnected() bool {
 
 func (p *ParticipantImpl) Disconnected() <-chan struct{} {
 	return p.disconnected
+}
+
+// CloseDone is closed after Close runs its close callbacks, which a second Close does not wait for
+func (p *ParticipantImpl) CloseDone() <-chan struct{} {
+	return p.closeDone
 }
 
 func (p *ParticipantImpl) IsIdle() bool {
@@ -1647,6 +1654,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	for _, cb := range onClose {
 		cb(p)
 	}
+	close(p.closeDone)
 
 	// Close peer connections without blocking participant Close. If peer connections are gathering candidates
 	// Close will block.
@@ -4441,7 +4449,8 @@ func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack
 	p.pendingTracksLock.Lock()
 	for _, pti := range p.pendingTracks {
 		for i, ti := range pti.trackInfos {
-			if ti.Sid == update.TrackSid {
+			// an update of the other kind does not match, as MediaTrackReceiver ignores it for a published track
+			if ti.Sid == update.TrackSid && ti.Type == livekit.TrackType_AUDIO {
 				isPending = true
 
 				ti = proto.CloneOf(ti)
@@ -4484,7 +4493,8 @@ func (p *ParticipantImpl) UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack
 	p.pendingTracksLock.Lock()
 	for _, pti := range p.pendingTracks {
 		for i, ti := range pti.trackInfos {
-			if ti.Sid == update.TrackSid {
+			// an update of the other kind does not match, as MediaTrackReceiver ignores it for a published track
+			if ti.Sid == update.TrackSid && ti.Type == livekit.TrackType_VIDEO {
 				isPending = true
 
 				ti = proto.CloneOf(ti)

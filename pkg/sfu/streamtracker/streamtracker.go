@@ -170,6 +170,10 @@ func (s *StreamTracker) resetLocked() {
 
 func (s *StreamTracker) SetPaused(paused bool) {
 	s.lock.Lock()
+	if s.paused == paused {
+		s.lock.Unlock()
+		return
+	}
 	s.paused = paused
 	if !paused {
 		s.resetLocked()

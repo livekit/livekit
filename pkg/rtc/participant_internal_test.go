@@ -627,6 +627,32 @@ func TestDisconnectTiming(t *testing.T) {
 	})
 }
 
+// a second Close returns while the first runs the close callbacks; CloseDone waits for them
+func TestCloseDone(t *testing.T) {
+	p := newParticipantForTest("test")
+	inCallback, release := make(chan struct{}), make(chan struct{})
+	p.AddOnClose("test", func(types.LocalParticipant) {
+		close(inCallback)
+		<-release
+	})
+	go func() { _ = p.Close(false, types.ParticipantCloseReasonClientRequestLeave, false) }()
+	<-inCallback
+
+	require.NoError(t, p.Close(false, types.ParticipantCloseReasonRoomClosed, false))
+	select {
+	case <-p.CloseDone():
+		t.Fatal("close done before its callbacks finished")
+	default:
+	}
+
+	close(release)
+	select {
+	case <-p.CloseDone():
+	case <-time.After(time.Second):
+		t.Fatal("close not done after its callbacks finished")
+	}
+}
+
 func TestCorrectJoinedAt(t *testing.T) {
 	p := newParticipantForTest("test")
 	info := p.ToProto()
@@ -1824,6 +1850,43 @@ func TestUpdateVideoTrackWritesPendingUnderWriteLock(t *testing.T) {
 	p, sid := newParticipantWithPendingTrack(t, livekit.TrackType_VIDEO)
 	raceOnPendingTrack(func() {
 		p.UpdateVideoTrack(&livekit.UpdateLocalVideoTrack{TrackSid: sid, Width: 1280, Height: 720})
+	})
+}
+
+func TestUpdateTrackOfOtherKindLeavesPendingTrackUnchanged(t *testing.T) {
+	pendingInfo := func(p *ParticipantImpl) *livekit.TrackInfo {
+		return p.pendingTracks[pendingTrackCid].trackInfos[0]
+	}
+
+	t.Run("video update on an audio track", func(t *testing.T) {
+		p, sid := newParticipantWithPendingTrack(t, livekit.TrackType_AUDIO)
+		before := proto.CloneOf(pendingInfo(p))
+		require.Error(t, p.UpdateVideoTrack(&livekit.UpdateLocalVideoTrack{TrackSid: sid, Width: 1920, Height: 1080}))
+		require.True(t, proto.Equal(before, pendingInfo(p)), "pending audio track changed: %v", pendingInfo(p))
+	})
+
+	t.Run("audio update on a video track", func(t *testing.T) {
+		p, sid := newParticipantWithPendingTrack(t, livekit.TrackType_VIDEO)
+		before := proto.CloneOf(pendingInfo(p))
+		require.Error(t, p.UpdateAudioTrack(&livekit.UpdateLocalAudioTrack{
+			TrackSid: sid,
+			Features: []livekit.AudioTrackFeature{livekit.AudioTrackFeature_TF_STEREO, livekit.AudioTrackFeature_TF_NO_DTX},
+		}))
+		require.True(t, proto.Equal(before, pendingInfo(p)), "pending video track changed: %v", pendingInfo(p))
+	})
+
+	t.Run("update of the same kind still applies", func(t *testing.T) {
+		p, sid := newParticipantWithPendingTrack(t, livekit.TrackType_VIDEO)
+		require.NoError(t, p.UpdateVideoTrack(&livekit.UpdateLocalVideoTrack{TrackSid: sid, Width: 1920, Height: 1080}))
+		require.Equal(t, uint32(1920), pendingInfo(p).Width)
+		require.Equal(t, uint32(1080), pendingInfo(p).Height)
+
+		p, sid = newParticipantWithPendingTrack(t, livekit.TrackType_AUDIO)
+		require.NoError(t, p.UpdateAudioTrack(&livekit.UpdateLocalAudioTrack{
+			TrackSid: sid,
+			Features: []livekit.AudioTrackFeature{livekit.AudioTrackFeature_TF_STEREO},
+		}))
+		require.True(t, pendingInfo(p).Stereo)
 	})
 }
 

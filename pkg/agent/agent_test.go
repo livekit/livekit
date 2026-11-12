@@ -188,6 +188,42 @@ func TestAgent(t *testing.T) {
 		require.Greater(t, res.State.EndedAt, res.State.StartedAt)
 	})
 
+	t.Run("a launched job carries the dispatch's thread", func(t *testing.T) {
+		bus := psrpc.NewLocalMessageBus()
+		server := testutils.NewTestServer(bus)
+		t.Cleanup(server.Close)
+
+		rpcClient := must.Get(rpc.NewAgentInternalClient(bus))
+		registered := must.Get(rpcClient.SubscribeWorkerRegistered(context.Background(), agent.DefaultHandlerNamespace))
+		defer registered.Close()
+
+		worker := server.SimulateAgentWorker()
+		worker.Register(testAgentName, livekit.JobType_JT_ROOM)
+		select {
+		case <-registered.Channel():
+		case <-time.After(time.Second):
+			require.Fail(t, "registration timeout")
+		}
+
+		client := must.Get(agent.NewAgentClient(bus, agent.Config{}))
+		t.Cleanup(func() { _ = client.Stop() })
+
+		threadID := guid.New(guid.AgentThreadPrefix)
+		var launched []*livekit.Job
+		client.LaunchJob(context.Background(), &agent.JobRequest{
+			JobType:   livekit.JobType_JT_ROOM,
+			Room:      &livekit.Room{},
+			AgentName: testAgentName,
+			ThreadId:  threadID,
+		}).ForEach(func(job *livekit.Job) { launched = append(launched, job) })
+		require.Len(t, launched, 1)
+		require.Equal(t, threadID, launched[0].ThreadId)
+
+		jobs := worker.Jobs()
+		require.Len(t, jobs, 1)
+		require.Equal(t, threadID, jobs[0].ThreadId)
+	})
+
 	t.Run("dispatch burst does not wait for the CheckEnabled timeout", func(t *testing.T) {
 		bus := psrpc.NewLocalMessageBus()
 		server := testutils.NewTestServer(bus)
