@@ -30,6 +30,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	protoagent "github.com/livekit/protocol/agent"
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -118,6 +119,7 @@ type WorkerSignalHandler interface {
 	HandlePing(*livekit.WorkerPing) error
 	HandleUpdateWorker(*livekit.UpdateWorkerStatus) error
 	HandleMigrateJob(*livekit.MigrateJobRequest) error
+	HandleCreateJobToken(*livekit.CreateJobTokenRequest) error
 }
 
 func DispatchWorkerSignal(req *livekit.WorkerMessage, h WorkerSignalHandler) error {
@@ -136,6 +138,8 @@ func DispatchWorkerSignal(req *livekit.WorkerMessage, h WorkerSignalHandler) err
 		return h.HandleUpdateWorker(m.UpdateWorker)
 	case *livekit.WorkerMessage_MigrateJob:
 		return h.HandleMigrateJob(m.MigrateJob)
+	case *livekit.WorkerMessage_CreateJobToken:
+		return h.HandleCreateJobToken(m.CreateJobToken)
 	default:
 		return ErrUnknownWorkerSignal
 	}
@@ -165,6 +169,9 @@ func (UnimplementedWorkerSignalHandler) HandleUpdateWorker(*livekit.UpdateWorker
 }
 func (UnimplementedWorkerSignalHandler) HandleMigrateJob(*livekit.MigrateJobRequest) error {
 	return fmt.Errorf("%w: MigrateJob", ErrUnimplementedWrorkerSignal)
+}
+func (UnimplementedWorkerSignalHandler) HandleCreateJobToken(*livekit.CreateJobTokenRequest) error {
+	return fmt.Errorf("%w: CreateJobToken", ErrUnimplementedWrorkerSignal)
 }
 
 type WorkerPingHandler struct {
@@ -739,4 +746,65 @@ func (w *Worker) HandleMigrateJob(req *livekit.MigrateJobRequest) error {
 	// TODO(theomonnom): On OSS this is not implemented
 	// We could maybe just move a specific job to another worker
 	return nil
+}
+
+// JobTokenAuthorizer decides the grants of a token a job asks for. It gets the
+// job and the grants the job asked for, and returns the grants to sign, or an
+// error that refuses the request.
+type JobTokenAuthorizer func(job *livekit.Job, grants *auth.ClaimGrants) (*auth.ClaimGrants, error)
+
+func (w *Worker) HandleCreateJobToken(req *livekit.CreateJobTokenRequest) error {
+	return w.CreateJobToken(req, nil)
+}
+
+// CreateJobToken answers a job's request for a token, signed with the worker's
+// key. The job must be one this worker runs. authorize, when not nil, decides
+// the grants; without it the token carries the grants the job asked for. A
+// refusal is sent as the response's error and leaves the connection open.
+func (w *Worker) CreateJobToken(req *livekit.CreateJobTokenRequest, authorize JobTokenAuthorizer) error {
+	res := &livekit.CreateJobTokenResponse{RequestId: req.RequestId}
+	token, expiresAt, err := w.createJobToken(req, authorize)
+	if err != nil {
+		w.logger.Infow("job token refused", "jobID", req.JobId, "error", err)
+		res.Error = err.Error()
+	} else {
+		res.Token = token
+		res.ExpiresAt = expiresAt.Unix()
+	}
+
+	_, err = w.conn.WriteServerMessage(&livekit.ServerMessage{
+		Message: &livekit.ServerMessage_CreateJobToken{CreateJobToken: res},
+	})
+	return err
+}
+
+func (w *Worker) createJobToken(req *livekit.CreateJobTokenRequest, authorize JobTokenAuthorizer) (string, time.Time, error) {
+	w.mu.Lock()
+	job, ok := w.runningJobs[livekit.JobID(req.JobId)]
+	if ok {
+		job = proto.CloneOf(job)
+	}
+	w.mu.Unlock()
+	if !ok {
+		return "", time.Time{}, errors.New("job is not running on this worker")
+	}
+
+	// A running job may request tokens after the worker's registration token expires.
+
+	grants, err := protoagent.ParseJobTokenClaims(req.Claims)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("invalid claims: %w", err)
+	}
+	if authorize != nil {
+		if grants, err = authorize(job, grants); err != nil {
+			return "", time.Time{}, err
+		}
+	}
+
+	token, expiresAt, err := protoagent.BuildJobToken(w.apiKey, w.apiSecret, grants)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	w.logger.Infow("job token issued", "jobID", job.Id, "identity", grants.Identity, "expiresAt", expiresAt)
+	return token, expiresAt, nil
 }

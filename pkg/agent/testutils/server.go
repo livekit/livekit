@@ -129,6 +129,7 @@ func (h *TestServer) SimulateAgentWorker(opts ...SimulatedWorkerOption) *AgentWo
 		JobAssignments:          events.NewObserverList[*livekit.JobAssignment](),
 		JobTerminations:         events.NewObserverList[*livekit.JobTermination](),
 		WorkerPongs:             events.NewObserverList[*livekit.WorkerPong](),
+		CreateJobTokenResponses: events.NewObserverList[*livekit.CreateJobTokenResponse](),
 	}
 	w.ctx, w.cancel = context.WithCancel(context.Background())
 
@@ -196,6 +197,7 @@ type AgentWorker struct {
 	JobAssignments          *events.ObserverList[*livekit.JobAssignment]
 	JobTerminations         *events.ObserverList[*livekit.JobTermination]
 	WorkerPongs             *events.ObserverList[*livekit.WorkerPong]
+	CreateJobTokenResponses *events.ObserverList[*livekit.CreateJobTokenResponse]
 }
 
 func (w *AgentWorker) statusWorker() {
@@ -285,6 +287,8 @@ func (w *AgentWorker) handleServerMessages() {
 			w.handleTermination(m.Termination)
 		case *livekit.ServerMessage_Pong:
 			w.handlePong(m.Pong)
+		case *livekit.ServerMessage_CreateJobToken:
+			w.CreateJobTokenResponses.Emit(m.CreateJobToken)
 		}
 
 		w.mu.Lock()
@@ -381,6 +385,12 @@ func (w *AgentWorker) SendSimulateJob(m *livekit.SimulateJobRequest) {
 func (w *AgentWorker) SendMigrateJob(m *livekit.MigrateJobRequest) {
 	w.SendMessage(&livekit.WorkerMessage{Message: &livekit.WorkerMessage_MigrateJob{
 		MigrateJob: m,
+	}})
+}
+
+func (w *AgentWorker) SendCreateJobToken(m *livekit.CreateJobTokenRequest) {
+	w.SendMessage(&livekit.WorkerMessage{Message: &livekit.WorkerMessage_CreateJobToken{
+		CreateJobToken: m,
 	}})
 }
 
