@@ -562,24 +562,37 @@ func TestParticipantSnapshot(t *testing.T) {
 		return sink.WriteMessageArgsForCall(sink.WriteMessageCallCount() - 1).(*livekit.SignalResponse).GetUpdate()
 	}
 
-	present := &livekit.ParticipantInfo{Sid: "PA_present", Identity: "present", Version: 2}
+	present := &livekit.ParticipantInfo{Sid: "PA_present", Identity: "present", Version: 2, Metadata: "current"}
 	left := &livekit.ParticipantInfo{Sid: "PA_left", Identity: "left", Version: 2, State: livekit.ParticipantInfo_DISCONNECTED}
-	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{present, left}))
+	changing := &livekit.ParticipantInfo{Sid: "PA_changing", Identity: "changing", Version: 2}
+	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{present, left, changing}))
 	require.False(t, lastUpdate().FullSnapshot)
 
 	// the snapshot was built before the newer versions went out
+	current := map[livekit.ParticipantID]*livekit.ParticipantInfo{
+		"PA_present": present,
+		// still older than the version sent, as if it changes again on every read
+		"PA_changing": {Sid: "PA_changing", Identity: "changing", Version: 1},
+	}
 	require.NoError(t, p.SendParticipantSnapshot([]*livekit.ParticipantInfo{
 		{Sid: "PA_present", Identity: "present", Version: 1},
 		{Sid: "PA_left", Identity: "left", Version: 1},
+		{Sid: "PA_changing", Identity: "changing", Version: 1},
+	}, func(pID livekit.ParticipantID) *livekit.ParticipantInfo {
+		return current[pID]
 	}))
 	update := lastUpdate()
 	require.True(t, update.FullSnapshot)
-	// a participant still present is listed, one that left is not
-	require.Len(t, update.Participants, 1)
+	// a stale entry is replaced by the current info, one that left is dropped, and one
+	// that stays stale after the refreshes is kept so the participant is still listed
+	require.Len(t, update.Participants, 2)
 	require.Equal(t, "PA_present", update.Participants[0].Sid)
+	require.EqualValues(t, 2, update.Participants[0].Version)
+	require.Equal(t, "current", update.Participants[0].Metadata)
+	require.Equal(t, "PA_changing", update.Participants[1].Sid)
 
 	// the stale snapshot entry does not lower the cached version
-	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{{Sid: "PA_present", Identity: "present", Version: 1}}))
+	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{{Sid: "PA_changing", Identity: "changing", Version: 1}}))
 	require.Equal(t, 2, sink.WriteMessageCallCount())
 }
 

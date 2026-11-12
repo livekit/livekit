@@ -83,10 +83,61 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 	return p.sendParticipantUpdate(participantsToUpdate, false)
 }
 
+// how many times a snapshot re-reads the entries that a newer update already went out for
+const snapshotRefreshAttempts = 3
+
 // SendParticipantSnapshot sends every participant visible to this one, flagged so that the
-// client drops any remote participant it holds that is not listed.
-func (p *ParticipantImpl) SendParticipantSnapshot(participants []*livekit.ParticipantInfo) error {
+// client drops any remote participant it holds that is not listed. refresh returns the
+// current info of a participant, nil when it has left.
+func (p *ParticipantImpl) SendParticipantSnapshot(
+	participants []*livekit.ParticipantInfo,
+	refresh func(livekit.ParticipantID) *livekit.ParticipantInfo,
+) error {
+	for range snapshotRefreshAttempts {
+		stale := p.staleSnapshotEntries(participants)
+		if len(stale) == 0 {
+			break
+		}
+		participants = patchSnapshot(participants, stale, refresh)
+	}
 	return p.sendParticipantUpdate(participants, true)
+}
+
+// staleSnapshotEntries returns the participants whose snapshot entry is older than the version already sent
+func (p *ParticipantImpl) staleSnapshotEntries(participants []*livekit.ParticipantInfo) map[livekit.ParticipantID]bool {
+	p.updateLock.Lock()
+	defer p.updateLock.Unlock()
+
+	var stale map[livekit.ParticipantID]bool
+	for _, pi := range participants {
+		pID := livekit.ParticipantID(pi.Sid)
+		if lastVersion, ok := p.updateCache.Peek(pID); ok && pi.Version < lastVersion.version {
+			if stale == nil {
+				stale = make(map[livekit.ParticipantID]bool)
+			}
+			stale[pID] = true
+		}
+	}
+	return stale
+}
+
+// patchSnapshot replaces the stale entries with current info, and drops the participants that have left
+func patchSnapshot(
+	participants []*livekit.ParticipantInfo,
+	stale map[livekit.ParticipantID]bool,
+	refresh func(livekit.ParticipantID) *livekit.ParticipantInfo,
+) []*livekit.ParticipantInfo {
+	patched := make([]*livekit.ParticipantInfo, 0, len(participants))
+	for _, pi := range participants {
+		pID := livekit.ParticipantID(pi.Sid)
+		if stale[pID] {
+			if pi = refresh(pID); pi == nil {
+				continue
+			}
+		}
+		patched = append(patched, pi)
+	}
+	return patched
 }
 
 func (p *ParticipantImpl) sendParticipantUpdate(participantsToUpdate []*livekit.ParticipantInfo, fullSnapshot bool) error {
@@ -113,7 +164,8 @@ func (p *ParticipantImpl) sendParticipantUpdate(participantsToUpdate []*livekit.
 			// sent.
 			if pi.Version < lastVersion.version {
 				isOutdated = true
-				// a snapshot lists everyone still present, the client ignores the stale fields by version
+				// a snapshot lists everyone still present, an entry that went stale after the refresh
+				// keeps the participant listed and the client ignores the stale fields by version
 				if !fullSnapshot || lastVersion.state == livekit.ParticipantInfo_DISCONNECTED {
 					p.params.Logger.Debugw(
 						"skipping outdated participant update",

@@ -1223,10 +1223,11 @@ type FakeLocalParticipant struct {
 	sendParticipantUpdateReturnsOnCall map[int]struct {
 		result1 error
 	}
-	SendParticipantSnapshotStub        func([]*livekit.ParticipantInfo) error
+	SendParticipantSnapshotStub        func([]*livekit.ParticipantInfo, func(livekit.ParticipantID) *livekit.ParticipantInfo) error
 	sendParticipantSnapshotMutex       sync.RWMutex
 	sendParticipantSnapshotArgsForCall []struct {
 		arg1 []*livekit.ParticipantInfo
+		arg2 func(livekit.ParticipantID) *livekit.ParticipantInfo
 	}
 	sendParticipantSnapshotReturns struct {
 		result1 error
@@ -8134,7 +8135,7 @@ func (fake *FakeLocalParticipant) SendParticipantUpdateReturnsOnCall(i int, resu
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) SendParticipantSnapshot(arg1 []*livekit.ParticipantInfo) error {
+func (fake *FakeLocalParticipant) SendParticipantSnapshot(arg1 []*livekit.ParticipantInfo, arg2 func(livekit.ParticipantID) *livekit.ParticipantInfo) error {
 	var arg1Copy []*livekit.ParticipantInfo
 	if arg1 != nil {
 		arg1Copy = make([]*livekit.ParticipantInfo, len(arg1))
@@ -8144,13 +8145,14 @@ func (fake *FakeLocalParticipant) SendParticipantSnapshot(arg1 []*livekit.Partic
 	ret, specificReturn := fake.sendParticipantSnapshotReturnsOnCall[len(fake.sendParticipantSnapshotArgsForCall)]
 	fake.sendParticipantSnapshotArgsForCall = append(fake.sendParticipantSnapshotArgsForCall, struct {
 		arg1 []*livekit.ParticipantInfo
-	}{arg1Copy})
+		arg2 func(livekit.ParticipantID) *livekit.ParticipantInfo
+	}{arg1Copy, arg2})
 	stub := fake.SendParticipantSnapshotStub
 	fakeReturns := fake.sendParticipantSnapshotReturns
-	fake.recordInvocation("SendParticipantSnapshot", []interface{}{arg1Copy})
+	fake.recordInvocation("SendParticipantSnapshot", []interface{}{arg1Copy, arg2})
 	fake.sendParticipantSnapshotMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		return stub(arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1
@@ -8164,17 +8166,17 @@ func (fake *FakeLocalParticipant) SendParticipantSnapshotCallCount() int {
 	return len(fake.sendParticipantSnapshotArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) SendParticipantSnapshotCalls(stub func([]*livekit.ParticipantInfo) error) {
+func (fake *FakeLocalParticipant) SendParticipantSnapshotCalls(stub func([]*livekit.ParticipantInfo, func(livekit.ParticipantID) *livekit.ParticipantInfo) error) {
 	fake.sendParticipantSnapshotMutex.Lock()
 	defer fake.sendParticipantSnapshotMutex.Unlock()
 	fake.SendParticipantSnapshotStub = stub
 }
 
-func (fake *FakeLocalParticipant) SendParticipantSnapshotArgsForCall(i int) []*livekit.ParticipantInfo {
+func (fake *FakeLocalParticipant) SendParticipantSnapshotArgsForCall(i int) ([]*livekit.ParticipantInfo, func(livekit.ParticipantID) *livekit.ParticipantInfo) {
 	fake.sendParticipantSnapshotMutex.RLock()
 	defer fake.sendParticipantSnapshotMutex.RUnlock()
 	argsForCall := fake.sendParticipantSnapshotArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) SendParticipantSnapshotReturns(result1 error) {
