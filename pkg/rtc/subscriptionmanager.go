@@ -1188,6 +1188,12 @@ func (m *SubscriptionManager) subscribeDataTrack(sub *dataTrackSubscription) err
 			dataTrack.RemoveSubscriber(m.params.Participant.ID())
 			return ErrNoSubscribePermission
 		}
+		// same for the publisher revoking this track's permission, which only removes
+		// subscribers already recorded on the track
+		if res := m.params.DataTrackResolver(m.params.Participant, trackID); res.DataTrack == dataTrack && !res.HasPermission {
+			dataTrack.RemoveSubscriber(m.params.Participant.ID())
+			return ErrNoTrackPermission
+		}
 		sub.logger.Debugw("subscribed to data track")
 	}
 
