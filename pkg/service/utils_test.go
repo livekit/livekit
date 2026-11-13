@@ -26,6 +26,8 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/protocol/livekit"
+
 	"github.com/livekit/livekit-server/pkg/service"
 )
 
@@ -179,6 +181,38 @@ func TestGetClientIP(t *testing.T) {
 				r.Header.Set(k, v)
 			}
 			require.Equal(t, c.want, service.GetClientIP(r))
+		})
+	}
+}
+
+func TestAugmentClientInfo_ParsesUserAgent(t *testing.T) {
+	const iosSafariUA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+
+	cases := []struct {
+		name   string
+		sdk    livekit.ClientInfo_SDK
+		parsed bool
+	}{
+		{"js", livekit.ClientInfo_JS, true},
+		{"unity web", livekit.ClientInfo_UNITY_WEB, true},
+		{"swift", livekit.ClientInfo_SWIFT, false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/rtc", nil)
+			r.Header.Set("User-Agent", iosSafariUA)
+			ci := &livekit.ClientInfo{Sdk: c.sdk}
+
+			service.AugmentClientInfo(ci, r)
+
+			if c.parsed {
+				require.Equal(t, "Mobile Safari", ci.Browser)
+				require.Equal(t, "iOS", ci.Os)
+			} else {
+				require.Empty(t, ci.Browser)
+				require.Empty(t, ci.Os)
+			}
 		})
 	}
 }
