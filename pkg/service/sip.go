@@ -129,7 +129,7 @@ func (s *SIPService) CreateSIPInboundTrunk(ctx context.Context, req *livekit.Cre
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
-	if err := req.ValidateResult().LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
+	if err := req.ValidateResultAddresses().LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
 		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
 
@@ -197,7 +197,7 @@ func (s *SIPService) UpdateSIPInboundTrunk(ctx context.Context, req *livekit.Upd
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
-	if err := req.ValidateResult().LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
+	if err := req.ValidateResultAddresses().LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
 		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
 
@@ -221,10 +221,12 @@ func (s *SIPService) UpdateSIPInboundTrunk(ctx context.Context, req *livekit.Upd
 	default:
 		return nil, errors.New("missing or unsupported action")
 	case livekit.UpdateSIPInboundTrunkRequestAction:
+		// Only the allowed_addresses entries the update sets or adds must be valid,
+		// so trunks that already have invalid entries can still be edited.
 		var result livekit.ValidationResult
-		info, result = a.ApplyResult(info)
+		info, result = a.ApplyResultAddresses(info)
 		if err := result.LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
-			return nil, err
+			return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 		}
 	}
 	if err := validateInboundNumbersNoURI(info.Numbers, prevNumbers); err != nil {

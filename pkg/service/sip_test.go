@@ -186,6 +186,100 @@ func TestSIPInboundTrunkRejectsURINumbers(t *testing.T) {
 	})
 }
 
+func TestSIPInboundTrunkAllowedAddressValidation(t *testing.T) {
+	ctx, s, rs := newTestSIPService(t)
+
+	create := func(number string, addrs ...string) (*livekit.SIPInboundTrunkInfo, error) {
+		return s.CreateSIPInboundTrunk(ctx, &livekit.CreateSIPInboundTrunkRequest{
+			Trunk: &livekit.SIPInboundTrunkInfo{Name: "trunk", Numbers: []string{number}, AllowedAddresses: addrs},
+		})
+	}
+	update := func(id string, u *livekit.SIPInboundTrunkUpdate) (*livekit.SIPInboundTrunkInfo, error) {
+		return s.UpdateSIPInboundTrunk(ctx, &livekit.UpdateSIPInboundTrunkRequest{
+			SipTrunkId: id,
+			Action:     &livekit.UpdateSIPInboundTrunkRequest_Update{Update: u},
+		})
+	}
+	addAddress := func(addr string) *livekit.SIPInboundTrunkUpdate {
+		return &livekit.SIPInboundTrunkUpdate{AllowedAddresses: &livekit.ListUpdate{Add: []string{addr}}}
+	}
+	requireInvalidAddress := func(t *testing.T, err error) {
+		t.Helper()
+		requireInvalidArgument(t, err)
+		require.ErrorContains(t, err, "invalid allowed address")
+	}
+
+	t.Run("create", func(t *testing.T) {
+		for _, addr := range []string{"sip.twilio.com", "*", "192.0.2.10:5060", "[2001:db8::1]"} {
+			_, err := create("+15550004001", "192.0.2.10", addr)
+			requireInvalidAddress(t, err)
+		}
+		tr, err := create("+15550004002", "192.0.2.10", "192.0.2.0/24", "2001:db8::/32")
+		require.NoError(t, err)
+		require.Equal(t, []string{"192.0.2.10", "192.0.2.0/24", "2001:db8::/32"}, tr.AllowedAddresses)
+	})
+
+	t.Run("update", func(t *testing.T) {
+		tr, err := create("+15550004003", "192.0.2.10")
+		require.NoError(t, err)
+
+		_, err = update(tr.SipTrunkId, addAddress("sip.twilio.com"))
+		requireInvalidAddress(t, err)
+
+		_, err = update(tr.SipTrunkId, &livekit.SIPInboundTrunkUpdate{
+			AllowedAddresses: &livekit.ListUpdate{Set: []string{"192.0.2.10", "sip.twilio.com"}},
+		})
+		requireInvalidAddress(t, err)
+
+		_, err = s.UpdateSIPInboundTrunk(ctx, &livekit.UpdateSIPInboundTrunkRequest{
+			SipTrunkId: tr.SipTrunkId,
+			Action: &livekit.UpdateSIPInboundTrunkRequest_Replace{Replace: &livekit.SIPInboundTrunkInfo{
+				Name:             "replace",
+				Numbers:          tr.Numbers,
+				AllowedAddresses: []string{"sip.twilio.com"},
+			}},
+		})
+		requireInvalidAddress(t, err)
+
+		info, err := update(tr.SipTrunkId, addAddress("2001:db8::1"))
+		require.NoError(t, err)
+		require.Equal(t, []string{"192.0.2.10", "2001:db8::1"}, info.AllowedAddresses)
+	})
+
+	t.Run("stored trunk with an invalid entry", func(t *testing.T) {
+		id := guid.New(utils.SIPTrunkPrefix)
+		require.NoError(t, rs.StoreSIPInboundTrunk(ctx, &livekit.SIPInboundTrunkInfo{
+			SipTrunkId:       id,
+			Name:             "legacy",
+			Numbers:          []string{"+15550004004"},
+			AllowedAddresses: []string{"192.0.2.10", "sip.twilio.com"},
+		}))
+
+		// Updates that don't add invalid entries keep the existing one.
+		info, err := update(id, &livekit.SIPInboundTrunkUpdate{Name: proto.String("renamed")})
+		require.NoError(t, err)
+		require.Equal(t, "renamed", info.Name)
+		require.Equal(t, []string{"192.0.2.10", "sip.twilio.com"}, info.AllowedAddresses)
+
+		info, err = update(id, addAddress("192.0.2.11"))
+		require.NoError(t, err)
+		require.Equal(t, []string{"192.0.2.10", "sip.twilio.com", "192.0.2.11"}, info.AllowedAddresses)
+
+		_, err = update(id, addAddress("sip.telnyx.com"))
+		requireInvalidAddress(t, err)
+
+		info, err = update(id, &livekit.SIPInboundTrunkUpdate{
+			AllowedAddresses: &livekit.ListUpdate{Remove: []string{"sip.twilio.com"}},
+		})
+		require.NoError(t, err)
+		require.Equal(t, []string{"192.0.2.10", "192.0.2.11"}, info.AllowedAddresses)
+
+		stored, err := rs.LoadSIPInboundTrunk(ctx, id)
+		require.NoError(t, err)
+		require.Equal(t, []string{"192.0.2.10", "192.0.2.11"}, stored.AllowedAddresses)
+	})
+}
+
 func TestCreateSIPParticipantSourceCallUnsupported(t *testing.T) {
 	req := &livekit.CreateSIPParticipantRequest{SipSourceCallId: "SCL_1"}
 
