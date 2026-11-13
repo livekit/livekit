@@ -575,6 +575,23 @@ type agentHandlerWorker struct {
 	*agent.Worker
 }
 
+// HandleMigrateJob takes back the jobs a reconnecting worker says it still
+// runs, so that a worker that restarts in local development keeps them. It
+// trusts the worker: it does not check that the jobs were assigned to it.
+func (w *agentHandlerWorker) HandleMigrateJob(req *livekit.MigrateJobRequest) error {
+	for _, job := range req.Jobs {
+		w.Worker.AttachJob(job)
+		if err := w.h.agentServer.RegisterJobTerminateTopic(job.Id); err != nil {
+			w.Logger().Errorw("failed to register JobTerminate handler", err)
+		}
+
+		w.h.mu.Lock()
+		w.h.jobToWorker[livekit.JobID(job.Id)] = w.Worker
+		w.h.mu.Unlock()
+	}
+	return nil
+}
+
 func (w *agentHandlerWorker) HandleUpdateJob(update *livekit.UpdateJobStatus) error {
 	if err := w.Worker.HandleUpdateJob(update); err != nil {
 		return err
