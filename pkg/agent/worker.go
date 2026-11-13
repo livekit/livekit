@@ -746,8 +746,7 @@ func (w *Worker) Draining() bool {
 }
 
 func (w *Worker) HandleMigrateJob(req *livekit.MigrateJobRequest) error {
-	// TODO(theomonnom): On OSS this is not implemented
-	// We could maybe just move a specific job to another worker
+	// unimplemented
 	return nil
 }
 
