@@ -91,7 +91,8 @@ type RoomManager struct {
 	turnAuthHandler   *TURNAuthHandler
 	bus               psrpc.MessageBus
 
-	rooms map[livekit.RoomName]*rtc.Room
+	rooms              map[livekit.RoomName]*rtc.Room
+	participantRecords map[livekit.RoomName]*participantRecords
 
 	roomServers                  utils.MultitonService[rpc.RoomTopic]
 	agentDispatchServers         utils.MultitonService[rpc.RoomTopic]
@@ -104,6 +105,8 @@ type RoomManager struct {
 	forwardStats *sfu.ForwardStats
 
 	subscribePacer *rtc.SubscribePacer
+
+	orphanedRoomSweeper *OrphanedRoomSweeper
 
 	rpc.UnimplementedParticipantServer
 	rpc.UnimplementedRoomServer
@@ -148,7 +151,8 @@ func NewLocalRoomManager(
 		forwardStats:      forwardStats,
 		subscribePacer:    rtc.NewSubscribePacer(conf.Limit.SubscribePaceShadowRates),
 
-		rooms: make(map[livekit.RoomName]*rtc.Room),
+		rooms:              make(map[livekit.RoomName]*rtc.Room),
+		participantRecords: make(map[livekit.RoomName]*participantRecords),
 
 		iceConfigCache: sutils.NewIceConfigCache[iceConfigCacheKey](0),
 
@@ -160,6 +164,12 @@ func NewLocalRoomManager(
 			Region:        conf.Region,
 			NodeId:        string(currentNode.NodeID()),
 		},
+	}
+
+	or, isOrphanedRoomRouter := router.(OrphanedRoomRouter)
+	os, isOrphanedRoomStore := roomStore.(OrphanedRoomStore)
+	if isOrphanedRoomRouter && isOrphanedRoomStore {
+		r.orphanedRoomSweeper = NewOrphanedRoomSweeper(or, os, currentNode.NodeID(), r.hostedRooms, OrphanedRoomGracePeriod)
 	}
 
 	r.roomManagerServer, err = rpc.NewTypedRoomManagerServer(r, bus, rpc.WithServerLogger(logger.GetLogger()), middleware.WithServerMetrics(rpc.PSRPCMetricsObserver{}), psrpc.WithServerChannelSize(conf.PSRPC.BufferSize))
@@ -196,6 +206,7 @@ func (r *RoomManager) deleteRoom(ctx context.Context, roomName livekit.RoomName)
 	logger.Infow("deleting room state", "room", roomName)
 	r.lock.Lock()
 	delete(r.rooms, roomName)
+	delete(r.participantRecords, roomName)
 	r.lock.Unlock()
 
 	var err, err2 error
@@ -227,6 +238,89 @@ func (r *RoomManager) CloseIdleRooms() {
 
 	for _, room := range rooms {
 		room.CloseIfEmpty()
+	}
+}
+
+// participantRecords serializes the writes of a room's participant records, so that a participant's record
+// is not written back after it was deleted on leaving
+type participantRecords struct {
+	lock      sync.Mutex
+	roomName  livekit.RoomName
+	roomStore participantRecordStore
+}
+
+type participantRecordStore interface {
+	StoreParticipant(ctx context.Context, roomName livekit.RoomName, participant *livekit.ParticipantInfo) error
+	DeleteParticipant(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) error
+}
+
+func (p *participantRecords) store(ctx context.Context, participant types.Participant) error {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	// a participant is closed before its record is deleted, possibly before it is disconnected
+	if participant.IsClosed() || participant.IsDisconnected() {
+		return nil
+	}
+	return p.roomStore.StoreParticipant(ctx, p.roomName, participant.ToProto())
+}
+
+func (p *participantRecords) delete(ctx context.Context, identity livekit.ParticipantIdentity) error {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	return p.roomStore.DeleteParticipant(ctx, p.roomName, identity)
+}
+
+func (r *RoomManager) participantRecordsFor(roomName livekit.RoomName) *participantRecords {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	if records := r.participantRecords[roomName]; records != nil {
+		return records
+	}
+	return &participantRecords{roomName: roomName, roomStore: r.roomStore}
+}
+
+type hostedRoom struct {
+	*rtc.Room
+	records *participantRecords
+}
+
+func (h hostedRoom) ParticipantIdentities() []livekit.ParticipantIdentity {
+	var identities []livekit.ParticipantIdentity
+	for _, p := range h.GetParticipants() {
+		if !p.IsClosed() && !p.IsDisconnected() {
+			identities = append(identities, p.Identity())
+		}
+	}
+	return identities
+}
+
+func (h hostedRoom) StoreParticipants(ctx context.Context) error {
+	for _, p := range h.GetParticipants() {
+		if err := h.records.store(ctx, p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *RoomManager) hostedRooms() []HostedRoom {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	rooms := make([]HostedRoom, 0, len(r.rooms))
+	for roomName, room := range r.rooms {
+		rooms = append(rooms, hostedRoom{Room: room, records: r.participantRecords[roomName]})
+	}
+	return rooms
+}
+
+// DeleteOrphanedRooms deletes rooms left behind by nodes that are gone, when routing is shared across nodes
+func (r *RoomManager) DeleteOrphanedRooms(ctx context.Context) {
+	if r.orphanedRoomSweeper != nil {
+		r.orphanedRoomSweeper.Sweep(ctx)
 	}
 }
 
@@ -595,7 +689,8 @@ func (r *RoomManager) StartSession(
 		}
 	}
 
-	if err = r.roomStore.StoreParticipant(ctx, room.Name(), participant.ToProto()); err != nil {
+	records := r.participantRecordsFor(room.Name())
+	if err = records.store(ctx, participant); err != nil {
 		pLogger.Errorw("could not store participant", err)
 	}
 
@@ -616,7 +711,7 @@ func (r *RoomManager) StartSession(
 	participant.AddOnClose(types.ParticipantCloseKeyNormal, func(p types.LocalParticipant) {
 		participantServerClosers.Close()
 
-		if err := r.roomStore.DeleteParticipant(ctx, room.Name(), p.Identity()); err != nil {
+		if err := records.delete(ctx, p.Identity()); err != nil {
 			pLogger.Errorw("could not delete participant", err)
 		}
 
@@ -720,15 +815,15 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 		}
 	})
 
+	records := &participantRecords{roomName: roomName, roomStore: r.roomStore}
 	newRoom.OnParticipantChanged(func(p types.Participant) {
-		if !p.IsDisconnected() {
-			if err := r.roomStore.StoreParticipant(ctx, roomName, p.ToProto()); err != nil {
-				newRoom.Logger().Errorw("could not handle participant change", err)
-			}
+		if err := records.store(ctx, p); err != nil {
+			newRoom.Logger().Errorw("could not handle participant change", err)
 		}
 	})
 
 	r.rooms[roomName] = newRoom
+	r.participantRecords[roomName] = records
 
 	r.lock.Unlock()
 
