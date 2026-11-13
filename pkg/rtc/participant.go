@@ -3772,7 +3772,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 		},
 		PreferVideoSizeFromMedia:         p.params.PreferVideoSizeFromMedia,
 		EnableRTPStreamRestartDetection:  p.params.EnableRTPStreamRestartDetection,
-		UpdateTrackInfoByVideoSizeChange: p.params.UseOneShotSignallingMode,
+		UpdateTrackInfoByVideoSizeChange: p.params.UseOneShotSignallingMode || ti.Source == livekit.TrackSource_SCREEN_SHARE,
 		ForceBackupCodecPolicySimulcast:  p.params.ForceBackupCodecPolicySimulcast,
 		MediaBatchIOEnabled:              p.params.MediaBatchIOEnabled,
 		OnSubscribedMaxQualityChange:     p.onSubscribedMaxQualityChange,
