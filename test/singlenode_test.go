@@ -676,6 +676,65 @@ func TestSingleNodeCloseNonRTCRoom(t *testing.T) {
 	closeNonRTCRoom(t)
 }
 
+// TestSingleNodeDeleteRoomRecreateGetsNewSID verifies that re-creating a room
+// with the same name shortly after DeleteRoom returns a genuinely new room
+// (new SID), and that the new room is not torn down by the old room's pending
+// teardown (issue #4726).
+func TestSingleNodeDeleteRoomRecreateGetsNewSID(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, finish := setupSingleNodeTest("TestSingleNodeDeleteRoomRecreateGetsNewSID")
+	defer finish()
+
+	createCtx := contextWithToken(createRoomToken())
+
+	for _, testRTCServicePath := range testRTCServicePaths {
+		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
+			firstRoom, err := roomClient.CreateRoom(createCtx, &livekit.CreateRoomRequest{
+				Name:             testRoom,
+				DepartureTimeout: 1,
+				EmptyTimeout:     30,
+			})
+			require.NoError(t, err)
+
+			c1 := createRTCClient("delete-recreate-1", defaultServerPort, testRTCServicePath, nil)
+			waitUntilConnected(t, c1)
+
+			_, err = roomClient.DeleteRoom(createCtx, &livekit.DeleteRoomRequest{
+				Room: testRoom,
+			})
+			require.NoError(t, err)
+
+			// recreate immediately, inside the old room's teardown window
+			secondRoom, err := roomClient.CreateRoom(createCtx, &livekit.CreateRoomRequest{
+				Name:             testRoom,
+				DepartureTimeout: 1,
+				EmptyTimeout:     30,
+			})
+			require.NoError(t, err)
+			require.NotEqual(t, firstRoom.Sid, secondRoom.Sid, "recreate must yield a new SID")
+			require.GreaterOrEqual(t, secondRoom.CreationTimeMs, firstRoom.CreationTimeMs)
+
+			c2 := createRTCClient("delete-recreate-2", defaultServerPort, testRTCServicePath, nil)
+			waitUntilConnected(t, c2)
+
+			// the old room's teardown must not close the new room: wait past the
+			// window where the old room's OnClose cleanup would have fired, then
+			// verify the new client is still connected.
+			time.Sleep(2 * time.Second)
+			require.NoError(t, c2.SendPing())
+			require.Eventually(t, func() bool {
+				return c2.PongReceivedAt() > 0
+			}, time.Second, 10*time.Millisecond, "new room was torn down by the old room's teardown")
+
+			stopClients(c1, c2)
+		})
+	}
+}
+
 func TestAutoCreate(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
