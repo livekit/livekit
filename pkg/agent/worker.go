@@ -90,7 +90,10 @@ func ParseJobAttempt(s string) (livekit.JobID, int64, bool) {
 
 type WorkerProtocolVersion int
 
-const CurrentProtocol = 1
+// CurrentProtocol is the agent protocol version the server reports to workers
+// in ServerInfo.agent_protocol. Version 2 adds CreateJobToken: a worker must
+// not send it to a server that reports less.
+const CurrentProtocol = 2
 
 const (
 	RegisterTimeout  = 10 * time.Second
@@ -743,8 +746,7 @@ func (w *Worker) Draining() bool {
 }
 
 func (w *Worker) HandleMigrateJob(req *livekit.MigrateJobRequest) error {
-	// TODO(theomonnom): On OSS this is not implemented
-	// We could maybe just move a specific job to another worker
+	// unimplemented
 	return nil
 }
 
