@@ -300,10 +300,8 @@ type PCTransport struct {
 	negotiateCounter          atomic.Int32
 	signalStateCheckTimer     *time.Timer
 	currentOfferIceCredential string // ice user:pwd, for publish side ice restart checking
-	pendingRestartIceOffer    *webrtc.SessionDescription
-	// parsed forms kept so that a remote description is parsed once per negotiation
-	pendingRestartIceOfferParsed *sdp.SessionDescription
-	remoteOfferParsed            *sdp.SessionDescription
+	// parsed form kept so that a remote description is parsed once per negotiation
+	remoteOfferParsed *sdp.SessionDescription
 }
 
 type TransportParams struct {
@@ -2379,9 +2377,8 @@ func (t *PCTransport) postEvent(e event) {
 func (t *PCTransport) handleICEGatheringComplete(_ event) error {
 	if t.params.IsOfferer {
 		return t.handleICEGatheringCompleteOfferer()
-	} else {
-		return t.handleICEGatheringCompleteAnswerer()
 	}
+	return nil
 }
 
 func (t *PCTransport) handleICEGatheringCompleteOfferer() error {
@@ -2392,27 +2389,6 @@ func (t *PCTransport) handleICEGatheringCompleteOfferer() error {
 	t.params.Logger.Debugw("restarting ICE after ICE gathering")
 	t.restartAfterGathering = false
 	return t.doICERestart()
-}
-
-func (t *PCTransport) handleICEGatheringCompleteAnswerer() error {
-	if t.pendingRestartIceOffer == nil {
-		return nil
-	}
-
-	offer := *t.pendingRestartIceOffer
-	parsed := t.pendingRestartIceOfferParsed
-	t.pendingRestartIceOffer = nil
-	t.pendingRestartIceOfferParsed = nil
-
-	t.params.Logger.Debugw("accept remote restart ice offer after ICE gathering")
-
-	if err := t.setRemoteDescription(offer, parsed); err != nil {
-		return err
-	}
-	t.params.Handler.OnSetRemoteDescriptionOffer()
-	t.processSendersPendingConfig(offerAudioPayloadTypes(parsed))
-
-	return t.createAndSendAnswer()
 }
 
 func (t *PCTransport) localDescriptionSent() error {
@@ -2950,17 +2926,14 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, p
 		return errors.Wrap(err, "check remote offer restart ice failed")
 	}
 
-	if offerRestartICE && t.pendingRestartIceOffer == nil {
+	if offerRestartICE {
 		t.clearLocalDescriptionSent()
 	}
 
-	if offerRestartICE && t.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
-		t.params.Logger.Debugw("remote offer restart ice while ice gathering")
-		t.pendingRestartIceOffer = sd
-		t.pendingRestartIceOfferParsed = parsed
-		return nil
-	}
-
+	// a restart offer is applied even while ICE is gathering, the ICE agent cancels the
+	// gather in progress on restart. Holding the offer until gathering completes would leave
+	// the remote waiting for an answer for as long as gathering runs (STUN timeouts for example)
+	// and drop the remote candidates of the new generation that are trickled in the meantime.
 	if offerRestartICE && t.resetShortConnOnICERestart.CompareAndSwap(true, false) {
 		t.resetShortConn()
 	}

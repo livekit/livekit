@@ -16,6 +16,7 @@ package rtc
 
 import (
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"testing"
@@ -471,6 +472,78 @@ func TestFirstAnswerMissedDuringICERestart(t *testing.T) {
 
 	transportA.Close()
 	transportB.Close()
+}
+
+func TestRestartOfferAnsweredWhileGathering(t *testing.T) {
+	// a STUN server that never answers keeps the server reflexive gathering of the answerer
+	// running until it times out, as for a server that gathers against STUN servers
+	stunConn, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer stunConn.Close()
+	go func() {
+		buf := make([]byte, 1500)
+		for {
+			if _, _, err := stunConn.ReadFrom(buf); err != nil {
+				return
+			}
+		}
+	}()
+
+	handlerA := &transportfakes.FakeHandler{}
+	transportA, err := NewPCTransport(TransportParams{
+		Config:    &WebRTCConfig{},
+		IsOfferer: true,
+		Handler:   handlerA,
+	})
+	require.NoError(t, err)
+	defer transportA.Close()
+	_, err = transportA.pc.CreateDataChannel(ReliableDataChannel, nil)
+	require.NoError(t, err)
+
+	configB := &WebRTCConfig{}
+	configB.Configuration.ICEServers = []webrtc.ICEServer{{URLs: []string{"stun:" + stunConn.LocalAddr().String()}}}
+	handlerB := &transportfakes.FakeHandler{}
+	transportB, err := NewPCTransport(TransportParams{
+		Config:    configB,
+		IsOfferer: false,
+		Handler:   handlerB,
+	})
+	require.NoError(t, err)
+	defer transportB.Close()
+
+	handleICEExchange(t, transportA, transportB, handlerA, handlerB)
+
+	var answerCount atomic.Int32
+	handlerB.OnAnswerCalls(func(answer webrtc.SessionDescription, answerId uint32, _midToTrackID map[string]string) error {
+		answerCount.Inc()
+		transportA.HandleRemoteDescription(answer, answerId)
+		return nil
+	})
+	var offerCount atomic.Int32
+	var gatheringAtRestartOffer atomic.Value
+	handlerA.OnOfferCalls(func(offer webrtc.SessionDescription, offerId uint32, _midToTrackID map[string]string) error {
+		if offerCount.Inc() == 2 {
+			gatheringAtRestartOffer.Store(transportB.pc.ICEGatheringState())
+		}
+		transportB.HandleRemoteDescription(offer, offerId)
+		return nil
+	})
+
+	transportA.Negotiate(true)
+	require.Eventually(t, func() bool {
+		return answerCount.Load() == 1 && iceConnected(transportA.pc) && iceConnected(transportB.pc)
+	}, testutils.ConnectTimeout, 10*time.Millisecond, "transports did not connect")
+
+	// restart while the answerer is still gathering, it should answer without waiting for gathering to complete
+	require.NoError(t, transportA.ICERestart())
+	require.Eventually(t, func() bool {
+		return answerCount.Load() == 2
+	}, 2*time.Second, 10*time.Millisecond, "ICE restart offer not answered while gathering")
+	require.Equal(t, webrtc.ICEGatheringStateGathering, gatheringAtRestartOffer.Load(), "restart offer did not arrive while gathering")
+
+	require.Eventually(t, func() bool {
+		return iceConnected(transportA.pc) && iceConnected(transportB.pc)
+	}, testutils.ConnectTimeout, 10*time.Millisecond, "transports did not reconnect after ICE restart")
 }
 
 func TestNegotiationFailed(t *testing.T) {
