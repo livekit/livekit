@@ -694,6 +694,20 @@ func (p *ParticipantImpl) GetBufferFactory() *buffer.Factory {
 	return p.params.Config.BufferFactory
 }
 
+// updatedAttributes returns a copy of attributes with update applied, an empty value deletes the key
+func updatedAttributes(attributes map[string]string, update map[string]string) map[string]string {
+	updated := make(map[string]string, len(attributes)+len(update))
+	maps.Copy(updated, attributes)
+	for k, v := range update {
+		if v == "" {
+			delete(updated, k)
+		} else {
+			updated[k] = v
+		}
+	}
+	return updated
+}
+
 // checkMetadataLimits check if name/metadata/attributes of a participant is within configured limits
 func (p *ParticipantImpl) checkMetadataLimits(
 	name string,
@@ -746,7 +760,12 @@ func (p *ParticipantImpl) UpdateMetadata(update *livekit.UpdateParticipantMetada
 		return sendRequestResponse()
 	}
 
-	if err = p.checkMetadataLimits(update.Name, update.Metadata, update.Attributes); err != nil {
+	// the attributes limit applies to all attributes of the participant, not to one update
+	attributes := update.Attributes
+	if len(attributes) != 0 {
+		attributes = updatedAttributes(p.ClaimGrants().Attributes, update.Attributes)
+	}
+	if err = p.checkMetadataLimits(update.Name, update.Metadata, attributes); err != nil {
 		switch err {
 		case signalling.ErrNameExceedsLimits:
 			requestResponse.Reason = livekit.RequestResponse_LIMIT_EXCEEDED
@@ -830,20 +849,7 @@ func (p *ParticipantImpl) SetAttributes(attrs map[string]string) {
 	}
 	p.lock.Lock()
 	grants := p.grants.Load().Clone()
-	if grants.Attributes == nil {
-		grants.Attributes = make(map[string]string)
-	}
-	var keysToDelete []string
-	for k, v := range attrs {
-		if v == "" {
-			keysToDelete = append(keysToDelete, k)
-		} else {
-			grants.Attributes[k] = v
-		}
-	}
-	for _, k := range keysToDelete {
-		delete(grants.Attributes, k)
-	}
+	grants.Attributes = updatedAttributes(grants.Attributes, attrs)
 
 	p.grants.Store(grants)
 	p.requireBroadcast = true // already checked above
