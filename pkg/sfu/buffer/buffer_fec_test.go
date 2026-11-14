@@ -714,3 +714,101 @@ func TestBufferFECDecoderRecreatedOnStreamRestart(t *testing.T) {
 	extSNBySN := readExtSequenceNumbers(t, primary, len(media2)-1)
 	requireRecoveredInBucket(t, primary, &media2[droppedIdx2], extSNBySN, media2[0].SequenceNumber)
 }
+
+// TestBufferFECIgnoresRTXRepairedPackets checks that a packet repaired from
+// RTX is not used to recover other packets. Its header comes from the RTX
+// packet, so header extensions such as abs-send-time differ from the media
+// the publisher protected, and using it would corrupt the recovered packet.
+func TestBufferFECIgnoresRTXRepairedPackets(t *testing.T) {
+	const (
+		rtxSSRC  = uint32(0x33333333)
+		rtxPT    = uint8(97)
+		absExtID = uint8(2)
+	)
+	rtxCodec := webrtc.RTPCodecParameters{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:    webrtc.MimeTypeRTX,
+			ClockRate:   90000,
+			SDPFmtpLine: "apt=96",
+		},
+		PayloadType: webrtc.PayloadType(rtxPT),
+	}
+
+	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+	primary := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
+	fecBuff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestFECSSRC).(*Buffer)
+	rtxBuff := factory.GetOrNew(packetio.RTPBufferPacket, rtxSSRC).(*Buffer)
+	factory.SetFECPair(fecTestFECSSRC, fecTestMediaSSRC)
+	factory.SetRTXPair(rtxSSRC, fecTestMediaSSRC, "")
+
+	primary.codecType = webrtc.RTPCodecTypeVideo
+	require.NoError(t, primary.Bind(webrtc.RTPParameters{
+		Codecs: []webrtc.RTPCodecParameters{vp8Codec, rtxCodec, flexFECCodec},
+	}, vp8Codec.RTPCodecCapability, 0))
+
+	media := rtptest.GenerateVP8Packets(100, 10, uint8(vp8Codec.PayloadType), fecTestMediaSSRC)
+	for i := range media {
+		require.NoError(t, media[i].Header.SetExtension(absExtID, []byte{0, 0, byte(i)}))
+	}
+	// one repair packet covers every media packet
+	encoder := pionflexfec.NewFlexEncoder03(fecTestFECPT, fecTestFECSSRC)
+	fecPackets := encoder.EncodeFec(media, 1)
+	require.Len(t, fecPackets, 1)
+
+	const lostIdx, retransmittedIdx = 3, 6
+	for i := range media {
+		if i != lostIdx && i != retransmittedIdx {
+			writePacket(t, primary, &media[i])
+		}
+	}
+
+	// the retransmission keeps the payload but carries a new send time
+	retransmitted := media[retransmittedIdx].Clone()
+	retransmitted.SSRC = rtxSSRC
+	retransmitted.PayloadType = rtxPT
+	retransmitted.SequenceNumber = 500
+	require.NoError(t, retransmitted.Header.SetExtension(absExtID, []byte{0xff, 0xff, 0xff}))
+	retransmitted.Payload = binary.BigEndian.AppendUint16(nil, media[retransmittedIdx].SequenceNumber)
+	retransmitted.Payload = append(retransmitted.Payload, media[retransmittedIdx].Payload...)
+	writePacket(t, rtxBuff, retransmitted)
+
+	writePacket(t, fecBuff, &fecPackets[0])
+
+	// with the retransmitted packet unusable, two protected packets are
+	// missing, which a single repair cannot recover
+	assert.EqualValues(t, 0, primary.FECDecoderStats().PacketsRecovered)
+
+	// the retransmission is still forwarded
+	extSNBySN := readExtSequenceNumbers(t, primary, len(media)-1)
+	_, ok := extSNBySN[media[retransmittedIdx].SequenceNumber]
+	assert.True(t, ok, "retransmitted packet not forwarded")
+}
+
+func TestBufferBaseRTXRepairedHistory(t *testing.T) {
+	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+	buff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
+	bindFECTestBuffer(t, buff)
+
+	media := rtptest.GenerateVP8Packets(100, 3, uint8(vp8Codec.PayloadType), fecTestMediaSSRC)
+	for i := range media {
+		writePacket(t, buff, &media[i])
+	}
+
+	buff.Lock()
+	defer buff.Unlock()
+
+	repairedSN, ok := buff.publisherExtSequenceNumberLocked(media[1].SequenceNumber)
+	require.True(t, ok)
+	otherSN, ok := buff.publisherExtSequenceNumberLocked(media[2].SequenceNumber)
+	require.True(t, ok)
+
+	buff.markRTXRepairedLocked(media[1].SequenceNumber)
+	require.True(t, buff.isRTXRepairedLocked(repairedSN))
+	require.False(t, buff.isRTXRepairedLocked(otherSN))
+	// a later sequence number sharing the slot is not mistaken for the repair
+	require.False(t, buff.isRTXRepairedLocked(repairedSN+rtxRepairedHistory))
+
+	// a stream restart starts a new sequence number space
+	buff.restartStreamLocked("test", false)
+	require.False(t, buff.isRTXRepairedLocked(repairedSN))
+}
