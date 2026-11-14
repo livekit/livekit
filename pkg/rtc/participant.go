@@ -4767,29 +4767,6 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 
 		id := uuid.NewString()
 
-		responseTimer := time.AfterFunc(time.Duration(responseTimeout)*time.Millisecond, func() {
-			p.rpcLock.Lock()
-			delete(p.rpcPendingResponses, id)
-			p.rpcLock.Unlock()
-
-			select {
-			case errorCh <- utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcResponseTimeout, "").PsrpcError():
-			default:
-			}
-		})
-		ackTimer := time.AfterFunc(utils.DataChannelRpcMaxRoundTripLatency, func() {
-			p.rpcLock.Lock()
-			delete(p.rpcPendingAcks, id)
-			delete(p.rpcPendingResponses, id)
-			p.rpcLock.Unlock()
-			responseTimer.Stop()
-
-			select {
-			case errorCh <- utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcConnectionTimeout, "").PsrpcError():
-			default:
-			}
-		})
-
 		p.lock.RLock()
 		rtt := p.lastRTT
 		p.lock.RUnlock()
@@ -4814,22 +4791,59 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 		}
 		data, err := proto.Marshal(rpcRequest)
 		if err != nil {
-			ackTimer.Stop()
-			responseTimer.Stop()
 			errorCh <- psrpc.NewError(psrpc.Internal, err)
 			return
 		}
 
-		// using RPC ID as the unique ID for server to identify the response
-		err = p.SendDataMessage(livekit.DataPacket_RELIABLE, data, livekit.ParticipantID(id), 0)
-		if err != nil {
-			ackTimer.Stop()
-			responseTimer.Stop()
-			errorCh <- psrpc.NewError(psrpc.Internal, err)
-			return
-		}
-
+		// The ack and the response can come back before SendDataMessage returns, so the
+		// handlers are registered before the request is sent. The timers are started
+		// under the same lock, so none of them can fire before the handlers are in place.
 		p.rpcLock.Lock()
+		if p.IsClosed() {
+			// Close has already resolved the pending requests and would not see this one
+			p.rpcLock.Unlock()
+			errorCh <- utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcRecipientDisconnected, "").PsrpcError()
+			return
+		}
+
+		var responseTimer, ackTimer *time.Timer
+		// settle removes the request and stops its timers. It returns whether the request
+		// was still pending, and only the caller that settles it reports the outcome.
+		// Must be called with rpcLock held.
+		settle := func() bool {
+			_, pending := p.rpcPendingResponses[id]
+			delete(p.rpcPendingAcks, id)
+			delete(p.rpcPendingResponses, id)
+			responseTimer.Stop()
+			ackTimer.Stop()
+			return pending
+		}
+		responseTimer = time.AfterFunc(time.Duration(responseTimeout)*time.Millisecond, func() {
+			p.rpcLock.Lock()
+			pending := settle()
+			p.rpcLock.Unlock()
+
+			if !pending {
+				return
+			}
+			select {
+			case errorCh <- utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcResponseTimeout, "").PsrpcError():
+			default:
+			}
+		})
+		ackTimer = time.AfterFunc(utils.DataChannelRpcMaxRoundTripLatency, func() {
+			p.rpcLock.Lock()
+			pending := settle()
+			p.rpcLock.Unlock()
+
+			if !pending {
+				return
+			}
+			select {
+			case errorCh <- utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcConnectionTimeout, "").PsrpcError():
+			default:
+			}
+		})
 		p.rpcPendingAcks[id] = &utils.DataChannelRpcPendingAckHandler{
 			Resolve: func() {
 				ackTimer.Stop()
@@ -4838,10 +4852,9 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 		}
 		p.rpcPendingResponses[id] = &utils.DataChannelRpcPendingResponseHandler{
 			Resolve: func(payload string, error *utils.DataChannelRpcError) {
-				responseTimer.Stop()
-				if _, ok := p.rpcPendingAcks[id]; ok {
-					p.rpcPendingAcks[id].Resolve()
-					ackTimer.Stop()
+				// a response settles the request with or without an ack
+				if !settle() {
+					return
 				}
 
 				if error != nil {
@@ -4853,6 +4866,17 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 			ParticipantIdentity: req.GetDestinationIdentity(),
 		}
 		p.rpcLock.Unlock()
+
+		// using RPC ID as the unique ID for server to identify the response
+		if err := p.SendDataMessage(livekit.DataPacket_RELIABLE, data, livekit.ParticipantID(id), 0); err != nil {
+			p.rpcLock.Lock()
+			pending := settle()
+			p.rpcLock.Unlock()
+
+			if pending {
+				errorCh <- psrpc.NewError(psrpc.Internal, err)
+			}
+		}
 	}()
 }
 
