@@ -101,6 +101,9 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		if err := agent.ValidateThreadID(ad.GetThreadId()); err != nil {
 			return nil, twirp.InvalidArgumentError("thread_id", err.Error())
 		}
+		if err := agent.ValidateDeployment(ad.GetDeployment()); err != nil {
+			return nil, twirp.InvalidArgumentError("deployment", err.Error())
+		}
 	}
 
 	err := s.roomAllocator.SelectRoomNode(ctx, livekit.RoomName(req.Name), livekit.NodeID(req.NodeId))

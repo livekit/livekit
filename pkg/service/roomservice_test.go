@@ -16,6 +16,7 @@ package service_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -263,6 +264,30 @@ func TestCreateRoomAgentThreadID(t *testing.T) {
 	require.Equal(t, 1, svc.router.CreateRoomCallCount())
 	_, req := svc.router.CreateRoomArgsForCall(0)
 	require.Equal(t, threadID, req.Agents[0].ThreadId)
+}
+
+func TestCreateRoomAgentDeployment(t *testing.T) {
+	ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{Video: &auth.VideoGrant{RoomCreate: true}}, "")
+	svc := newTestRoomService(config.LimitConfig{})
+
+	for _, deployment := range []string{"has_underscore", "has space", strings.Repeat("a", 65)} {
+		_, err := svc.CreateRoom(ctx, &livekit.CreateRoomRequest{
+			Name:   "testroom",
+			Agents: []*livekit.RoomAgentDispatch{{AgentName: "front-desk", Deployment: deployment}},
+		})
+		terr, ok := err.(twirp.Error)
+		require.True(t, ok, "expected twirp error, got %T (%v)", err, err)
+		require.Equal(t, twirp.InvalidArgument, terr.Code())
+		require.Equal(t, "deployment", terr.Meta("argument"))
+	}
+	require.Zero(t, svc.router.CreateRoomCallCount())
+
+	_, err := svc.CreateRoom(ctx, &livekit.CreateRoomRequest{
+		Name:   "testroom",
+		Agents: []*livekit.RoomAgentDispatch{{AgentName: "front-desk", Deployment: "production"}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, svc.router.CreateRoomCallCount())
 }
 
 func newTestAgentDispatchService(limitConf config.LimitConfig) *service.AgentDispatchService {
