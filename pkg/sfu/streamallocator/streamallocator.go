@@ -214,11 +214,17 @@ var (
 // ---------------------------------------------------------------------------
 
 type StreamAllocatorParams struct {
-	Config    StreamAllocatorConfig
-	BWE       bwe.BWE
-	Pacer     pacer.Pacer
-	RTTGetter func() (float64, bool)
-	Logger    logger.Logger
+	// AdditionalProbeDemand returns the additional media bitrate a local encoder
+	// could produce beyond current allocation. Zero means no unmet demand.
+	// This does not change track deficiency, measured layer bitrates or capacity.
+	// Used only in padding mode. Called on the allocator event loop; it must not
+	// block or re-enter the allocator. Inactive/retired encoders must return zero.
+	AdditionalProbeDemand func() int64
+	Config                StreamAllocatorConfig
+	BWE                   bwe.BWE
+	Pacer                 pacer.Pacer
+	RTTGetter             func() (float64, bool)
+	Logger                logger.Logger
 }
 
 type StreamAllocator struct {
@@ -625,6 +631,10 @@ func (s *StreamAllocator) maybePostEventAllocateTrack(downTrack *sfu.DownTrack) 
 }
 
 func (s *StreamAllocator) ping(pingGeneration uint32, interval time.Duration) {
+	// A local encoder can change demand without a track allocation event.
+	if s.params.AdditionalProbeDemand != nil {
+		interval = cPingShort
+	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -725,7 +735,7 @@ func (s *StreamAllocator) handleSignalFeedback(event Event) {
 func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 	// if pause is allowed, there may be no packets sent and BWE could be in congested state,
 	// reset BWE if that persists for a while
-	if s.allowPause && s.state == streamAllocatorStateDeficient && s.params.BWE.CongestionState() != bwe.CongestionStateNone && s.params.Pacer.TimeSinceLastSentPacket() > s.params.Config.PausedMinWait {
+	if s.allowPause && (s.state == streamAllocatorStateDeficient || s.additionalProbeDemand() > 0) && s.params.BWE.CongestionState() != bwe.CongestionStateNone && s.params.Pacer.TimeSinceLastSentPacket() > s.params.Config.PausedMinWait {
 		s.params.Logger.Infow("stream allocator: resetting bwe to enable probing")
 		s.maybeStopProbe()
 		s.params.BWE.Reset()
@@ -766,8 +776,11 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 	}
 
 	// probe if necessary and timing is right
-	if s.state == streamAllocatorStateDeficient {
+	if s.state == streamAllocatorStateDeficient || s.additionalProbeDemand() > 0 {
 		s.maybeProbe()
+	} else if s.params.AdditionalProbeDemand != nil && s.prober.IsRunning() {
+		// The callback can withdraw demand without a track allocation event.
+		s.maybeStopProbe()
 	}
 
 	if time.Since(s.lastRTTTime) > cRTTPullInterval {
@@ -1377,8 +1390,25 @@ func (s *StreamAllocator) maybeProbeWithPadding() {
 			"stream allocator: adding probe",
 			"probeClusterInfo", pci,
 		)
-		break
+		return
 	}
+	delta := s.additionalProbeDemand()
+	if delta <= 0 {
+		return
+	}
+	usage := s.getExpectedBandwidthUsage()
+	s.prober.AddCluster(ccutils.ProbeClusterModeUniform, ccutils.ProbeClusterGoal{
+		AvailableBandwidthBps: int(s.committedChannelCapacity), ExpectedUsageBps: int(usage),
+		DesiredBps: int(usage + max(delta*s.params.Config.ProbeOveragePct/100, s.params.Config.ProbeMinBps)),
+		Duration:   s.params.BWE.ProbeDuration(),
+	})
+}
+
+func (s *StreamAllocator) additionalProbeDemand() int64 {
+	if !s.enabled || s.params.Config.ProbeMode != ProbeModePadding || s.params.AdditionalProbeDemand == nil {
+		return 0
+	}
+	return max(s.params.AdditionalProbeDemand(), 0)
 }
 
 func (s *StreamAllocator) getVideoTracks() []*Track {
