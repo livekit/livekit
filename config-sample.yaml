@@ -134,6 +134,9 @@ rtc:
   #   #                  logs a warning and falls back to no-queue. see livekit/livekit#4724
   #   # an unrecognized value is rejected at startup.
   #   send_side_bwe_pacer: no-queue
+  #   stream_allocator:
+  #     # > 0: camera tracks never get a spatial layer >= 1 below this temporal layer (drop resolution, not frame rate). default 0 (off)
+  #     camera_min_temporal_layer: 0
   # # FlexFEC-03 forward error correction, disabled by default.
   # # Accepts FEC from publishers and uses it to repair lost packets before
   # # forwarding.
