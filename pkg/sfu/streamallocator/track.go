@@ -150,28 +150,36 @@ func (t *Track) ProvisionalAllocateReset() {
 	t.downTrack.ProvisionalAllocateReset()
 }
 
-func (t *Track) ProvisionalAllocate(availableChannelCapacity int64, layer buffer.VideoLayer, allowPause bool, allowOvershoot bool) (bool, int64) {
-	return t.downTrack.ProvisionalAllocate(availableChannelCapacity, layer, allowPause, allowOvershoot)
+func (t *Track) ProvisionalAllocate(availableChannelCapacity int64, layer buffer.VideoLayer, allowPause bool, allowOvershoot bool, cameraMinTemporalLayer int32) (bool, int64) {
+	return t.downTrack.ProvisionalAllocate(availableChannelCapacity, layer, allowPause, allowOvershoot, t.temporalFloor(cameraMinTemporalLayer))
 }
 
-func (t *Track) ProvisionalAllocateGetCooperativeTransition(allowOvershoot bool) sfu.VideoTransition {
-	return t.downTrack.ProvisionalAllocateGetCooperativeTransition(allowOvershoot)
+func (t *Track) ProvisionalAllocateGetCooperativeTransition(allowOvershoot bool, cameraMinTemporalLayer int32) sfu.VideoTransition {
+	return t.downTrack.ProvisionalAllocateGetCooperativeTransition(allowOvershoot, t.temporalFloor(cameraMinTemporalLayer))
 }
 
-func (t *Track) ProvisionalAllocateGetBestWeightedTransition() sfu.VideoTransition {
-	return t.downTrack.ProvisionalAllocateGetBestWeightedTransition()
+func (t *Track) ProvisionalAllocateGetBestWeightedTransition(cameraMinTemporalLayer int32) sfu.VideoTransition {
+	return t.downTrack.ProvisionalAllocateGetBestWeightedTransition(t.temporalFloor(cameraMinTemporalLayer))
 }
 
 func (t *Track) ProvisionalAllocateCommit() sfu.VideoAllocation {
 	return t.downTrack.ProvisionalAllocateCommit()
 }
 
-func (t *Track) AllocateNextHigher(availableChannelCapacity int64, allowOvershoot bool) (sfu.VideoAllocation, bool) {
-	return t.downTrack.AllocateNextHigher(availableChannelCapacity, allowOvershoot)
+func (t *Track) AllocateNextHigher(availableChannelCapacity int64, allowOvershoot bool, cameraMinTemporalLayer int32) (sfu.VideoAllocation, bool) {
+	return t.downTrack.AllocateNextHigher(availableChannelCapacity, allowOvershoot, t.temporalFloor(cameraMinTemporalLayer))
 }
 
-func (t *Track) GetNextHigherTransition(allowOvershoot bool) (sfu.VideoTransition, bool) {
-	return t.downTrack.GetNextHigherTransition(allowOvershoot)
+func (t *Track) GetNextHigherTransition(allowOvershoot bool, cameraMinTemporalLayer int32) (sfu.VideoTransition, bool) {
+	return t.downTrack.GetNextHigherTransition(allowOvershoot, t.temporalFloor(cameraMinTemporalLayer))
+}
+
+// temporalFloor is the camera temporal floor for this track: 0 (off) unless the source is CAMERA.
+func (t *Track) temporalFloor(cameraMinTemporalLayer int32) int32 {
+	if t.source != livekit.TrackSource_CAMERA {
+		return 0
+	}
+	return cameraMinTemporalLayer
 }
 
 func (t *Track) Pause() sfu.VideoAllocation {
