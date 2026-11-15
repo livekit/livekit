@@ -411,6 +411,12 @@ func (s *RoomService) PerformRpc(ctx context.Context, req *livekit.PerformRpcReq
 	if req.DestinationIdentity == "" {
 		return nil, ErrDestinationIdentityRequired
 	}
+	if req.Method == "" {
+		return nil, ErrMethodRequired
+	}
+	if len(req.Payload) > utils.DataChannelRpcMaxPayloadBytes {
+		return nil, utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcRequestPayloadTooLarge, "").PsrpcError()
+	}
 
 	res, err := s.participantClient.PerformRpc(
 		ctx,
