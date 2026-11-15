@@ -116,6 +116,24 @@ func TestPublishCodecFallbackSkipsRTX(t *testing.T) {
 	})
 }
 
+func TestSupportsTransceiverReuse(t *testing.T) {
+	// Browser / Os values are what the server's user agent parser sets for desktop Safari
+	safari := &livekit.ClientInfo{Browser: "Safari", Os: "Mac OS X"}
+	track := &typesfakes.FakeMediaTrack{}
+
+	// a one shot client, i. e. WHIP, cannot negotiate again, so the transceivers of its offer are
+	// the only place for a subscribed track, also on a client that does not re-use otherwise
+	t.Run("one shot signalling re-uses on Safari", func(t *testing.T) {
+		p := newParticipantForTestWithOpts("test", &participantOpts{clientInfo: safari, oneShot: true})
+		require.True(t, p.SupportsTransceiverReuse(track))
+	})
+
+	t.Run("regular signalling does not re-use on Safari", func(t *testing.T) {
+		p := newParticipantForTestWithOpts("test", &participantOpts{clientInfo: safari})
+		require.False(t, p.SupportsTransceiverReuse(track))
+	})
+}
+
 func TestSupportsMoving(t *testing.T) {
 	t.Run("current protocol version", func(t *testing.T) {
 		p := newParticipantForTestWithOpts("test", &participantOpts{protocolVersion: types.CurrentProtocol})

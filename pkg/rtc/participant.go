@@ -4244,12 +4244,15 @@ func (p *ParticipantImpl) SupportsSyncStreamID() bool {
 }
 
 func (p *ParticipantImpl) SupportsTransceiverReuse(mt types.MediaTrack) bool {
-	if !p.params.ClientInfo.SupportsTransceiverReuse() {
-		return false
-	}
-
+	// ONE-SHOT-SIGNALLING-MODE: the client cannot negotiate again, so the transceivers of its offer
+	// are the only place for a subscribed track. This holds for every client, also for one that
+	// does not re-use transceivers in regular signalling.
 	if p.params.UseOneShotSignallingMode {
 		return p.ProtocolVersion().SupportsTransceiverReuse()
+	}
+
+	if !p.params.ClientInfo.SupportsTransceiverReuse() {
+		return false
 	}
 
 	return p.ProtocolVersion().SupportsTransceiverReuse() && !p.SupportsSyncStreamID() && (!mt.IsEncrypted() || !p.params.DisableTransceiverReuseForE2EE)
