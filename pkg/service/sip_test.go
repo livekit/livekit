@@ -18,27 +18,290 @@ import (
 	"context"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-	"github.com/twitchtv/twirp"
-
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
+	"github.com/livekit/psrpc"
+	"github.com/stretchr/testify/require"
+	"github.com/twitchtv/twirp"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/service/servicefakes"
 )
 
-func newTestSIPService(store service.SIPStore) (*service.SIPService, context.Context) {
+func newTestSIPService(t *testing.T) (context.Context, *service.SIPService, *service.RedisStore) {
+	rs := redisStoreDocker(t)
+	s := service.NewSIPService(nil, "", nil, nil, rs, nil, nil)
 	ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{SIP: &auth.SIPGrant{Admin: true}}, "")
-	return service.NewSIPService(nil, "", nil, nil, store, nil, nil), ctx
+	return ctx, s, rs
+}
+
+func TestSIPInboundTrunkNumbersNormalized(t *testing.T) {
+	ctx, s, rs := newTestSIPService(t)
+
+	created, err := s.CreateSIPInboundTrunk(ctx, &livekit.CreateSIPInboundTrunkRequest{
+		Trunk: &livekit.SIPInboundTrunkInfo{
+			Name:    "create",
+			Numbers: []string{"15550001001", "+1 (555) 000-1002", "support", "+15550001001"},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"+15550001001", "+15550001002", "support"}, created.Numbers)
+
+	stored, err := rs.LoadSIPInboundTrunk(ctx, created.SipTrunkId)
+	require.NoError(t, err)
+	require.Equal(t, created.Numbers, stored.Numbers)
+
+	update := func(t *testing.T, id string, u *livekit.SIPInboundTrunkUpdate) *livekit.SIPInboundTrunkInfo {
+		info, err := s.UpdateSIPInboundTrunk(ctx, &livekit.UpdateSIPInboundTrunkRequest{
+			SipTrunkId: id,
+			Action:     &livekit.UpdateSIPInboundTrunkRequest_Update{Update: u},
+		})
+		require.NoError(t, err)
+		stored, err := rs.LoadSIPInboundTrunk(ctx, id)
+		require.NoError(t, err)
+		require.Equal(t, info.Numbers, stored.Numbers)
+		return info
+	}
+
+	t.Run("remove unnormalized", func(t *testing.T) {
+		info := update(t, created.SipTrunkId, &livekit.SIPInboundTrunkUpdate{
+			Numbers: &livekit.ListUpdate{Remove: []string{"15550001001"}},
+		})
+		require.Equal(t, []string{"+15550001002", "support"}, info.Numbers)
+	})
+
+	t.Run("add unnormalized", func(t *testing.T) {
+		info := update(t, created.SipTrunkId, &livekit.SIPInboundTrunkUpdate{
+			Numbers: &livekit.ListUpdate{Add: []string{"15550001003", "15550001002"}},
+		})
+		require.Equal(t, []string{"+15550001002", "support", "+15550001003"}, info.Numbers)
+	})
+
+	t.Run("replace", func(t *testing.T) {
+		info, err := s.UpdateSIPInboundTrunk(ctx, &livekit.UpdateSIPInboundTrunkRequest{
+			SipTrunkId: created.SipTrunkId,
+			Action: &livekit.UpdateSIPInboundTrunkRequest_Replace{Replace: &livekit.SIPInboundTrunkInfo{
+				Name:    "replace",
+				Numbers: []string{"15550001004"},
+			}},
+		})
+		require.NoError(t, err)
+		require.Equal(t, []string{"+15550001004"}, info.Numbers)
+	})
+
+	t.Run("legacy row normalized on edit", func(t *testing.T) {
+		id := guid.New(utils.SIPTrunkPrefix)
+		require.NoError(t, rs.StoreSIPInboundTrunk(ctx, &livekit.SIPInboundTrunkInfo{
+			SipTrunkId: id,
+			Name:       "legacy",
+			Numbers:    []string{"15550001005", "+15550001005"},
+		}))
+		info := update(t, id, &livekit.SIPInboundTrunkUpdate{Name: proto.String("renamed")})
+		require.Equal(t, []string{"+15550001005"}, info.Numbers)
+	})
 }
 
 func requireInvalidArgument(t *testing.T, err error) {
 	t.Helper()
-	require.Error(t, err)
 	var terr twirp.Error
 	require.ErrorAs(t, err, &terr)
 	require.Equal(t, twirp.InvalidArgument, terr.Code())
+}
+
+func TestSIPInboundTrunkRejectsURINumbers(t *testing.T) {
+	ctx, s, rs := newTestSIPService(t)
+
+	create := func(nums ...string) (*livekit.SIPInboundTrunkInfo, error) {
+		return s.CreateSIPInboundTrunk(ctx, &livekit.CreateSIPInboundTrunkRequest{
+			Trunk: &livekit.SIPInboundTrunkInfo{Name: "trunk", Numbers: nums},
+		})
+	}
+	update := func(id string, u *livekit.SIPInboundTrunkUpdate) (*livekit.SIPInboundTrunkInfo, error) {
+		return s.UpdateSIPInboundTrunk(ctx, &livekit.UpdateSIPInboundTrunkRequest{
+			SipTrunkId: id,
+			Action:     &livekit.UpdateSIPInboundTrunkRequest_Update{Update: u},
+		})
+	}
+
+	t.Run("create", func(t *testing.T) {
+		for _, num := range []string{
+			"sip:support@example.com",
+			"SIPS:support@example.com",
+			"sip:support",
+			"tel:+15550001001",
+			"support@example.com",
+		} {
+			_, err := create("+15550001001", num)
+			requireInvalidArgument(t, err)
+		}
+		_, err := create("+15550002001", "support")
+		require.NoError(t, err)
+	})
+
+	t.Run("update", func(t *testing.T) {
+		const legacyURI = "sip:legacy@example.com"
+		id := guid.New(utils.SIPTrunkPrefix)
+		require.NoError(t, rs.StoreSIPInboundTrunk(ctx, &livekit.SIPInboundTrunkInfo{
+			SipTrunkId: id,
+			Name:       "legacy",
+			Numbers:    []string{"+15550003001", legacyURI},
+		}))
+
+		info, err := update(id, &livekit.SIPInboundTrunkUpdate{Name: proto.String("renamed")})
+		require.NoError(t, err)
+		require.Equal(t, []string{"+15550003001", legacyURI}, info.Numbers)
+
+		info, err = update(id, &livekit.SIPInboundTrunkUpdate{
+			Numbers: &livekit.ListUpdate{Add: []string{"+15550003002"}},
+		})
+		require.NoError(t, err)
+		require.Equal(t, []string{"+15550003001", legacyURI, "+15550003002"}, info.Numbers)
+
+		_, err = update(id, &livekit.SIPInboundTrunkUpdate{
+			Numbers: &livekit.ListUpdate{Add: []string{"sip:new@example.com"}},
+		})
+		requireInvalidArgument(t, err)
+
+		_, err = s.UpdateSIPInboundTrunk(ctx, &livekit.UpdateSIPInboundTrunkRequest{
+			SipTrunkId: id,
+			Action: &livekit.UpdateSIPInboundTrunkRequest_Replace{Replace: &livekit.SIPInboundTrunkInfo{
+				Name:    "replace",
+				Numbers: []string{legacyURI, "sip:new@example.com"},
+			}},
+		})
+		requireInvalidArgument(t, err)
+
+		info, err = update(id, &livekit.SIPInboundTrunkUpdate{
+			Numbers: &livekit.ListUpdate{Remove: []string{legacyURI}},
+		})
+		require.NoError(t, err)
+		require.Equal(t, []string{"+15550003001", "+15550003002"}, info.Numbers)
+
+		_, err = update(id, &livekit.SIPInboundTrunkUpdate{
+			Numbers: &livekit.ListUpdate{Add: []string{legacyURI}},
+		})
+		requireInvalidArgument(t, err)
+	})
+}
+
+func TestSIPInboundTrunkAllowedAddressValidation(t *testing.T) {
+	ctx, s, rs := newTestSIPService(t)
+
+	create := func(number string, addrs ...string) (*livekit.SIPInboundTrunkInfo, error) {
+		return s.CreateSIPInboundTrunk(ctx, &livekit.CreateSIPInboundTrunkRequest{
+			Trunk: &livekit.SIPInboundTrunkInfo{Name: "trunk", Numbers: []string{number}, AllowedAddresses: addrs},
+		})
+	}
+	update := func(id string, u *livekit.SIPInboundTrunkUpdate) (*livekit.SIPInboundTrunkInfo, error) {
+		return s.UpdateSIPInboundTrunk(ctx, &livekit.UpdateSIPInboundTrunkRequest{
+			SipTrunkId: id,
+			Action:     &livekit.UpdateSIPInboundTrunkRequest_Update{Update: u},
+		})
+	}
+	addAddress := func(addr string) *livekit.SIPInboundTrunkUpdate {
+		return &livekit.SIPInboundTrunkUpdate{AllowedAddresses: &livekit.ListUpdate{Add: []string{addr}}}
+	}
+	requireInvalidAddress := func(t *testing.T, err error) {
+		t.Helper()
+		requireInvalidArgument(t, err)
+		require.ErrorContains(t, err, "invalid allowed address")
+	}
+
+	t.Run("create", func(t *testing.T) {
+		for _, addr := range []string{"sip.twilio.com", "*", "192.0.2.10:5060", "[2001:db8::1]"} {
+			_, err := create("+15550004001", "192.0.2.10", addr)
+			requireInvalidAddress(t, err)
+		}
+		tr, err := create("+15550004002", "192.0.2.10", "192.0.2.0/24", "2001:db8::/32")
+		require.NoError(t, err)
+		require.Equal(t, []string{"192.0.2.10", "192.0.2.0/24", "2001:db8::/32"}, tr.AllowedAddresses)
+	})
+
+	t.Run("update", func(t *testing.T) {
+		tr, err := create("+15550004003", "192.0.2.10")
+		require.NoError(t, err)
+
+		_, err = update(tr.SipTrunkId, addAddress("sip.twilio.com"))
+		requireInvalidAddress(t, err)
+
+		_, err = update(tr.SipTrunkId, &livekit.SIPInboundTrunkUpdate{
+			AllowedAddresses: &livekit.ListUpdate{Set: []string{"192.0.2.10", "sip.twilio.com"}},
+		})
+		requireInvalidAddress(t, err)
+
+		_, err = s.UpdateSIPInboundTrunk(ctx, &livekit.UpdateSIPInboundTrunkRequest{
+			SipTrunkId: tr.SipTrunkId,
+			Action: &livekit.UpdateSIPInboundTrunkRequest_Replace{Replace: &livekit.SIPInboundTrunkInfo{
+				Name:             "replace",
+				Numbers:          tr.Numbers,
+				AllowedAddresses: []string{"sip.twilio.com"},
+			}},
+		})
+		requireInvalidAddress(t, err)
+
+		info, err := update(tr.SipTrunkId, addAddress("2001:db8::1"))
+		require.NoError(t, err)
+		require.Equal(t, []string{"192.0.2.10", "2001:db8::1"}, info.AllowedAddresses)
+	})
+
+	t.Run("stored trunk with an invalid entry", func(t *testing.T) {
+		id := guid.New(utils.SIPTrunkPrefix)
+		require.NoError(t, rs.StoreSIPInboundTrunk(ctx, &livekit.SIPInboundTrunkInfo{
+			SipTrunkId:       id,
+			Name:             "legacy",
+			Numbers:          []string{"+15550004004"},
+			AllowedAddresses: []string{"192.0.2.10", "sip.twilio.com"},
+		}))
+
+		// Updates that don't add invalid entries keep the existing one.
+		info, err := update(id, &livekit.SIPInboundTrunkUpdate{Name: proto.String("renamed")})
+		require.NoError(t, err)
+		require.Equal(t, "renamed", info.Name)
+		require.Equal(t, []string{"192.0.2.10", "sip.twilio.com"}, info.AllowedAddresses)
+
+		info, err = update(id, addAddress("192.0.2.11"))
+		require.NoError(t, err)
+		require.Equal(t, []string{"192.0.2.10", "sip.twilio.com", "192.0.2.11"}, info.AllowedAddresses)
+
+		_, err = update(id, addAddress("sip.telnyx.com"))
+		requireInvalidAddress(t, err)
+
+		info, err = update(id, &livekit.SIPInboundTrunkUpdate{
+			AllowedAddresses: &livekit.ListUpdate{Remove: []string{"sip.twilio.com"}},
+		})
+		require.NoError(t, err)
+		require.Equal(t, []string{"192.0.2.10", "192.0.2.11"}, info.AllowedAddresses)
+
+		stored, err := rs.LoadSIPInboundTrunk(ctx, id)
+		require.NoError(t, err)
+		require.Equal(t, []string{"192.0.2.10", "192.0.2.11"}, stored.AllowedAddresses)
+	})
+}
+
+func TestCreateSIPParticipantSourceCallUnsupported(t *testing.T) {
+	req := &livekit.CreateSIPParticipantRequest{SipSourceCallId: "SCL_1"}
+
+	t.Run("without SIP call permission", func(t *testing.T) {
+		_, err := (&service.SIPService{}).CreateSIPParticipant(context.Background(), req)
+		var terr twirp.Error
+		require.ErrorAs(t, err, &terr)
+		require.Equal(t, twirp.Unauthenticated, terr.Code())
+	})
+
+	t.Run("with SIP call permission", func(t *testing.T) {
+		ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{SIP: &auth.SIPGrant{Call: true}}, "")
+		_, err := (&service.SIPService{}).CreateSIPParticipant(ctx, req)
+		code, _ := psrpc.GetErrorCode(err)
+		require.Equal(t, psrpc.Unimplemented, code)
+	})
+}
+
+func newFakeSIPService(store service.SIPStore) (*service.SIPService, context.Context) {
+	ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{SIP: &auth.SIPGrant{Admin: true}}, "")
+	return service.NewSIPService(nil, "", nil, nil, store, nil, nil), ctx
 }
 
 func TestUpdateSIPInboundTrunkDetectsConflictOnNewNumbers(t *testing.T) {
@@ -50,7 +313,7 @@ func TestUpdateSIPInboundTrunkDetectsConflictOnNewNumbers(t *testing.T) {
 	store.ListSIPInboundTrunkReturns(&livekit.ListSIPInboundTrunkResponse{
 		Items: []*livekit.SIPInboundTrunkInfo{existing, updated},
 	}, nil)
-	s, ctx := newTestSIPService(store)
+	s, ctx := newFakeSIPService(store)
 
 	// Moving the trunk to a number that another trunk already uses, without
 	// allowed numbers on either trunk, is the same conflict that creation rejects.
@@ -78,7 +341,7 @@ func TestUpdateSIPDispatchRuleDetectsConflictOnNewTrunks(t *testing.T) {
 	store.ListSIPDispatchRuleReturns(&livekit.ListSIPDispatchRuleResponse{
 		Items: []*livekit.SIPDispatchRuleInfo{existing, updated},
 	}, nil)
-	s, ctx := newTestSIPService(store)
+	s, ctx := newFakeSIPService(store)
 
 	// Moving the rule to a trunk that already has a rule for the same numbers and PIN
 	// is the same conflict that creation rejects.
@@ -106,7 +369,7 @@ func TestUpdateSIPDispatchRuleKeepsUnchangedTrunks(t *testing.T) {
 	store.ListSIPDispatchRuleReturns(&livekit.ListSIPDispatchRuleResponse{
 		Items: []*livekit.SIPDispatchRuleInfo{rule},
 	}, nil)
-	s, ctx := newTestSIPService(store)
+	s, ctx := newFakeSIPService(store)
 
 	// The stored copy of the rule must not conflict with its updated version.
 	name := "renamed"

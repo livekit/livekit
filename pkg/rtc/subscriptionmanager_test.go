@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
@@ -671,6 +672,38 @@ func TestSubscriptionLimits(t *testing.T) {
 	require.Len(t, sm.GetSubscribedTracks(), 1)
 }
 
+func TestFailTrackBind(t *testing.T) {
+	sm := newTestSubscriptionManager()
+	defer sm.Close(false)
+	resolver := newTestResolver(true, true, "pub", "pubID")
+	sm.params.TrackResolver = resolver.Resolve
+	var subErr atomic.Error
+	sm.params.OnSubscriptionError = func(trackID livekit.TrackID, fatal bool, err error) {
+		subErr.Store(err)
+	}
+
+	sm.SubscribeToTrack("track", false)
+	s := sm.subscriptions["track"]
+	require.Eventually(t, func() bool {
+		return s.getSubscribedTrack() != nil
+	}, subSettleTimeout, subCheckInterval, "track was not subscribed")
+
+	sm.FailTrackBind("track", webrtc.ErrUnsupportedCodec)
+
+	tl := sm.params.Participant.GetTelemetryListener().(*typesfakes.FakeParticipantTelemetryListener)
+	require.Equal(t, 1, tl.OnTrackSubscribeFailedCallCount())
+	_, trackID, err, isUserError := tl.OnTrackSubscribeFailedArgsForCall(0)
+	require.Equal(t, livekit.TrackID("track"), trackID)
+	require.ErrorIs(t, err, webrtc.ErrUnsupportedCodec)
+	require.True(t, isUserError)
+	require.ErrorIs(t, subErr.Load(), webrtc.ErrUnsupportedCodec)
+	require.False(t, s.isDesired())
+
+	// an unknown track is ignored
+	sm.FailTrackBind("unknown", webrtc.ErrUnsupportedCodec)
+	require.Equal(t, 1, tl.OnTrackSubscribeFailedCallCount())
+}
+
 func TestSubscribeDataTrack(t *testing.T) {
 	t.Run("no track permission", func(t *testing.T) {
 		sm := newTestSubscriptionManager()
@@ -804,6 +837,117 @@ func TestSubscribeDataTrack(t *testing.T) {
 			sm.lock.RUnlock()
 			return !ok
 		}, subSettleTimeout, subCheckInterval, "data track subscription was not cleaned up")
+	})
+}
+
+func TestSubscribePacerTakesVideoTokensOnly(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		kind        livekit.TrackType
+		isSync      bool
+		setupFails  bool
+		tokenIsUsed bool
+	}{
+		{"video", livekit.TrackType_VIDEO, false, false, true},
+		{"audio", livekit.TrackType_AUDIO, false, false, false},
+		{"video one-shot", livekit.TrackType_VIDEO, true, false, false},
+		// a failed setup spends its token, like a real pacer that gates before setup
+		{"video setup fails", livekit.TrackType_VIDEO, false, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// a rate this low holds one token and takes 1000 s to refill it, so after one
+			// take the next subscribe waits however slow the test runs
+			pacer := NewSubscribePacer([]float64{0.001})
+			sm := newTestSubscriptionManager()
+			defer sm.Close(false)
+			sm.params.SubscribePacer = pacer
+			attempted := atomic.Bool{}
+			resolver := newTestResolver(true, true, "pub", "pubID")
+			sm.params.TrackResolver = func(sub types.LocalParticipant, trackID livekit.TrackID) types.MediaResolverResult {
+				res := resolver.Resolve(sub, trackID)
+				mt := res.Track.(*typesfakes.FakeMediaTrack)
+				mt.KindReturns(tc.kind)
+				if tc.setupFails {
+					mt.AddSubscriberCalls(func(types.LocalParticipant) (types.SubscribedTrack, error) {
+						attempted.Store(true)
+						return nil, ErrNoReceiver
+					})
+				}
+				return res
+			}
+			sm.params.OnTrackSubscribed = func(subTrack types.SubscribedTrack) {
+				attempted.Store(true)
+			}
+
+			sm.SubscribeToTrack("track", tc.isSync)
+			require.Eventually(t, attempted.Load, subSettleTimeout, subCheckInterval, "subscribe was not attempted")
+
+			require.Equal(t, tc.tokenIsUsed, pacer.Delays(time.Now())["0.001"] > 0)
+		})
+	}
+}
+
+// A canSubscribe revoke that lands while a subscribe is in flight cannot see the subscription
+// yet. The participant here allows the subscribe at its start and is revoked by the time the
+// subscription is recorded, so the subscribe must undo itself.
+func TestSubscribeRevokedInFlight(t *testing.T) {
+	revokeAfterFirstCheck := func(sm *SubscriptionManager) {
+		p := sm.params.Participant.(*typesfakes.FakeLocalParticipant)
+		p.CanSubscribeReturnsOnCall(0, true)
+		p.CanSubscribeReturns(false)
+	}
+
+	t.Run("media", func(t *testing.T) {
+		sm := newTestSubscriptionManager()
+		defer sm.Close(false)
+		revokeAfterFirstCheck(sm)
+
+		resolver := newTestResolver(true, true, "pub", "pubID")
+		var lock sync.Mutex
+		var tracks []*typesfakes.FakeMediaTrack
+		sm.params.TrackResolver = func(sub types.LocalParticipant, trackID livekit.TrackID) types.MediaResolverResult {
+			res := resolver.Resolve(sub, trackID)
+			lock.Lock()
+			tracks = append(tracks, res.Track.(*typesfakes.FakeMediaTrack))
+			lock.Unlock()
+			return res
+		}
+		subscribed := atomic.Bool{}
+		sm.params.OnTrackSubscribed = func(subTrack types.SubscribedTrack) {
+			subscribed.Store(true)
+		}
+
+		sm.SubscribeToTrack("track", false)
+		require.Eventually(t, func() bool {
+			lock.Lock()
+			defer lock.Unlock()
+			return len(tracks) != 0 && tracks[0].RemoveSubscriberCallCount() == 1
+		}, subSettleTimeout, subCheckInterval, "the subscriber should be removed")
+
+		lock.Lock()
+		subID, isExpectedToResume := tracks[0].RemoveSubscriberArgsForCall(0)
+		lock.Unlock()
+		require.Equal(t, sm.params.Participant.ID(), subID)
+		require.False(t, isExpectedToResume)
+		require.Empty(t, sm.GetSubscribedParticipants())
+		require.False(t, subscribed.Load())
+	})
+
+	t.Run("data", func(t *testing.T) {
+		sm := newTestSubscriptionManager()
+		defer sm.Close(false)
+		revokeAfterFirstCheck(sm)
+
+		resolver := newTestDataTrackResolver(true, true, "pub", "pubID")
+		sm.params.DataTrackResolver = resolver.Resolve
+
+		sm.SubscribeToDataTrack("track")
+		require.Eventually(t, func() bool {
+			return resolver.dataTrack.RemoveSubscriberCallCount() == 1
+		}, subSettleTimeout, subCheckInterval, "the subscriber should be removed")
+
+		require.Equal(t, sm.params.Participant.ID(), resolver.dataTrack.RemoveSubscriberArgsForCall(0))
+		require.Empty(t, sm.GetSubscribedParticipants())
 	})
 }
 

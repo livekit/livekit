@@ -15,9 +15,11 @@
 package rtc
 
 import (
+	"strings"
 	"time"
 
 	"github.com/pion/webrtc/v4"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -40,9 +42,12 @@ func (p *ParticipantImpl) CloseSignalConnection(reason types.SignallingCloseReas
 }
 
 func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) error {
+	joinResponse.Participant = withoutServerAttributes(joinResponse.Participant)
+
 	// keep track of participant updates and versions
 	p.updateLock.Lock()
-	for _, op := range joinResponse.OtherParticipants {
+	for i, op := range joinResponse.OtherParticipants {
+		joinResponse.OtherParticipants[i] = withoutServerAttributes(op)
 		p.updateCache.Add(livekit.ParticipantID(op.Sid), participantUpdateInfo{
 			identity:  livekit.ParticipantIdentity(op.Identity),
 			version:   op.Version,
@@ -118,12 +123,33 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 				state:     pi.State,
 				updatedAt: time.Now(),
 			})
-			validUpdates = append(validUpdates, pi)
+			validUpdates = append(validUpdates, withoutServerAttributes(pi))
 		}
 	}
 	p.updateLock.Unlock()
 
 	return p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(validUpdates))
+}
+
+// serverAttributePrefix marks attributes the server sets for its own use; older clients
+// treat them as attribute changes, so they are never sent to clients.
+const serverAttributePrefix = "lk.rtc."
+
+// withoutServerAttributes returns pi, or a copy without server attributes when it has any.
+// The input is shared across participants, so it is never changed.
+func withoutServerAttributes(pi *livekit.ParticipantInfo) *livekit.ParticipantInfo {
+	for k := range pi.GetAttributes() {
+		if strings.HasPrefix(k, serverAttributePrefix) {
+			cloned := proto.CloneOf(pi)
+			for ck := range cloned.Attributes {
+				if strings.HasPrefix(ck, serverAttributePrefix) {
+					delete(cloned.Attributes, ck)
+				}
+			}
+			return cloned
+		}
+	}
+	return pi
 }
 
 // SendSpeakerUpdate notifies participant changes to speakers. only send members that have changed since last update
@@ -172,6 +198,10 @@ func (p *ParticipantImpl) sendRequestResponse(requestResponse *livekit.RequestRe
 }
 
 func (p *ParticipantImpl) SendRoomMovedResponse(roomMovedResponse *livekit.RoomMovedResponse) error {
+	roomMovedResponse.Participant = withoutServerAttributes(roomMovedResponse.Participant)
+	for i, op := range roomMovedResponse.OtherParticipants {
+		roomMovedResponse.OtherParticipants[i] = withoutServerAttributes(op)
+	}
 	return p.signaller.WriteMessage(p.signalling.SignalRoomMovedResponse(roomMovedResponse))
 }
 

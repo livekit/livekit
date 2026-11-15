@@ -188,6 +188,10 @@ func NewReceiverBase(params ReceiverBaseParams, trackInfo *livekit.TrackInfo, co
 	return r
 }
 
+func (r *ReceiverBase) Start() {
+	r.streamTrackerManager.Start()
+}
+
 func (r *ReceiverBase) Close(reason string, clearBuffers bool) {
 	if r.isClosed.Swap(true) {
 		return
@@ -513,6 +517,12 @@ func (r *ReceiverBase) GetDownTracks() []TrackSender {
 }
 
 func (r *ReceiverBase) SetMaxExpectedSpatialLayer(layer int32) {
+	if layer < buffer.InvalidLayerSpatial {
+		layer = buffer.InvalidLayerSpatial
+	} else if layer > buffer.DefaultMaxLayerSpatial {
+		layer = buffer.DefaultMaxLayerSpatial
+	}
+
 	prevMax := r.streamTrackerManager.SetMaxExpectedSpatialLayer(layer)
 	r.params.Logger.Debugw("max expected layer change", "layer", layer, "prevMax", prevMax)
 
@@ -635,6 +645,18 @@ func (r *ReceiverBase) getBufferLocked(layer int32) (buffer.BufferProvider, int3
 }
 
 func (r *ReceiverBase) GetOrCreateBuffer(layer int32) buffer.BufferProvider {
+	// fast path under read lock, the buffer exists on every call after the first (e.g. each subscriber PLI)
+	r.bufferMu.RLock()
+	if r.IsClosed() {
+		r.bufferMu.RUnlock()
+		return nil
+	}
+	if buff, _ := r.getBufferLocked(layer); buff != nil {
+		r.bufferMu.RUnlock()
+		return buff
+	}
+	r.bufferMu.RUnlock()
+
 	r.bufferMu.Lock()
 
 	if r.IsClosed() {
@@ -978,7 +1000,7 @@ func (r *ReceiverBase) forwardRTP(
 		// serially, inflating the measured transit for the tail of the burst. That
 		// reflects loss recovery rather than steady-state forwarding health.
 		if writeCount > 0 && r.forwardStats != nil && !extPkt.IsBuffered && !extPkt.IsOutOfOrder {
-			if latency, isHigh := r.forwardStats.Update(extPkt.Arrival, mono.UnixNano()); isHigh {
+			if latency, isHigh := r.forwardStats.UpdateForwarded(extPkt.Arrival, dequeuedAt, mono.UnixNano(), writeCount); isHigh {
 				r.params.Logger.Debugw(
 					"high forwarding latency",
 					"latency", time.Duration(latency),

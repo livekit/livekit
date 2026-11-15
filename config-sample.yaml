@@ -110,6 +110,13 @@ rtc:
   #     # Insecure username/password authentication
   #     username: ""
   #     credential: ""
+  #     # Alternatively, load the static username/credential pair from one YAML file:
+  #     #   username: myuser
+  #     #   credential: mycredential
+  #     # The file must have no permissions for others (for example, chmod 640).
+  #     # Inline username/credential take precedence; the pair is never mixed with
+  #     # file values. Quoted YAML preserves whitespace in passwords.
+  #     credentials_file: "/run/credentials/livekit/turn.yaml"
   # # allows LiveKit to monitor congestion when sending streams and automatically
   # # manage bandwidth utilization to avoid congestion/loss. Enabled by default
   # congestion_control:
@@ -127,6 +134,11 @@ rtc:
   #   #                  logs a warning and falls back to no-queue. see livekit/livekit#4724
   #   # an unrecognized value is rejected at startup.
   #   send_side_bwe_pacer: no-queue
+  # # FlexFEC-03 forward error correction, disabled by default.
+  # # Accepts FEC from publishers and uses it to repair lost packets before
+  # # forwarding.
+  # flexfec:
+  #   upstream_enabled: false
   # # allows automatic connection fallback to TCP and TURN/TLS (if configured) when UDP has been unstable, default true
   # allow_tcp_fallback: true
   # # signaling RTT (in milliseconds) below which ICE/TCP is attempted on a UDP failure; at or above it,
@@ -146,6 +158,17 @@ rtc:
   #   low_quality: 500ms
   #   mid_quality: 1s
   #   high_quality: 1s
+  # # cap the bytes a subscriber's track retransmits in response to NACKs. Off by default.
+  # # max_ratio: retransmitted bytes allowed, as a fraction of the media bytes sent; 0 turns the cap off.
+  # # burst_bytes: retransmitted bytes allowed at once above that ratio; at least 1500.
+  # # When the budget is short, the newest packets are retransmitted first.
+  # rtx_budget:
+  #   audio:
+  #     max_ratio: 0.4
+  #     burst_bytes: 4000
+  #   video:
+  #     max_ratio: 0.2
+  #     burst_bytes: 64000
   # # when set, Livekit will collect loopback candidates, it is useful for some VM have public address mapped to its loopback interface.
   # enable_loopback_candidate: true
   # # network interface filter. If the machine has more than one network interface and you'd like it to use or skip specific interfaces

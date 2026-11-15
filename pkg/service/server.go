@@ -44,6 +44,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/version"
 )
 
@@ -59,6 +60,7 @@ type LivekitServer struct {
 	agentEndpoint      *AgentEndpointService
 	router             routing.Router
 	roomManager        *RoomManager
+	telemetry          telemetry.TelemetryService
 	signalServer       *SignalServer
 	turnServer         *turn.Server
 	currentNode        routing.LocalNode
@@ -82,6 +84,7 @@ func NewLivekitServer(conf *config.Config,
 	keyProvider auth.KeyProvider,
 	router routing.Router,
 	roomManager *RoomManager,
+	telemetryService telemetry.TelemetryService,
 	signalServer *SignalServer,
 	turnServer *turn.Server,
 	currentNode routing.LocalNode,
@@ -93,6 +96,7 @@ func NewLivekitServer(conf *config.Config,
 		whipService:  whipService,
 		router:       router,
 		roomManager:  roomManager,
+		telemetry:    telemetryService,
 		signalServer: signalServer,
 		// turn server starts automatically
 		turnServer:  turnServer,
@@ -367,6 +371,9 @@ func (s *LivekitServer) Start() error {
 	s.roomManager.Stop()
 	s.signalServer.Stop()
 	s.ioService.Stop()
+
+	// send the webhooks of the rooms and participants closed above before the process exits
+	s.telemetry.Stop()
 
 	close(s.closedChan)
 	return nil

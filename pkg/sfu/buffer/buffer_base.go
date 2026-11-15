@@ -36,6 +36,7 @@ import (
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/mediatransportutil/pkg/bucket"
 	"github.com/livekit/mediatransportutil/pkg/codec"
 	"github.com/livekit/mediatransportutil/pkg/nack"
@@ -79,7 +80,8 @@ type ExtPacket struct {
 	ExtSequenceNumber    uint64
 	ExtTimestamp         uint64
 	Packet               *rtp.Packet
-	Payload              any
+	VP8                  *codec.VP8        // nil when not parsed
+	VP9                  *codecs.VP9Packet // nil when not parsed
 	IsKeyFrame           bool
 	RawPacket            []byte
 	DependencyDescriptor *ExtDependencyDescriptor
@@ -91,6 +93,11 @@ type ExtPacket struct {
 	// extension and CSRC slices point into the write input until ReadExtended re-points them into RawPacket
 	pkt        rtp.Packet
 	extensions [8]rtp.Extension
+
+	// backing storage for VP8, VP9 and abs-capture-time, so parsing does not allocate
+	vp8            codec.VP8
+	vp9            codecs.VP9Packet
+	absCaptureTime act.AbsCaptureTime
 }
 
 type BufferProvider interface {
@@ -147,14 +154,15 @@ const (
 )
 
 type BufferBaseParams struct {
-	SSRC                uint32
-	MaxVideoPkts        int
-	MaxAudioPkts        int
-	LoggerComponents    []string
-	SendPLI             func()
-	IsReportingEnabled  bool
-	IsOOBSequenceNumber bool
-	IsDDRestartEnabled  bool
+	SSRC                  uint32
+	MaxVideoPkts          int
+	MaxAudioPkts          int
+	LoggerComponents      []string
+	SendPLI               func()
+	OnStreamRestartLocked func()
+	IsReportingEnabled    bool
+	IsOOBSequenceNumber   bool
+	IsDDRestartEnabled    bool
 }
 
 type BufferBase struct {
@@ -181,6 +189,7 @@ type BufferBase struct {
 	rtpParameters  webrtc.RTPParameters
 	payloadType    uint8
 	rtxPayloadType uint8
+	fecPayloadType uint8
 
 	snRangeMap *utils.RangeMap[uint64, uint64]
 
@@ -191,6 +200,7 @@ type BufferBase struct {
 	enableStreamRestartDetection bool
 
 	pliThrottle int64
+	lastPliAt   atomic.Int64
 
 	rtpStats             *rtpstats.RTPStatsReceiver
 	ppsSnapshotId        uint32
@@ -322,6 +332,14 @@ func (b *BufferBase) BindLocked(rtpParameters webrtc.RTPParameters, codec webrtc
 	for _, codec := range rtpParameters.Codecs {
 		if mime.IsMimeTypeStringRTX(codec.MimeType) && strings.Contains(codec.SDPFmtpLine, fmt.Sprintf("apt=%d", b.payloadType)) {
 			b.rtxPayloadType = uint8(codec.PayloadType)
+			break
+		}
+	}
+
+	// find FlexFEC payload type, the repair stream is codec agnostic (no apt)
+	for _, codec := range rtpParameters.Codecs {
+		if strings.EqualFold(codec.MimeType, webrtc.MimeTypeFlexFEC03) {
+			b.fecPayloadType = uint8(codec.PayloadType)
 			break
 		}
 	}
@@ -462,6 +480,8 @@ func (b *BufferBase) SetStreamRestartDetection(enable bool) {
 
 func (b *BufferBase) setupRTPStats(clockRate uint32) {
 	b.rtpStats = rtpstats.NewRTPStatsReceiver(rtpstats.RTPStatsParams{})
+	// a new stream has no PLI history, so the PLI throttle starts fresh with it
+	b.lastPliAt.Store(0)
 	b.rtpStats.SetLogger(b.logger)
 	b.rtpStats.SetClockRate(clockRate)
 
@@ -585,6 +605,10 @@ func (b *BufferBase) restartStreamLocked(reason string, isDetected bool) {
 
 	b.StartKeyFrameSeeder()
 
+	if f := b.params.OnStreamRestartLocked; f != nil {
+		f()
+	}
+
 	if isDetected {
 		b.isRestartPending = true
 
@@ -666,16 +690,29 @@ func (b *BufferBase) SetPLIThrottle(duration int64) {
 
 func (b *BufferBase) SendPLI(force bool) {
 	b.RLock()
-	if b.codecType != webrtc.RTPCodecTypeVideo {
+	if b.codecType != webrtc.RTPCodecTypeVideo || b.rtpStats == nil {
 		b.RUnlock()
 		return
+	}
+
+	// throttle before the rtpstats lock, every subscriber of a track can ask for a key frame at once,
+	// under the buffer read lock so a stream restart cannot interleave with claiming the window
+	now := mono.UnixNano()
+	if force {
+		b.lastPliAt.Store(now)
+	} else {
+		lastPliAt := b.lastPliAt.Load()
+		if now-lastPliAt < b.pliThrottle || !b.lastPliAt.CompareAndSwap(lastPliAt, now) {
+			b.RUnlock()
+			return
+		}
 	}
 
 	rtpStats := b.rtpStats
 	pliThrottle := b.pliThrottle
 	b.RUnlock()
 
-	if rtpStats == nil || !rtpStats.CheckAndUpdatePli(pliThrottle, force) {
+	if !rtpStats.CheckAndUpdatePli(pliThrottle, force) {
 		return
 	}
 
@@ -1067,9 +1104,8 @@ func (b *BufferBase) getExtPacket(
 
 	if b.absCaptureTimeExtID != 0 {
 		if extData := rtpPacket.GetExtension(b.absCaptureTimeExtID); len(extData) != 0 {
-			actExt := &act.AbsCaptureTime{}
-			if err := actExt.Unmarshal(extData); err == nil {
-				ep.AbsCaptureTimeExt = actExt
+			if err := ep.absCaptureTime.Unmarshal(extData); err == nil {
+				ep.AbsCaptureTimeExt = &ep.absCaptureTime
 			}
 		}
 	}
@@ -1097,6 +1133,10 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 				return err
 			}
 		} else if ddVal != nil {
+			if ddVal.Restarted && ddVal.Descriptor.AttachedStructure == nil {
+				// the restart dropped the structure, so later packets cannot be parsed until a key frame
+				b.StartKeyFrameSeeder()
+			}
 			ep.DependencyDescriptor = ddVal
 			ep.VideoLayer = videoLayer
 			videoSize = ExtractDependencyDescriptorVideoSize(ddVal.Descriptor)
@@ -1106,7 +1146,7 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 
 	switch b.mime {
 	case mime.MimeTypeVP8:
-		vp8Packet := codec.VP8{}
+		vp8Packet := &ep.vp8
 		if err := vp8Packet.Unmarshal(ep.Packet.Payload); err != nil {
 			b.logger.Warnw("could not unmarshal VP8 packet", err)
 			return err
@@ -1116,7 +1156,7 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 			ep.Temporal = int32(vp8Packet.TID)
 
 			if ep.IsKeyFrame {
-				if sz := codec.ExtractVP8VideoSize(&vp8Packet, ep.Packet.Payload); sz.Width > 0 && sz.Height > 0 {
+				if sz := codec.ExtractVP8VideoSize(vp8Packet, ep.Packet.Payload); sz.Width > 0 && sz.Height > 0 {
 					videoSize = append(videoSize, sz)
 				}
 			}
@@ -1124,12 +1164,12 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 			// vp8 with DependencyDescriptor enabled, use the TID from the descriptor
 			vp8Packet.TID = uint8(ep.Temporal)
 		}
-		ep.Payload = vp8Packet
+		ep.VP8 = vp8Packet
 		ep.Spatial = InvalidLayerSpatial // vp8 don't have spatial scalability, reset to invalid
 
 	case mime.MimeTypeVP9:
 		if ep.DependencyDescriptor == nil {
-			var vp9Packet codecs.VP9Packet
+			vp9Packet := &ep.vp9
 			_, err := vp9Packet.Unmarshal(ep.Packet.Payload)
 			if err != nil {
 				b.logger.Warnw("could not unmarshal VP9 packet", err)
@@ -1139,8 +1179,8 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 				Spatial:  int32(vp9Packet.SID),
 				Temporal: int32(vp9Packet.TID),
 			}
-			ep.Payload = vp9Packet
-			ep.IsKeyFrame = codec.IsVP9KeyFrame(&vp9Packet, ep.Packet.Payload)
+			ep.VP9 = vp9Packet
+			ep.IsKeyFrame = codec.IsVP9KeyFrame(vp9Packet, ep.Packet.Payload)
 
 			if ep.IsKeyFrame {
 				for i := 0; i < len(vp9Packet.Width); i++ {
@@ -1192,6 +1232,7 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 		if b.rtpStats != nil {
 			b.rtpStats.UpdateKeyFrame(1)
 		}
+		prometheus.IncrementKeyFrames(prometheus.Incoming)
 	}
 
 	if len(videoSize) > 0 {
@@ -1354,8 +1395,9 @@ func (b *BufferBase) GetSenderReportData() *livekit.RTCPSenderReportState {
 }
 
 func (b *BufferBase) GetPacket(buff []byte, esn uint64) (int, error) {
-	b.Lock()
-	defer b.Unlock()
+	// read only, so retransmissions for many subscribers do not serialize
+	b.RLock()
+	defer b.RUnlock()
 
 	return b.getPacketLocked(buff, esn)
 }

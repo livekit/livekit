@@ -18,14 +18,17 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
+// Null is for a stream whose temporal layers cannot be filtered, simulcast without the
+// dependency descriptor for example: every temporal layer is forwarded. It reports the
+// target as the current layer, so a target below the highest layer does not stay pending
+// and block further allocation. The forwarder pairs it with the null codec munger, which
+// ignores the temporal layer it returns for the packet.
 type Null struct{}
 
 func NewNull() *Null {
 	return &Null{}
 }
 
-func Select(_extPkt *buffer.ExtPacket, current int32, _target int32) (this int32, next int32) {
-	this = current
-	next = current
-	return
+func (n *Null) Select(_extPkt *buffer.ExtPacket, _current int32, target int32) (this int32, next int32) {
+	return target, target
 }

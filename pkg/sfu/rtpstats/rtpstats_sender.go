@@ -901,7 +901,7 @@ func (r *RTPStatsSender) MaybeAdjustFirstPacketTime(publisherSRData *livekit.RTC
 	}
 }
 
-func (r *RTPStatsSender) GetExpectedRTPTimestamp(at time.Time) (expectedTSExt uint64, err error) {
+func (r *RTPStatsSender) GetExpectedRTPTimestamp(atNano int64) (expectedTSExt uint64, err error) {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
@@ -910,7 +910,7 @@ func (r *RTPStatsSender) GetExpectedRTPTimestamp(at time.Time) (expectedTSExt ui
 		return
 	}
 
-	timeDiff := at.Sub(time.Unix(0, r.firstTime))
+	timeDiff := time.Duration(atNano - r.firstTime)
 	expectedTSExt = r.extStartTS + r.rtpConverter.ToRTPExt(timeDiff)
 	return
 }

@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pion/dtls/v3/pkg/protocol/handshake"
+	"github.com/pion/dtls/v4/pkg/protocol/handshake"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
@@ -1072,4 +1072,53 @@ func TestRemoteOfferParsedFollowsICERestartFragment(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "restartUfrag", ufrag)
 	require.Equal(t, "restartPwd0123456789abcdef", pwd)
+}
+
+func TestAnsweringDTLSRole(t *testing.T) {
+	sdkInfo := func(sdk livekit.ClientInfo_SDK) ClientInfo {
+		return ClientInfo{ClientInfo: &livekit.ClientInfo{Sdk: sdk}}
+	}
+	cases := []struct {
+		name       string
+		iceLite    bool
+		clientInfo ClientInfo
+		expected   sdp.ConnectionRole
+	}{
+		{name: "ice lite", iceLite: true, clientInfo: sdkInfo(livekit.ClientInfo_JS), expected: sdp.ConnectionRolePassive},
+		{name: "no ice lite", clientInfo: sdkInfo(livekit.ClientInfo_JS), expected: sdp.ConnectionRoleActive},
+		{name: "unknown sdk", iceLite: true, clientInfo: ClientInfo{}, expected: sdp.ConnectionRoleActive},
+		{name: "esp32", iceLite: true, clientInfo: sdkInfo(livekit.ClientInfo_ESP32), expected: sdp.ConnectionRoleActive},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			conf := &WebRTCConfig{ICELite: c.iceLite}
+			conf.SettingEngine.SetLite(c.iceLite)
+			answerer, err := NewPCTransport(TransportParams{
+				Config:          conf,
+				ProtocolVersion: 16,
+				ClientInfo:      c.clientInfo,
+				Handler:         &transportfakes.FakeHandler{},
+			})
+			require.NoError(t, err)
+			defer answerer.Close()
+
+			offerer, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+			require.NoError(t, err)
+			defer offerer.Close()
+			_, err = offerer.CreateDataChannel("test", nil)
+			require.NoError(t, err)
+			offer, err := offerer.CreateOffer(nil)
+			require.NoError(t, err)
+
+			require.NoError(t, answerer.pc.SetRemoteDescription(offer))
+			answer, err := answerer.pc.CreateAnswer(nil)
+			require.NoError(t, err)
+
+			parsed, err := answer.Unmarshal()
+			require.NoError(t, err)
+			setup, ok := parsed.MediaDescriptions[0].Attribute(sdp.AttrKeyConnectionSetup)
+			require.True(t, ok)
+			require.Equal(t, c.expected.String(), setup)
+		})
+	}
 }

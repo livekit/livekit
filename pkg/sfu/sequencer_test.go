@@ -78,6 +78,46 @@ func Test_sequencer(t *testing.T) {
 	require.Equal(t, 1, len(m))
 }
 
+func Test_sequencer_unmarkNacked(t *testing.T) {
+	newPushed := func(n uint64) *sequencer {
+		seq := newSequencer(100, false, logger.GetLogger())
+		for i := uint64(1); i <= n; i++ {
+			seq.push(time.Now().UnixNano(), i, i, 123, true, 0, nil, 0, nil, nil, 0)
+		}
+		time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
+		return seq
+	}
+
+	t.Run("an unmarked packet is served again past maxAck, but not inside the duplicate window", func(t *testing.T) {
+		seq := newPushed(50)
+		for i := 0; i < maxAck+2; i++ {
+			res := seq.getExtPacketMetas([]uint16{40})
+			require.Len(t, res, 1, "NACK %d", i)
+			seq.unmarkNacked(res)
+
+			require.Empty(t, seq.getExtPacketMetas([]uint16{40}), "a repeat NACK inside the window is ignored")
+			time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
+		}
+	})
+
+	t.Run("a reused slot is left alone", func(t *testing.T) {
+		seq := newPushed(50)
+		res := seq.getExtPacketMetas([]uint16{40})
+		require.Len(t, res, 1)
+
+		// wrap the ring so slot of 40 holds a newer packet that was NACKed once
+		for i := uint64(51); i <= 140; i++ {
+			seq.push(time.Now().UnixNano(), i, i, 123, true, 0, nil, 0, nil, nil, 0)
+		}
+		time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
+		require.Len(t, seq.getExtPacketMetas([]uint16{140}), 1)
+		require.EqualValues(t, 140, seq.meta[res[0].slot].targetSeqNo)
+
+		seq.unmarkNacked(res)
+		require.EqualValues(t, 1, seq.meta[res[0].slot].nacked)
+	})
+}
+
 func Test_sequencer_flush(t *testing.T) {
 	seq := newSequencer(500, false, logger.GetLogger())
 	off := uint16(15)
@@ -247,7 +287,7 @@ func Test_sequencer_getNACKSeqNo_exclusion(t *testing.T) {
 					require.Equal(t, uint8(len(tt.fields.codecBytesOversized)), sn.numCodecBytesIn)
 					require.Equal(t, tt.fields.ddBytesOversized, sn.ddBytesSlice)
 					require.Equal(t, uint8(len(tt.fields.codecBytesOversized)), sn.ddBytesSize)
-					require.Equal(t, tt.fields.actBytesOdd, sn.actBytes)
+					require.Equal(t, tt.fields.actBytesOdd, sn.actBytes[:sn.actBytesSize])
 				} else {
 					if sn.sourceSeqNo%2 == 0 {
 						require.Equal(t, tt.fields.markerEven, sn.marker)
@@ -255,14 +295,14 @@ func Test_sequencer_getNACKSeqNo_exclusion(t *testing.T) {
 						require.Equal(t, uint8(tt.fields.numCodecBytesInEven), sn.numCodecBytesIn)
 						require.Equal(t, tt.fields.ddBytesEven, sn.ddBytes[:sn.ddBytesSize])
 						require.Equal(t, uint8(len(tt.fields.ddBytesEven)), sn.ddBytesSize)
-						require.Equal(t, tt.fields.actBytesEven, sn.actBytes)
+						require.Equal(t, tt.fields.actBytesEven, sn.actBytes[:sn.actBytesSize])
 					} else {
 						require.Equal(t, tt.fields.markerOdd, sn.marker)
 						require.Equal(t, tt.fields.codecBytesOdd, sn.codecBytes[:sn.numCodecBytesOut])
 						require.Equal(t, uint8(tt.fields.numCodecBytesInOdd), sn.numCodecBytesIn)
 						require.Equal(t, tt.fields.ddBytesOdd, sn.ddBytes[:sn.ddBytesSize])
 						require.Equal(t, uint8(len(tt.fields.ddBytesOdd)), sn.ddBytesSize)
-						require.Equal(t, tt.fields.actBytesOdd, sn.actBytes)
+						require.Equal(t, tt.fields.actBytesOdd, sn.actBytes[:sn.actBytesSize])
 					}
 				}
 			}
@@ -388,14 +428,14 @@ func Test_sequencer_getNACKSeqNo_no_exclusion(t *testing.T) {
 					require.Equal(t, uint8(tt.fields.numCodecBytesInEven), sn.numCodecBytesIn)
 					require.Equal(t, tt.fields.ddBytesEven, sn.ddBytes[:sn.ddBytesSize])
 					require.Equal(t, uint8(len(tt.fields.ddBytesEven)), sn.ddBytesSize)
-					require.Equal(t, tt.fields.actBytesEven, sn.actBytes)
+					require.Equal(t, tt.fields.actBytesEven, sn.actBytes[:sn.actBytesSize])
 				} else {
 					require.Equal(t, tt.fields.markerOdd, sn.marker)
 					require.Equal(t, tt.fields.codecBytesOdd, sn.codecBytes[:sn.numCodecBytesOut])
 					require.Equal(t, uint8(tt.fields.numCodecBytesInOdd), sn.numCodecBytesIn)
 					require.Equal(t, tt.fields.ddBytesOdd, sn.ddBytes[:sn.ddBytesSize])
 					require.Equal(t, uint8(len(tt.fields.ddBytesOdd)), sn.ddBytesSize)
-					require.Equal(t, tt.fields.actBytesOdd, sn.actBytes)
+					require.Equal(t, tt.fields.actBytesOdd, sn.actBytes[:sn.actBytesSize])
 				}
 			}
 			if !reflect.DeepEqual(got, tt.want) {

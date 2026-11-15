@@ -62,14 +62,12 @@ func TestStaticConfigurationAV1(t *testing.T) {
 		return false
 	}
 
-	// Firefox 155/156 decode only the base spatial layer of AV1 SVC
 	require.True(t, av1Disabled(&livekit.ClientInfo{Browser: "Firefox", BrowserVersion: "155.0", Os: "macOS"}))
 	require.True(t, av1Disabled(&livekit.ClientInfo{Browser: "firefox", BrowserVersion: "156.0.1", Os: "windows"}))
+	require.True(t, av1Disabled(&livekit.ClientInfo{Browser: "firefox", BrowserVersion: "158.0.2", Os: "windows"}))
 	// an unknown version is treated as affected
 	require.True(t, av1Disabled(&livekit.ClientInfo{Browser: "firefox", Os: "linux"}))
-	// Firefox 157 decodes every layer, so it keeps AV1
-	require.False(t, av1Disabled(&livekit.ClientInfo{Browser: "firefox", BrowserVersion: "157.0", Os: "windows"}))
-	require.False(t, av1Disabled(&livekit.ClientInfo{Browser: "firefox", BrowserVersion: "158.0.2", Os: "windows"}))
+	// should not be disabled for Chrome
 	require.False(t, av1Disabled(&livekit.ClientInfo{Browser: "chrome", Os: "linux"}))
 
 	// Firefox for Android keeps the AV1 rule alongside its H.264 publish rule

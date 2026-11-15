@@ -88,7 +88,8 @@ func GetTestExtPacketVP8(params *TestExtPacketParams, vp8 *codec.VP8) (*buffer.E
 	}
 
 	ep.IsKeyFrame = vp8.IsKeyFrame
-	ep.Payload = *vp8
+	vp8Copy := *vp8 // keep the packet independent of later changes to vp8
+	ep.VP8 = &vp8Copy
 	if ep.DependencyDescriptor == nil {
 		ep.Temporal = int32(vp8.TID)
 	}
@@ -142,6 +143,8 @@ func GetTestExtPacketVP8DD(params *TestExtPacketParams, ddParams *TestDDParams) 
 		},
 		DecodeTargets: ddParams.DecodeTargets,
 		ExtFrameNum:   ddParams.ExtFrameNum,
+		// all decode targets active, as the parser reports after a structure
+		ActiveDecodeTargetsMask: 1<<len(ddParams.DecodeTargets) - 1,
 	}
 	return ep, nil
 }

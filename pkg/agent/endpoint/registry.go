@@ -21,29 +21,15 @@ import (
 	"sync/atomic"
 )
 
-// DefaultDeployment is the URL segment that addresses workers registered with an
-// empty deployment name (self-hosted workers typically set none).
-const DefaultDeployment = "default"
-
-// UnnamedAgentSegment is the URL segment that addresses workers registered with
-// an empty agent name.
-const UnnamedAgentSegment = "_"
+// UnnamedSegment is the URL segment that addresses workers registered with an
+// empty agent name or deployment.
+const UnnamedSegment = "_"
 
 // IsReservedAgentName reports whether a name cannot address a worker. These are
 // unreserved characters (RFC 3986 §2.3), so percent-encoding them yields no
 // distinct form to address them by.
 func IsReservedAgentName(agentName string) bool {
-	return agentName == UnnamedAgentSegment || agentName == "." || agentName == ".."
-}
-
-// NormalizeDeployment maps an empty deployment to the segment that addresses it
-// in a URL. Every embedder must key its scopes through this, or a worker that
-// registered without a deployment is unreachable from any node but its own.
-func NormalizeDeployment(d string) string {
-	if d == "" {
-		return DefaultDeployment
-	}
-	return d
+	return agentName == UnnamedSegment || agentName == "." || agentName == ".."
 }
 
 // DefaultMaxStreams is the soft per-session concurrency cap used only for

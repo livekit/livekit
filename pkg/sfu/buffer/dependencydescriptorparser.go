@@ -69,6 +69,7 @@ type DependencyDescriptorParser struct {
 	// repeating the same structure (e. g. screen content), valid late/retransmitted
 	// frames would be dropped as "earlier than current structure".
 	structureChangeExtFrameNum uint64
+	hasActiveDecodeTargets     bool // the first mask is taken whatever its sequence number
 	activeDecodeTargetsExtSeq  uint64
 	activeDecodeTargetsMask    uint32
 	frameChecker               *FrameIntegrityChecker
@@ -99,14 +100,19 @@ type ExtDependencyDescriptor struct {
 	DecodeTargets              []DependencyDescriptorDecodeTarget
 	StructureUpdated           bool
 	ActiveDecodeTargetsUpdated bool
-	Integrity                  bool
-	ExtFrameNum                uint64
+	// the stream's current active decode targets, on every packet, also when the mask
+	// changed on a packet the subscriber does not get
+	ActiveDecodeTargetsMask uint32
+	Integrity               bool
+	ExtFrameNum             uint64
 	// the frame number of the keyframe which the current frame depends on
 	ExtKeyFrameNum uint64
 
 	// increase when the stream restarts, clear and reinitialize all dd state includes
 	// attached structure, frame chain, decode target.
 	RestartGeneration int
+	// set on the packet that restarted the stream
+	Restarted bool
 
 	// storage for Descriptor, zeroed with the rest of the struct on release,
 	// a frame with more than 8 frame diffs spills to the heap
@@ -198,6 +204,7 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 	extDD.ExtFrameNum = extFN
 	extDD.Integrity = r.frameChecker.FrameIntegrity(extFN)
 	extDD.RestartGeneration = r.restartGeneration
+	extDD.Restarted = restart
 
 	if ddVal.AttachedStructure != nil {
 		if !ddVal.FirstPacketInFrame {
@@ -262,7 +269,8 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 		// so don't need to notify max layer change here.
 	}
 
-	if mask := ddVal.ActiveDecodeTargetsBitmask; mask != nil && extSeq > r.activeDecodeTargetsExtSeq {
+	if mask := ddVal.ActiveDecodeTargetsBitmask; mask != nil && (!r.hasActiveDecodeTargets || extSeq > r.activeDecodeTargetsExtSeq) {
+		r.hasActiveDecodeTargets = true
 		r.activeDecodeTargetsExtSeq = extSeq
 		if *mask != r.activeDecodeTargetsMask {
 			r.activeDecodeTargetsMask = *mask
@@ -285,6 +293,7 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 
 	extDD.DecodeTargets = r.decodeTargets
 	extDD.ExtKeyFrameNum = r.structureExtFrameNum
+	extDD.ActiveDecodeTargetsMask = r.activeDecodeTargetsMask
 
 	return extDD, videoLayer, nil
 }
@@ -294,6 +303,7 @@ func (r *DependencyDescriptorParser) restart() {
 	r.structure = nil
 	r.structureExtFrameNum = 0
 	r.structureChangeExtFrameNum = 0
+	r.hasActiveDecodeTargets = false
 	r.activeDecodeTargetsExtSeq = 0
 	r.activeDecodeTargetsMask = 0
 	r.decodeTargets = r.decodeTargets[:0]

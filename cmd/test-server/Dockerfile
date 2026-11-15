@@ -17,7 +17,7 @@
 #
 # Pinned by digest so the build is reproducible even if the tag is republished.
 # The tag is kept alongside it for readability; Renovate updates both together.
-FROM golang:1.27.0-alpine3.24@sha256:4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fee45ea9d6c46dbc AS builder
+FROM golang:1.27.3-alpine3.24@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd AS builder
 
 ARG TARGETARCH
 
@@ -37,7 +37,7 @@ COPY version/ version/
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH GO111MODULE=on go build -a -o livekit-test-server ./cmd/test-server
 
-FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+FROM alpine:3.24.3@sha256:c6b073f8e9e58d881f6ffba6ebf3b9ebd60b9e7d6e8337018c0e68bb5c356873
 
 # Pull the latest security patches for base packages within the pinned Alpine
 # release; the digest above is only refreshed by a Renovate PR. See the note in

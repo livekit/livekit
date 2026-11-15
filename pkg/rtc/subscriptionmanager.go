@@ -60,6 +60,8 @@ type SubscriptionManagerParams struct {
 
 	SubscriptionLimitVideo, SubscriptionLimitAudio int32
 
+	SubscribePacer *SubscribePacer
+
 	DataTrackResolver types.DataTrackResolver
 
 	UseOneShotSignallingMode bool
@@ -294,6 +296,23 @@ func (m *SubscriptionManager) ClearAllSubscriptions() {
 	prometheus.RecordTrackSubscribeCancels(int32(numCancellations))
 
 	m.ReconcileAll()
+}
+
+// FailTrackBind ends a subscription whose track cannot bind, the same way a bind error does
+func (m *SubscriptionManager) FailTrackBind(trackID livekit.TrackID, err error) {
+	m.lock.RLock()
+	sub := m.subscriptions[trackID]
+	m.lock.RUnlock()
+	if sub != nil {
+		m.handleBindFailure(sub, err)
+	}
+}
+
+func (m *SubscriptionManager) handleBindFailure(sub *mediaTrackSubscription, err error) {
+	sub.logger.Infow("failed to bind track", "err", err)
+	sub.maybeRecordError(m.params.Participant.GetTelemetryListener(), err, true)
+	m.UnsubscribeFromTrack(sub.trackID)
+	m.params.OnSubscriptionError(sub.trackID, false, err)
 }
 
 func (m *SubscriptionManager) GetSubscribedTracks() []types.SubscribedTrack {
@@ -878,6 +897,11 @@ func (m *SubscriptionManager) subscribeSynchronous(trackID livekit.TrackID) erro
 
 func (m *SubscriptionManager) addSubscriber(sub *mediaTrackSubscription, track types.MediaTrack, isSync bool) error {
 	trackID := track.ID()
+	// take the shadow token before setup, so tokens go out in arrival order
+	var paceShadowDelays map[string]time.Duration
+	if track.Kind() == livekit.TrackType_VIDEO && !isSync {
+		paceShadowDelays = m.params.SubscribePacer.Delays(time.Now())
+	}
 	subTrack, err := track.AddSubscriber(m.params.Participant)
 	if err != nil && !errors.Is(err, errAlreadySubscribed) {
 		// ignore error(s): already subscribed
@@ -895,6 +919,9 @@ func (m *SubscriptionManager) addSubscriber(sub *mediaTrackSubscription, track t
 		)
 	}
 	if err == nil && subTrack != nil { // subTrack could be nil if already subscribed
+		if paceShadowDelays != nil {
+			prometheus.RecordSubscribePaceShadow(paceShadowDelays)
+		}
 		subTrack.OnSubscribeStreamStarted(sub.recordStreamStartLatency)
 		subTrack.OnClose(func(isExpectedToResume bool) {
 			m.handleSubscribedTrackClose(sub, isExpectedToResume)
@@ -907,10 +934,7 @@ func (m *SubscriptionManager) addSubscriber(sub *mediaTrackSubscription, track t
 		})
 		subTrack.AddOnBind(func(err error) {
 			if err != nil {
-				sub.logger.Infow("failed to bind track", "err", err)
-				sub.maybeRecordError(m.params.Participant.GetTelemetryListener(), err, true)
-				m.UnsubscribeFromTrack(trackID)
-				m.params.OnSubscriptionError(trackID, false, err)
+				m.handleBindFailure(sub, err)
 				return
 			}
 			sub.setBound()
@@ -923,6 +947,13 @@ func (m *SubscriptionManager) addSubscriber(sub *mediaTrackSubscription, track t
 			m.subscribedVideoCount.Inc()
 		case livekit.TrackType_AUDIO:
 			m.subscribedAudioCount.Inc()
+		}
+
+		// a canSubscribe revoke only removes recorded subscriptions, so one that landed while
+		// this subscribe was in flight missed it; now that it is recorded, check again
+		if !m.params.Participant.CanSubscribe() {
+			track.RemoveSubscriber(m.params.Participant.ID(), false)
+			return ErrNoSubscribePermission
 		}
 
 		if !isSync && subTrack.NeedsNegotiation() {
@@ -1150,6 +1181,13 @@ func (m *SubscriptionManager) subscribeDataTrack(sub *dataTrackSubscription) err
 			m.handleDataDownTrackClose(sub)
 		})
 		sub.setDataDownTrack(dataDownTrack)
+
+		// a canSubscribe revoke only removes recorded subscriptions, so one that landed while
+		// this subscribe was in flight missed it; now that it is recorded, check again
+		if !m.params.Participant.CanSubscribe() {
+			dataTrack.RemoveSubscriber(m.params.Participant.ID())
+			return ErrNoSubscribePermission
+		}
 		sub.logger.Debugw("subscribed to data track")
 	}
 

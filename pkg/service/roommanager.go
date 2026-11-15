@@ -103,6 +103,8 @@ type RoomManager struct {
 
 	forwardStats *sfu.ForwardStats
 
+	subscribePacer *rtc.SubscribePacer
+
 	rpc.UnimplementedParticipantServer
 	rpc.UnimplementedRoomServer
 	rpc.UnimplementedRoomManagerServer
@@ -144,6 +146,7 @@ func NewLocalRoomManager(
 		turnAuthHandler:   turnAuthHandler,
 		bus:               bus,
 		forwardStats:      forwardStats,
+		subscribePacer:    rtc.NewSubscribePacer(conf.Limit.SubscribePaceShadowRates),
 
 		rooms: make(map[livekit.RoomName]*rtc.Room),
 
@@ -294,11 +297,8 @@ func (r *RoomManager) StartSession(
 	sessionStartTime := time.Now()
 
 	if pi.Identity != "" && pi.Grants != nil {
-		if !r.config.Limit.CheckMetadataSize(pi.Grants.Metadata) {
-			return ErrMetadataExceedsLimits
-		}
-		if !r.config.Limit.CheckAttributesSize(pi.Grants.Attributes) {
-			return ErrAttributeExceedsLimits
+		if err := CheckConnectLimits(r.config.Limit, string(pi.Identity), livekit.RoomName(pi.CreateRoom.GetName()), pi.Grants); err != nil {
+			return err
 		}
 	}
 
@@ -436,6 +436,7 @@ func (r *RoomManager) StartSession(
 		"nodeID", r.currentNode.NodeID(),
 		"numParticipants", room.GetParticipantCount(),
 		"participantInit", &pi,
+		"apiKey", pi.APIKey,
 	)
 
 	clientConf := r.clientConfManager.GetConfiguration(pi.Client)
@@ -444,7 +445,7 @@ func (r *RoomManager) StartSession(
 	rtcConf := *r.rtcConfig
 	rtcConf.SetBufferFactory(room.GetBufferFactory())
 	if pi.DisableICELite {
-		rtcConf.SettingEngine.SetLite(false)
+		rtcConf.DisableICELite()
 	}
 	rtcConf.UpdatePublisherConfig(pi.UseSinglePeerConnection)
 
@@ -505,6 +506,7 @@ func (r *RoomManager) StartSession(
 		SubscribeEnabledCodecs:   enabledCodecs,
 		Grants:                   pi.Grants,
 		TokenExpiresAt:           pi.TokenExpiresAt,
+		APIKey:                   pi.APIKey,
 		Reconnect:                pi.Reconnect,
 		Logger:                   pLogger,
 		Reporter:                 roomobs.NewNoopParticipantSessionReporter(),
@@ -528,6 +530,7 @@ func (r *RoomManager) StartSession(
 		SubscriberAllowPause:              subscriberAllowPause,
 		SubscriptionLimitAudio:            r.config.Limit.SubscriptionLimitAudio,
 		SubscriptionLimitVideo:            r.config.Limit.SubscriptionLimitVideo,
+		SubscribePacer:                    r.subscribePacer,
 		PlayoutDelay:                      roomInternal.GetPlayoutDelay(),
 		SyncStreams:                       roomInternal.GetSyncStreams(),
 		ForwardStats:                      r.forwardStats,
@@ -1154,7 +1157,7 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 }
 
 func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {
-	key, secret, err := r.getFirstKeyPair()
+	key, secret, err := r.getSigningKeyPair(participant.APIKey())
 	if err != nil {
 		return err
 	}
@@ -1198,6 +1201,14 @@ func (r *RoomManager) setIceConfig(roomName livekit.RoomName, participant types.
 
 func (r *RoomManager) getIceConfig(roomName livekit.RoomName, participant types.LocalParticipant) *livekit.ICEConfig {
 	return r.iceConfigCache.Get(iceConfigCacheKey{roomName, participant.Identity()})
+}
+
+// getSigningKeyPair prefers the key that signed the join token so refreshed tokens stay valid when other keys are rotated.
+func (r *RoomManager) getSigningKeyPair(apiKey string) (string, string, error) {
+	if secret := r.config.Keys[apiKey]; apiKey != "" && secret != "" {
+		return apiKey, secret, nil
+	}
+	return r.getFirstKeyPair()
 }
 
 func (r *RoomManager) getFirstKeyPair() (string, string, error) {

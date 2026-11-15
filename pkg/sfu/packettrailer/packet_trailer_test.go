@@ -15,8 +15,13 @@
 package packettrailer
 
 import (
+	"bytes"
 	"encoding/binary"
 	"testing"
+
+	"github.com/pion/rtp/codecs"
+
+	"github.com/livekit/protocol/codecs/mime"
 )
 
 const (
@@ -78,7 +83,7 @@ func makeTimestampOnlyTrailer(timestampUs int64) []byte {
 }
 
 func TestStripTrailer(t *testing.T) {
-	fullTrailerSize := 21 // (1+1+8) + (1+1+4) + 5
+	fullTrailerSize := 21   // (1+1+8) + (1+1+4) + 5
 	tsOnlyTrailerSize := 15 // (1+1+8) + 5
 
 	tests := []struct {
@@ -173,9 +178,145 @@ func TestStripTrailer(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := StripTrailer(tt.payload, tt.marker)
+			got := StripTrailer(tt.payload, mime.MimeTypeVP8, tt.marker)
 			if got != tt.wantStrip {
 				t.Errorf("StripTrailer() = %d, want %d", got, tt.wantStrip)
+			}
+		})
+	}
+}
+
+// makeAggregate builds an aggregation packet with the given payload header and
+// NAL units, appending trailer to the last NAL unit and counting it in its size.
+func makeAggregate(header []byte, nalus [][]byte, trailer []byte) []byte {
+	p := append([]byte{}, header...)
+	for i, nalu := range nalus {
+		size := len(nalu)
+		if i == len(nalus)-1 {
+			size += len(trailer)
+		}
+		p = binary.BigEndian.AppendUint16(p, uint16(size))
+		p = append(p, nalu...)
+	}
+	return append(p, trailer...)
+}
+
+func TestStripTrailerAggregationPacket(t *testing.T) {
+	h264NALUs := [][]byte{
+		{0x67, 0x42, 0xC0, 0x1F},       // SPS
+		{0x68, 0xCE, 0x3C, 0x80},       // PPS
+		{0x65, 0x88, 0x84, 0x00, 0x33}, // IDR slice
+	}
+	h265NALUs := [][]byte{
+		{0x40, 0x01, 0x0C, 0x01},       // VPS
+		{0x42, 0x01, 0x01, 0x01},       // SPS
+		{0x44, 0x01, 0xC1, 0x72},       // PPS
+		{0x26, 0x01, 0xAF, 0x08, 0x40}, // IDR slice
+	}
+	trailer := makeTrailer(1700000000000000, 42)
+
+	unmarshalH264 := func(p []byte) ([]byte, error) {
+		return (&codecs.H264Packet{}).Unmarshal(p)
+	}
+	unmarshalH265 := func(p []byte) ([]byte, error) {
+		d := &codecs.H265Depacketizer{}
+		return d.Unmarshal(p)
+	}
+
+	tests := []struct {
+		name      string
+		mimeType  mime.MimeType
+		payload   []byte
+		want      []byte
+		unmarshal func([]byte) ([]byte, error)
+	}{
+		{
+			name:      "H.264 STAP-A",
+			mimeType:  mime.MimeTypeH264,
+			payload:   makeAggregate([]byte{0x78}, h264NALUs, trailer),
+			want:      makeAggregate([]byte{0x78}, h264NALUs, nil),
+			unmarshal: unmarshalH264,
+		},
+		{
+			name:      "H.264 STAP-A with a single NAL unit",
+			mimeType:  mime.MimeTypeH264,
+			payload:   makeAggregate([]byte{0x78}, h264NALUs[2:], trailer),
+			want:      makeAggregate([]byte{0x78}, h264NALUs[2:], nil),
+			unmarshal: unmarshalH264,
+		},
+		{
+			name:      "H.265 aggregation packet",
+			mimeType:  mime.MimeTypeH265,
+			payload:   makeAggregate([]byte{0x60, 0x01}, h265NALUs, trailer),
+			want:      makeAggregate([]byte{0x60, 0x01}, h265NALUs, nil),
+			unmarshal: unmarshalH265,
+		},
+		{
+			name:      "H.264 single NAL unit",
+			mimeType:  mime.MimeTypeH264,
+			payload:   append(append([]byte{}, h264NALUs[2]...), trailer...),
+			want:      h264NALUs[2],
+			unmarshal: unmarshalH264,
+		},
+		{
+			name:      "H.264 FU-A end fragment",
+			mimeType:  mime.MimeTypeH264,
+			payload:   append([]byte{0x7C, 0x45, 0x01, 0x02, 0x03}, trailer...),
+			want:      []byte{0x7C, 0x45, 0x01, 0x02, 0x03},
+			unmarshal: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			n := StripTrailer(tt.payload, tt.mimeType, true)
+			if n != len(trailer) {
+				t.Fatalf("StripTrailer() = %d, want %d", n, len(trailer))
+			}
+			got := tt.payload[:len(tt.payload)-n]
+			if !bytes.Equal(got, tt.want) {
+				t.Fatalf("stripped payload = %x, want %x", got, tt.want)
+			}
+			if tt.unmarshal != nil {
+				if _, err := tt.unmarshal(got); err != nil {
+					t.Fatalf("depacketizer rejected stripped payload: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestStripTrailerMalformedAggregationPacket(t *testing.T) {
+	trailer := makeTrailer(1700000000000000, 42)
+	nalus := [][]byte{{0x67, 0x42, 0xC0, 0x1F}, {0x65, 0x88, 0x84}}
+
+	tests := []struct {
+		name    string
+		payload []byte
+	}{
+		{
+			// trailer not counted in the last NAL unit, e.g. split off by a start code inside it
+			name:    "last NAL unit does not end the payload",
+			payload: append(makeAggregate([]byte{0x78}, nalus, nil), trailer...),
+		},
+		{
+			name:    "trailer is the whole last NAL unit",
+			payload: makeAggregate([]byte{0x78}, [][]byte{nalus[0], {}}, trailer),
+		},
+		{
+			name:    "truncated size field",
+			payload: append([]byte{0x78, 0x00}, trailer...),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			orig := append([]byte{}, tt.payload...)
+			if n := StripTrailer(tt.payload, mime.MimeTypeH264, true); n != 0 {
+				t.Fatalf("StripTrailer() = %d, want 0", n)
+			}
+			if !bytes.Equal(tt.payload, orig) {
+				t.Fatalf("payload modified: %x, want %x", tt.payload, orig)
 			}
 		})
 	}

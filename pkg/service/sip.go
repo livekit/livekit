@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/dennwc/iters"
@@ -128,13 +129,17 @@ func (s *SIPService) CreateSIPInboundTrunk(ctx context.Context, req *livekit.Cre
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
-	if err := req.ValidateResult().LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
+	if err := req.ValidateResultAddresses().LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
 		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
 
 	info := req.Trunk
 	if info.SipTrunkId != "" {
 		return nil, twirp.NewError(twirp.InvalidArgument, "trunk ID must be empty")
+	}
+	info.Numbers = normalizeNumbers(info.Numbers)
+	if err := validateInboundNumbersNoURI(info.Numbers, nil); err != nil {
+		return nil, err
 	}
 	AppendLogFields(ctx, "trunk", logger.Proto(info))
 
@@ -192,7 +197,7 @@ func (s *SIPService) UpdateSIPInboundTrunk(ctx context.Context, req *livekit.Upd
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
-	if err := req.ValidateResult().LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
+	if err := req.ValidateResultAddresses().LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
 		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
 
@@ -210,15 +215,23 @@ func (s *SIPService) UpdateSIPInboundTrunk(ctx context.Context, req *livekit.Upd
 		return nil, err
 	}
 	oldNumbers := info.Numbers
+	info.Numbers = normalizeNumbers(info.Numbers)
+	normalizeInboundTrunkUpdate(req)
+	prevNumbers := slices.Clone(info.Numbers)
 	switch a := req.Action.(type) {
 	default:
 		return nil, errors.New("missing or unsupported action")
 	case livekit.UpdateSIPInboundTrunkRequestAction:
+		// Only the allowed_addresses entries the update sets or adds must be valid,
+		// so trunks that already have invalid entries can still be edited.
 		var result livekit.ValidationResult
-		info, result = a.ApplyResult(info)
+		info, result = a.ApplyResultAddresses(info)
 		if err := result.LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
-			return nil, err
+			return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 		}
+	}
+	if err := validateInboundNumbersNoURI(info.Numbers, prevNumbers); err != nil {
+		return nil, err
 	}
 
 	it, err := ListSIPInboundTrunk(ctx, s.store, &livekit.ListSIPInboundTrunkRequest{
@@ -240,6 +253,58 @@ func (s *SIPService) UpdateSIPInboundTrunk(ctx context.Context, req *livekit.Upd
 		return nil, err
 	}
 	return info, nil
+}
+
+func normalizeNumbers(nums []string) []string {
+	if len(nums) == 0 {
+		return nums
+	}
+	out := make([]string, 0, len(nums))
+	seen := make(map[string]struct{}, len(nums))
+	for _, n := range nums {
+		n = sip.NormalizeNumber(n)
+		if _, ok := seen[n]; ok {
+			continue
+		}
+		seen[n] = struct{}{}
+		out = append(out, n)
+	}
+	return out
+}
+
+// normalizeInboundTrunkUpdate normalizes the numbers in the request, so that a Remove
+// still finds an entry that was stored in its normalized form.
+func normalizeInboundTrunkUpdate(req *livekit.UpdateSIPInboundTrunkRequest) {
+	if r := req.GetReplace(); r != nil {
+		r.Numbers = normalizeNumbers(r.Numbers)
+	}
+	if u := req.GetUpdate().GetNumbers(); u != nil {
+		u.Set = normalizeNumbers(u.Set)
+		u.Add = normalizeNumbers(u.Add)
+		u.Remove = normalizeNumbers(u.Remove)
+	}
+}
+
+// isSIPURINumber reports whether an inbound trunk number is a URI. Inbound numbers are compared
+// to the user part of the called URI, so a URI never matches a call.
+func isSIPURINumber(num string) bool {
+	lower := strings.ToLower(num)
+	return strings.HasPrefix(lower, "sip:") ||
+		strings.HasPrefix(lower, "sips:") ||
+		strings.HasPrefix(lower, "tel:") ||
+		strings.Contains(num, "@")
+}
+
+// validateInboundNumbersNoURI rejects URI numbers, except the ones that already exist,
+// so that trunks which stored a URI before this check can still be updated.
+func validateInboundNumbersNoURI(nums, existing []string) error {
+	for _, num := range nums {
+		if isSIPURINumber(num) && !slices.Contains(existing, num) {
+			return twirp.NewErrorf(twirp.InvalidArgument,
+				"inbound trunk number %q is a URI: only numbers or SIP usernames are accepted", num)
+		}
+	}
+	return nil
 }
 
 func (s *SIPService) UpdateSIPOutboundTrunk(ctx context.Context, req *livekit.UpdateSIPOutboundTrunkRequest) (*livekit.SIPOutboundTrunkInfo, error) {
@@ -585,6 +650,12 @@ func (s *SIPService) DeleteSIPDispatchRule(ctx context.Context, req *livekit.Del
 }
 
 func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.CreateSIPParticipantRequest) (*livekit.SIPParticipantInfo, error) {
+	if err := EnsureSIPCallPermission(ctx); err != nil {
+		return nil, twirpAuthError(err)
+	}
+	if req.SipSourceCallId != "" {
+		return nil, psrpc.NewErrorf(psrpc.Unimplemented, "sip_source_call_id is not supported")
+	}
 	unlikelyLogger := logger.GetLogger().WithUnlikelyValues(
 		"room", req.RoomName,
 		"sipTrunk", req.SipTrunkId,

@@ -15,9 +15,6 @@
 package sfu
 
 import (
-	"encoding/binary"
-	"errors"
-
 	"go.uber.org/atomic"
 
 	"github.com/pion/rtp"
@@ -25,16 +22,12 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
+	"github.com/livekit/mediatransportutil/pkg/red"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
 
 var _ REDTransformer = (*RedPrimaryReceiver)(nil)
-
-var (
-	ErrIncompleteRedHeader = errors.New("incomplete red block header")
-	ErrIncompleteRedBlock  = errors.New("incomplete red block payload")
-)
 
 type RedPrimaryReceiver struct {
 	TrackReceiver
@@ -43,13 +36,9 @@ type RedPrimaryReceiver struct {
 	closed            atomic.Bool
 	redPT             uint8
 
-	firstPktReceived                  bool
-	lastSeq                           uint16
+	depacketizer                      red.Depacketizer
 	highestForwardedExtSequenceNumber uint64
 	highestForwardedExtTimestamp      uint64
-
-	// bitset for upstream packet receive history [lastSeq-8, lastSeq-1], bit 1 represents packet received
-	pktHistory byte
 
 	// forwarded packet, reused since ForwardRTP runs on one goroutine and
 	// down tracks do not keep the packet past WriteRTP
@@ -80,7 +69,7 @@ func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int3
 		return utils.BroadcastRTP(r.downTrackSpreader, pkt, spatialLayer)
 	}
 
-	pkts, err := r.getSendPktsFromRed(pkt.Packet)
+	pkts, err := r.depacketizer.Depacketize(pkt.Packet)
 	if err != nil {
 		r.logger.Errorw("get encoding for red failed", err, "payloadtype", pkt.Packet.PayloadType)
 		return 0
@@ -115,10 +104,8 @@ func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int3
 					"packetESN", pPkt.ExtSequenceNumber,
 					"packetExtractedTS", pkts[i].Timestamp,
 					"packetETS", pPkt.ExtTimestamp,
-					"pktHistory", r.pktHistory,
 					"redHeader", pkt.Packet.Payload[:min(len(pkt.Packet.Payload), 10)],
 					"payloadSize", len(pkt.Packet.Payload),
-					"lastSeq", r.lastSeq,
 					"highestFowardedExtSequenceNumber", r.highestForwardedExtSequenceNumber,
 					"highestFowardedExtTimestamp", r.highestForwardedExtTimestamp,
 				)
@@ -207,181 +194,11 @@ func (r *RedPrimaryReceiver) ReadRTP(buf []byte, layer uint8, esn uint64) (int, 
 
 	var pkt rtp.Packet
 	pkt.Unmarshal(buf[:n])
-	payload, err := extractPrimaryEncodingForRED(pkt.Payload)
+	payload, err := red.ExtractPrimaryEncoding(pkt.Payload)
 	if err != nil {
 		return 0, err
 	}
 	pkt.Payload = payload
 
 	return pkt.MarshalTo(buf)
-}
-
-func (r *RedPrimaryReceiver) getSendPktsFromRed(rtp *rtp.Packet) ([]*rtp.Packet, error) {
-	var needRecover bool
-	if !r.firstPktReceived {
-		r.lastSeq = rtp.SequenceNumber
-		r.pktHistory = 0
-		r.firstPktReceived = true
-	} else {
-		diff := rtp.SequenceNumber - r.lastSeq
-		switch {
-		case diff == 0: // duplicate
-			break
-
-		case diff > 0x8000: // unorder
-			// in history
-			if 65535-diff < 8 {
-				r.pktHistory |= 1 << (65535 - diff)
-				needRecover = true
-			}
-
-		case diff > 8: // long jump
-			r.lastSeq = rtp.SequenceNumber
-			r.pktHistory = 0
-			needRecover = true
-
-		default:
-			r.lastSeq = rtp.SequenceNumber
-			r.pktHistory = (r.pktHistory << byte(diff)) | 1<<(diff-1)
-			needRecover = true
-		}
-	}
-
-	var recoverBits byte
-	if needRecover {
-		bitIndex := r.lastSeq - rtp.SequenceNumber
-		for i := range maxRedCount {
-			if bitIndex > 7 {
-				break
-			}
-			if r.pktHistory&byte(1<<bitIndex) == 0 {
-				recoverBits |= byte(1 << i)
-			}
-			bitIndex++
-		}
-	}
-
-	return extractPktsFromRed(rtp, recoverBits)
-}
-
-// ---------------------------------------
-
-type block struct {
-	tsOffset uint32
-	length   int
-	pt       uint8
-	primary  bool
-}
-
-func extractPktsFromRed(redPkt *rtp.Packet, recoverBits byte) ([]*rtp.Packet, error) {
-	payload := redPkt.Payload
-	var blocks []block
-	var blockLength int
-	for {
-		if len(payload) < 1 {
-			// illegal data, need at least one byte for primary encoding
-			return nil, ErrIncompleteRedHeader
-		}
-
-		if payload[0]&0x80 == 0 {
-			// last block is primary encoding data
-			pt := uint8(payload[0] & 0x7F)
-
-			blocks = append(blocks, block{pt: pt, primary: true})
-
-			payload = payload[1:]
-			break
-		} else {
-			if len(payload) < 4 {
-				// illegal data
-				return nil, ErrIncompleteRedHeader
-			}
-
-			blockHead := binary.BigEndian.Uint32(payload[0:])
-			length := int(blockHead & 0x03FF)
-			blockHead >>= 10
-			tsOffset := blockHead & 0x3FFF
-			blockHead >>= 14
-			pt := uint8(blockHead & 0x7F)
-
-			blocks = append(blocks, block{pt: pt, length: length, tsOffset: tsOffset})
-
-			blockLength += length
-			payload = payload[4:]
-		}
-	}
-
-	if len(payload) < blockLength {
-		return nil, ErrIncompleteRedBlock
-	}
-
-	pkts := make([]*rtp.Packet, 0, len(blocks))
-	for i, b := range blocks {
-		if b.primary {
-			header := redPkt.Header
-			header.PayloadType = b.pt
-			pkts = append(pkts, &rtp.Packet{Header: header, Payload: payload})
-			break
-		}
-
-		recoverIndex := len(blocks) - i - 1
-		if recoverIndex < 1 || recoverBits&(1<<(recoverIndex-1)) == 0 {
-			// skip past packet/block that does not need recovery
-			payload = payload[b.length:]
-			continue
-		}
-
-		// recover missing packet
-		header := redPkt.Header
-		header.SequenceNumber -= uint16(recoverIndex)
-		header.Timestamp -= b.tsOffset
-		header.PayloadType = b.pt
-		pkts = append(pkts, &rtp.Packet{Header: header, Payload: payload[:b.length]})
-
-		payload = payload[b.length:]
-	}
-
-	return pkts, nil
-}
-
-func extractPrimaryEncodingForRED(payload []byte) ([]byte, error) {
-
-	/* RED payload https://datatracker.ietf.org/doc/html/rfc2198#section-3
-		0                   1                    2                   3
-	    0 1 2 3 4 5 6 7 8 9 0 1 2 3  4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-	   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-	   |F|   block PT  |  timestamp offset         |   block length    |
-	   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-	   F: 1 bit First bit in header indicates whether another header block
-	       follows.  If 1 further header blocks follow, if 0 this is the
-	       last header block.
-	*/
-
-	var blockLength int
-	for {
-		if len(payload) < 1 {
-			// illegal data, need at least one byte for primary encoding
-			return nil, ErrIncompleteRedHeader
-		}
-
-		if payload[0]&0x80 == 0 {
-			// last block is primary encoding data
-			payload = payload[1:]
-			break
-		} else {
-			if len(payload) < 4 {
-				// illegal data
-				return nil, ErrIncompleteRedHeader
-			}
-
-			blockLength += int(binary.BigEndian.Uint16(payload[2:]) & 0x03FF)
-			payload = payload[4:]
-		}
-	}
-
-	if len(payload) < blockLength {
-		return nil, ErrIncompleteRedBlock
-	}
-
-	return payload[blockLength:], nil
 }
