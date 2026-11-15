@@ -372,6 +372,12 @@ func (s *RoomService) ForwardParticipant(ctx context.Context, req *livekit.Forwa
 		return nil, twirpAuthError(err)
 	}
 
+	if req.Identity == "" {
+		return nil, twirp.InvalidArgumentError(ErrIdentityEmpty.Error(), "")
+	}
+	if req.DestinationRoom == "" {
+		return nil, twirp.InvalidArgumentError(ErrDestinationRoomRequired.Error(), "")
+	}
 	if req.Room == req.DestinationRoom {
 		return nil, twirp.InvalidArgumentError(ErrDestinationSameAsSourceRoom.Error(), "")
 	}
@@ -390,6 +396,12 @@ func (s *RoomService) MoveParticipant(ctx context.Context, req *livekit.MovePart
 		return nil, twirpAuthError(err)
 	}
 
+	if req.Identity == "" {
+		return nil, twirp.InvalidArgumentError(ErrIdentityEmpty.Error(), "")
+	}
+	if req.DestinationRoom == "" {
+		return nil, twirp.InvalidArgumentError(ErrDestinationRoomRequired.Error(), "")
+	}
 	if req.Room == req.DestinationRoom {
 		return nil, twirp.InvalidArgumentError(ErrDestinationSameAsSourceRoom.Error(), "")
 	}
