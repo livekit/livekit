@@ -279,11 +279,11 @@ type DownTrack struct {
 	rtxSequenceNumber atomic.Uint64
 	rtxBudget         *rtxBudget
 
-	fecLock              sync.Mutex
-	fecEncoder           atomic.Pointer[flexfec.Encoder]
-	fecProtectionPercent atomic.Uint32
-	fecNotifiedOverhead  atomic.Uint32
-	fecState             flexfec.EncoderState
+	fecLock             sync.Mutex
+	fecEncoder          atomic.Pointer[flexfec.Encoder]
+	fecProtection       flexfec.Protection
+	fecNotifiedOverhead atomic.Uint32
+	fecState            flexfec.EncoderState
 
 	receiverLock sync.RWMutex
 	receiver     TrackReceiver
@@ -398,7 +398,6 @@ func NewDownTrack(params DownTrackParams) (*DownTrack, error) {
 		receiver:            params.Receiver,
 		rtxBudget:           newRTXBudget(params.RTXBudget.forKind(kind)),
 	}
-	d.fecProtectionPercent.Store(flexfec.DefaultProtectionPercent)
 	d.lastUnmutedAt.Store(time.Now())
 
 	d.codec.Store(codec)
@@ -1115,6 +1114,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		HeaderPool:         RTPHeaderFactory,
 		Payload:            payload,
 		FEC:                d.fecEncoder.Load(),
+		IsKeyFrame:         extPkt.IsKeyFrame,
 		ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
 		AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 		TransportWideExtID: uint8(d.transportWideExtID),
@@ -2147,6 +2147,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				if isRttChanged {
 					rttToReport = rtt
 				}
+				d.onFECReceiverReport(r.FractionLost, d.rtpStats.GetRtt())
 
 				if d.playoutDelay != nil {
 					d.playoutDelay.OnSeqAcked(uint16(r.LastSequenceNumber))

@@ -39,7 +39,7 @@ func TestEncoderDefaultsToNoProtection(t *testing.T) {
 	p := rtp.Header{Version: 2, SSRC: testMediaSSRC, PayloadType: testMediaPT, Marker: true}
 	for range 100 {
 		p.SequenceNumber++
-		require.Empty(t, e.Encode(&p, []byte{1, 2, 3}))
+		require.Empty(t, e.Encode(&p, []byte{1, 2, 3}, false))
 	}
 	require.Zero(t, e.count)
 	require.Nil(t, e.media, "negotiation alone must not allocate packet storage")
@@ -62,7 +62,7 @@ func TestEncoderFrameProtectionCounts(t *testing.T) {
 				e := NewEncoder(testFECPT, testFECSSRC, nil)
 				e.SetProtectionPercent(level.percent)
 				for i, p := range makeEncoderFrame(t, 100, tc.packets) {
-					repairs := e.Encode(&p.Header, p.Payload)
+					repairs := e.Encode(&p.Header, p.Payload, false)
 					if i == tc.packets-1 {
 						require.Len(t, repairs, level.want)
 						for _, repair := range repairs {
@@ -86,7 +86,7 @@ func TestEncoderSparseFrames(t *testing.T) {
 	for i := range 3 {
 		e.startedAt -= int64(10 * maxEncoderGroupAge)
 		p := makeEncoderFrame(t, uint16(100+i), 1)[0]
-		repairs := e.Encode(&p.Header, p.Payload)
+		repairs := e.Encode(&p.Header, p.Payload, false)
 		require.Len(t, repairs, 1, "even the first isolated frame needs immediate protection")
 		decoder := newTestDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
 		recovered := decoder.DecodeFEC(&repairs[0])
@@ -101,7 +101,7 @@ func TestEncoderState(t *testing.T) {
 	e.SeedState(EncoderState{SSRC: testFECSSRC, NextSequenceNumber: 65535})
 	for _, sn := range []uint16{65535, 0} {
 		p := makeEncoderFrame(t, 100, 1)[0]
-		repair := e.Encode(&p.Header, p.Payload)
+		repair := e.Encode(&p.Header, p.Payload, false)
 		require.Len(t, repair, 1)
 		require.Equal(t, sn, repair[0].SequenceNumber)
 		e.Close()
@@ -129,7 +129,7 @@ func TestEncoderRecoveryWithReusedMemory(t *testing.T) {
 			require.NoError(t, media[i].SetExtension(3, []byte{byte(i), 2, 3}))
 			require.NoError(t, media[i].SetExtension(5, []byte{7, byte(i)}))
 			packet := media[i].Clone()
-			repair = append(repair, e.Encode(&packet.Header, packet.Payload)...)
+			repair = append(repair, e.Encode(&packet.Header, packet.Payload, false)...)
 			clear(packet.Payload)
 			clear(packet.CSRC)
 			clear(packet.GetExtension(3))
@@ -156,7 +156,7 @@ func TestEncoderGroupBoundaries(t *testing.T) {
 			e.SetProtectionPercent(20)
 			media := makeEncoderFrame(t, 100, 5)
 			for i := 0; i < 3; i++ {
-				require.Empty(t, e.Encode(&media[i].Header, media[i].Payload))
+				require.Empty(t, e.Encode(&media[i].Header, media[i].Payload, false))
 			}
 			p := &media[3]
 			switch name {
@@ -181,10 +181,10 @@ func TestEncoderGroupBoundaries(t *testing.T) {
 			case "empty":
 				p.Payload = nil
 			}
-			require.Empty(t, e.Encode(&p.Header, p.Payload))
+			require.Empty(t, e.Encode(&p.Header, p.Payload, false))
 			require.LessOrEqual(t, e.count, 1, "discard the previous partial block")
 			fresh := makeEncoderFrame(t, 200, 1)[0]
-			repairs := e.Encode(&fresh.Header, fresh.Payload)
+			repairs := e.Encode(&fresh.Header, fresh.Payload, false)
 			require.Len(t, repairs, 1)
 			decoder := newTestDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
 			recovered := decoder.DecodeFEC(&repairs[0])
@@ -201,7 +201,7 @@ func TestEncoderLargeFrame(t *testing.T) {
 	decoder := newTestDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
 	var repair []rtp.Packet
 	for i := range media {
-		out := e.Encode(&media[i].Header, media[i].Payload)
+		out := e.Encode(&media[i].Header, media[i].Payload, false)
 		switch i {
 		case 47, 95:
 			require.Len(t, out, 17)
@@ -233,7 +233,7 @@ func TestEncoderSizeLimitAndClose(t *testing.T) {
 	payload := make([]byte, maxEncoderMediaPacketSize-12)
 	for i := range MaxMediaPacketsPerGroup {
 		p.SequenceNumber++
-		out := e.Encode(&p, payload)
+		out := e.Encode(&p, payload, false)
 		if i == MaxMediaPacketsPerGroup-1 {
 			require.Len(t, out, 1)
 			out[0].Extension = true
@@ -247,7 +247,7 @@ func TestEncoderSizeLimitAndClose(t *testing.T) {
 	p.Marker = true
 	for range 10 {
 		p.SequenceNumber++
-		require.Empty(t, e.Encode(&p, payload))
+		require.Empty(t, e.Encode(&p, payload, false))
 	}
 	require.Nil(t, e.media)
 }
@@ -258,14 +258,14 @@ func TestEncoderAccumulationReusesStorage(t *testing.T) {
 	p := rtp.Header{Version: 2, SSRC: testMediaSSRC}
 	require.NoError(t, p.SetExtension(3, []byte{1, 2, 3}))
 	payload := make([]byte, 1200)
-	require.Empty(t, e.Encode(&p, payload))
+	require.Empty(t, e.Encode(&p, payload, false))
 	require.NotNil(t, e.media.storage[0])
 	require.Nil(t, e.media.storage[1], "small frames do not allocate large-frame payload storage")
 	allocs := testing.AllocsPerRun(100, func() {
 		e.count = 0
 		for range MaxMediaPacketsPerGroup - 1 {
 			p.SequenceNumber++
-			e.Encode(&p, payload)
+			e.Encode(&p, payload, false)
 		}
 	})
 	require.Zero(t, allocs)
@@ -275,32 +275,33 @@ func TestEncoderProtectionPercentChanges(t *testing.T) {
 	e := NewEncoder(testFECPT, testFECSSRC, nil)
 	e.SetProtectionPercent(20)
 	p := makeEncoderFrame(t, 100, 1)[0]
-	first := e.Encode(&p.Header, p.Payload)
+	first := e.Encode(&p.Header, p.Payload, false)
 	require.Len(t, first, 1)
 	p.Marker = false
 	for range 3 {
 		p.SequenceNumber++
-		require.Empty(t, e.Encode(&p.Header, p.Payload))
+		require.Empty(t, e.Encode(&p.Header, p.Payload, false))
 	}
 	e.SetProtectionPercent(40)
 	p.SequenceNumber++
 	p.Marker = true
-	repairs := e.Encode(&p.Header, p.Payload)
-	require.Len(t, repairs, 1, "discard the old partial frame on a setting change")
+	repairs := e.Encode(&p.Header, p.Payload, false)
+	require.Len(t, repairs, 2, "like libwebrtc, keep the partial frame and protect it at the new rate")
 	require.Equal(t, first[0].SequenceNumber+1, repairs[0].SequenceNumber)
+	repairs = repairs[1:]
 	e.SetProtectionPercent(0)
-	require.Empty(t, e.Encode(&p.Header, p.Payload))
+	require.Empty(t, e.Encode(&p.Header, p.Payload, false))
 	require.Zero(t, e.OverheadPercent())
 	e.SetProtectionPercent(40)
 	p.Marker = false
 	for range 4 {
 		p.SequenceNumber++
-		require.Empty(t, e.Encode(&p.Header, p.Payload))
+		require.Empty(t, e.Encode(&p.Header, p.Payload, false))
 	}
 	e.SetProtectionPercent(40)
 	p.SequenceNumber++
 	p.Marker = true
-	last := e.Encode(&p.Header, p.Payload)
+	last := e.Encode(&p.Header, p.Payload, false)
 	require.Len(t, last, 2, "unchanged settings retain the partial frame")
 	require.Equal(t, repairs[0].SequenceNumber+1, last[0].SequenceNumber)
 }
@@ -316,7 +317,7 @@ func TestEncoderMeasuredOverhead(t *testing.T) {
 	require.EqualValues(t, 15, e.OverheadPercent())
 	p := rtp.Header{Version: 2, SSRC: testMediaSSRC, Marker: true}
 	payload := make([]byte, 100)
-	repairs := e.Encode(&p, payload)
+	repairs := e.Encode(&p, payload, false)
 	require.Len(t, repairs, 1)
 	e.RecordSent(1, len(repairs[0].Payload), repairs[0].MarshalSize())
 	require.EqualValues(t, 118, e.OverheadPercent(), "132 repair bytes / 112 media bytes, rounded up")
@@ -324,7 +325,7 @@ func TestEncoderMeasuredOverhead(t *testing.T) {
 	for i := range 20 {
 		p.SequenceNumber++
 		p.Marker = i == 19
-		repairs = e.Encode(&p, payload)
+		repairs = e.Encode(&p, payload, false)
 	}
 	require.Len(t, repairs, 3)
 	e.overheadUpdatedAt -= int64(overheadUpdateInterval)
@@ -349,7 +350,7 @@ func TestEncoderConcurrentProtectionChangesAndClose(t *testing.T) {
 		p := rtp.Header{Version: 2, SSRC: testMediaSSRC, Marker: true}
 		for range 1000 {
 			p.SequenceNumber++
-			repair := e.Encode(&p, []byte{1, 2, 3})
+			repair := e.Encode(&p, []byte{1, 2, 3}, false)
 			for _, packet := range repair {
 				e.RecordSent(1, len(packet.Payload), packet.MarshalSize())
 			}
@@ -373,7 +374,7 @@ func BenchmarkEncoder(b *testing.B) {
 					for i := range packets {
 						p.SequenceNumber++
 						p.Marker = i == packets-1
-						e.Encode(&p, payload)
+						e.Encode(&p, payload, false)
 					}
 				}
 				send()

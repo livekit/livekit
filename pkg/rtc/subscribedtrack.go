@@ -386,7 +386,7 @@ func (t *SubscribedTrack) applySettings() {
 
 	t.logger.Debugw("applying subscriber track settings", "settings", logger.Proto(settings))
 	if settings.Fec != nil {
-		dt.SetFECProtection(*settings.Fec)
+		dt.SetFECProtection(settings.Fec)
 	}
 	if settings.Disabled {
 		dt.Mute(true)

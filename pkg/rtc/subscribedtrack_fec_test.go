@@ -20,6 +20,7 @@ import (
 
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
@@ -32,54 +33,73 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/sfufakes"
 )
 
+func fecDisabled() *livekit.FECProtection {
+	return &livekit.FECProtection{}
+}
+
+func fecFixed(level livekit.FECProtectionLevel) *livekit.FECProtection {
+	return &livekit.FECProtection{Mode: livekit.FECProtectionMode_FEC_MODE_FIXED, Level: level}
+}
+
 func TestSubscriberFECSettings(t *testing.T) {
 	require.Nil(t, mergeSubscriberSettings(nil, &livekit.UpdateTrackSettings{}).Fec)
 	for _, tc := range []struct {
-		requested, want livekit.FECProtection
+		requested, want *livekit.FECProtection
 	}{
-		{livekit.FECProtection_FEC_NONE, livekit.FECProtection_FEC_NONE},
-		{livekit.FECProtection_FEC_LOW, livekit.FECProtection_FEC_LOW},
-		{livekit.FECProtection_FEC_MEDIUM, livekit.FECProtection_FEC_MEDIUM},
-		{livekit.FECProtection_FEC_HIGH, livekit.FECProtection_FEC_HIGH},
-		{-1, livekit.FECProtection_FEC_NONE},
-		{99, livekit.FECProtection_FEC_NONE},
+		{fecDisabled(), fecDisabled()},
+		{fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_LOW), fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_LOW)},
+		{fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_MEDIUM), fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_MEDIUM)},
+		{fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_HIGH), fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_HIGH)},
+		{
+			&livekit.FECProtection{Mode: livekit.FECProtectionMode_FEC_MODE_ADAPTIVE},
+			&livekit.FECProtection{Mode: livekit.FECProtectionMode_FEC_MODE_ADAPTIVE},
+		},
+		{
+			&livekit.FECProtection{Mode: livekit.FECProtectionMode_FEC_MODE_MINIMUM, Level: livekit.FECProtectionLevel_FEC_LEVEL_HIGH},
+			&livekit.FECProtection{Mode: livekit.FECProtectionMode_FEC_MODE_MINIMUM, Level: livekit.FECProtectionLevel_FEC_LEVEL_HIGH},
+		},
+		// unknown modes disable FEC, unknown levels are unspecified
+		{&livekit.FECProtection{Mode: -1, Level: livekit.FECProtectionLevel_FEC_LEVEL_LOW}, &livekit.FECProtection{Level: livekit.FECProtectionLevel_FEC_LEVEL_LOW}},
+		{&livekit.FECProtection{Mode: 99}, fecDisabled()},
+		{fecFixed(99), fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_UNSPECIFIED)},
 	} {
-		requested := &livekit.UpdateTrackSettings{Fec: tc.requested.Enum()}
+		requested := &livekit.UpdateTrackSettings{Fec: tc.requested}
+		original := utils.CloneProto(tc.requested)
 		cached := mergeSubscriberSettings(nil, requested)
 		require.NotNil(t, cached.Fec)
-		require.Equal(t, tc.want, *cached.Fec)
-		require.Equal(t, tc.requested, *requested.Fec, "do not change caller-owned messages")
+		require.True(t, proto.Equal(tc.want, cached.Fec), "got %v, want %v", cached.Fec, tc.want)
+		require.True(t, proto.Equal(original, requested.Fec), "do not change caller-owned messages")
 		legacyUpdate := &livekit.UpdateTrackSettings{Disabled: true, Width: 640}
 		merged := mergeSubscriberSettings(cached, legacyUpdate)
 		require.True(t, merged.Disabled)
 		require.EqualValues(t, 640, merged.Width)
-		require.Equal(t, cached.Fec, merged.Fec)
+		require.True(t, proto.Equal(cached.Fec, merged.Fec))
 		require.Nil(t, legacyUpdate.Fec)
-		*merged.Fec = 42
-		require.Equal(t, tc.want, *cached.Fec, "cached option must not alias later settings")
+		merged.Fec.Level = 42
+		require.True(t, proto.Equal(tc.want, cached.Fec), "cached option must not alias later settings")
 	}
 }
 
 func TestSubscriberFECPersistsAcrossResubscription(t *testing.T) {
 	sub := newMediaTrackSubscription("subscriber", "track", logger.GetLogger())
-	sub.setSettings(&livekit.UpdateTrackSettings{Fec: livekit.FECProtection_FEC_MEDIUM.Enum()})
+	sub.setSettings(&livekit.UpdateTrackSettings{Fec: fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_MEDIUM)})
 	first := &typesfakes.FakeSubscribedTrack{}
 	sub.setSubscribedTrack(first)
 	got, immediate := first.UpdateSubscriberSettingsArgsForCall(0)
-	require.Equal(t, livekit.FECProtection_FEC_MEDIUM, *got.Fec)
+	require.True(t, proto.Equal(fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_MEDIUM), got.Fec))
 	require.True(t, immediate)
 	sub.setSettings(&livekit.UpdateTrackSettings{Width: 640, Height: 360})
 	got, immediate = first.UpdateSubscriberSettingsArgsForCall(1)
-	require.Equal(t, livekit.FECProtection_FEC_MEDIUM, *got.Fec)
+	require.True(t, proto.Equal(fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_MEDIUM), got.Fec))
 	require.False(t, immediate)
-	sub.setSettings(&livekit.UpdateTrackSettings{Fec: livekit.FECProtection_FEC_NONE.Enum()})
+	sub.setSettings(&livekit.UpdateTrackSettings{Fec: fecDisabled()})
 	sub.setSettings(&livekit.UpdateTrackSettings{Quality: livekit.VideoQuality_HIGH})
 	sub.setSubscribedTrack(nil)
 	second := &typesfakes.FakeSubscribedTrack{}
 	sub.setSubscribedTrack(second)
 	got, immediate = second.UpdateSubscriberSettingsArgsForCall(0)
 	require.NotNil(t, got.Fec)
-	require.Zero(t, *got.Fec, "explicit off must survive resubscription and quality updates")
+	require.True(t, proto.Equal(fecDisabled(), got.Fec), "explicit off must survive resubscription and quality updates")
 	require.True(t, immediate)
 }
 
@@ -91,13 +111,16 @@ func TestSubscriberFECAppliesToDownTrack(t *testing.T) {
 		want  int64
 	}{
 		{nil, 100_000},
-		{livekit.FECProtection_FEC_MEDIUM.Enum(), 125_000},
+		{fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_MEDIUM), 125_000},
 		{nil, 125_000},
-		{livekit.FECProtection_FEC_NONE.Enum(), 100_000},
+		{fecDisabled(), 100_000},
 		{nil, 100_000},
-		{livekit.FECProtection_FEC_LOW.Enum(), 115_000},
-		{livekit.FECProtection_FEC_HIGH.Enum(), 135_000},
-		{livekit.FECProtection(99).Enum(), 100_000},
+		{fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_LOW), 115_000},
+		{fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_HIGH), 135_000},
+		{&livekit.FECProtection{Mode: 99, Level: livekit.FECProtectionLevel_FEC_LEVEL_HIGH}, 100_000},
+		{&livekit.FECProtection{Mode: livekit.FECProtectionMode_FEC_MODE_MINIMUM}, 115_000},
+		{nil, 115_000},
+		{&livekit.FECProtection{Mode: livekit.FECProtectionMode_FEC_MODE_ADAPTIVE}, 100_000},
 	} {
 		sub.UpdateSubscriberSettings(&livekit.UpdateTrackSettings{Quality: livekit.VideoQuality_HIGH, Fec: tc.level}, true)
 		dt.AllocateOptimal(false, false)
@@ -114,13 +137,13 @@ func TestSubscriberFECSettingsSupersededDuringApply(t *testing.T) {
 		// A settings update can arrive while layer selection runs without settingsLock.
 		sub.UpdateSubscriberSettings(&livekit.UpdateTrackSettings{
 			Quality: livekit.VideoQuality_HIGH,
-			Fec:     livekit.FECProtection_FEC_HIGH.Enum(),
+			Fec:     fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_HIGH),
 		}, false)
 		return livekit.VideoQuality_HIGH
 	})
 	sub.UpdateSubscriberSettings(&livekit.UpdateTrackSettings{
 		Width: 640,
-		Fec:   livekit.FECProtection_FEC_MEDIUM.Enum(),
+		Fec:   fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_MEDIUM),
 	}, true)
 	dt := sub.DownTrack()
 	dt.AllocateOptimal(false, false)
@@ -139,7 +162,7 @@ func TestSubscriberFECConcurrentSettings(t *testing.T) {
 			for range 100 {
 				sub.UpdateSubscriberSettings(&livekit.UpdateTrackSettings{
 					Width: 640,
-					Fec:   livekit.FECProtection(level).Enum(),
+					Fec:   &livekit.FECProtection{Mode: livekit.FECProtectionMode(level), Level: livekit.FECProtectionLevel(level)},
 				}, true)
 			}
 		})

@@ -140,10 +140,16 @@ rtc:
   # flexfec:
   #   upstream_enabled: false
   #   # Allow repairs for subscribers that negotiate FlexFEC. Clients select fec
-  #   # per track in UpdateTrackSettings: FEC_NONE (default), FEC_LOW (15%),
-  #   # FEC_MEDIUM (25%), or FEC_HIGH (35%) repair packet overhead, matching publish
-  #   # track presets. These are approximate: each protected frame/block gets at
-  #   # least one repair, so small frames can exceed the nominal percentage.
+  #   # per track in UpdateTrackSettings with a mode and a level:
+  #   # - FEC_MODE_DISABLED (default): no repairs
+  #   # - FEC_MODE_ADAPTIVE: follows the subscriber's reported loss and RTT like
+  #   #   libwebrtc's hybrid NACK/FEC (no delta frame repairs below 20ms RTT)
+  #   # - FEC_MODE_FIXED: the level's repair packet overhead
+  #   # - FEC_MODE_MINIMUM: at least the level, rising adaptively with loss
+  #   # Levels are FEC_LEVEL_LOW (15%, also the default), FEC_LEVEL_MEDIUM (25%)
+  #   # or FEC_LEVEL_HIGH (35%), matching publish track presets. These are
+  #   # approximate: each protected frame/block gets at least one repair, so
+  #   # small frames can exceed the nominal percentage.
   #   # Media is sent immediately; repairs follow the end of each frame, with
   #   # large frames split into blocks of at most 48 packets. Stale partial frames
   #   # spanning more than 200ms and packets without room for repair headers are skipped.

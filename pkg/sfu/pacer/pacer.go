@@ -62,6 +62,8 @@ type Packet struct {
 	PoolEntity         *[]byte
 	// FEC is set only on original video media, never padding, RTX or probes.
 	FEC *flexfec.Encoder
+	// IsKeyFrame selects the key frame protection factor of FEC.
+	IsKeyFrame bool
 
 	// per-packet scratch for header extensions held before Enqueue or patched at send time,
 	// the Packet is owned by one send until SendPacket returns
