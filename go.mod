@@ -53,7 +53,7 @@ require (
 	github.com/thoas/go-funk v0.9.3
 	github.com/tomnomnom/linkheader v0.0.0-20250811210735-e5fe3b51442e
 	github.com/twitchtv/twirp v8.1.3+incompatible
-	github.com/ua-parser/uap-go v0.0.0-20260529044130-17c35e68e58c
+	github.com/ua-parser/uap-go v0.0.0-20261028195011-4cb30e998c4c
 	github.com/urfave/negroni/v3 v3.1.1
 	go.uber.org/atomic v1.12.0
 	go.uber.org/multierr v1.11.0
