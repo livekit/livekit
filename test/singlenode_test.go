@@ -599,6 +599,45 @@ func TestSingleNodeUpdateParticipant(t *testing.T) {
 	})
 }
 
+// each patch fits the attribute limits, but the merged attributes do not
+func TestSingleNodeUpdateParticipantMergedAttributesLimit(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+	_, finish := setupSingleNodeTestWithConfig("TestSingleNodeUpdateParticipantMergedAttributesLimit", func(conf *config.Config) {
+		conf.Limit.MaxAttributesSize = 5
+		// the join sets lk.rtc.joinRequestTime to a 13 digit time, leave room for one more 7 byte attribute
+		conf.Limit.MaxLKAttributesSize = uint32(len(livekit.AttrRTCJoinRequestTime) + 13 + 10)
+	})
+	defer finish()
+
+	c := createRTCClient("c", defaultServerPort, testRTCServicePathv1, nil)
+	waitUntilConnected(t, c)
+	defer stopClients(c)
+
+	adminCtx := contextWithToken(adminRoomToken(testRoom))
+	update := func(attributes map[string]string) error {
+		_, err := roomClient.UpdateParticipant(adminCtx, &livekit.UpdateParticipantRequest{
+			Room:       testRoom,
+			Identity:   "c",
+			Attributes: attributes,
+		})
+		return err
+	}
+	requireInvalidArgument := func(err error) {
+		var twErr twirp.Error
+		require.True(t, errors.As(err, &twErr), "error: %v", err)
+		require.Equal(t, twirp.InvalidArgument, twErr.Code())
+	}
+
+	require.NoError(t, update(map[string]string{"a": "vv"}))
+	requireInvalidArgument(update(map[string]string{"b": "vv"}))
+
+	require.NoError(t, update(map[string]string{"lk.a": "vvv"}))
+	requireInvalidArgument(update(map[string]string{"lk.b": "vvv"}))
+}
+
 // Ensure that CORS headers are returned
 func TestSingleNodeCORS(t *testing.T) {
 	if testing.Short() {
