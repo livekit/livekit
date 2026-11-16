@@ -676,11 +676,20 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 	//   - cycle count one below the actual, 0xFFFF when the actual is 0
 	// Use the low 16 bits only, the report is for the latest such sequence number at or before the highest sent.
 	extStartCycles := r.extStartSN & 0xFFFF_FFFF_FFFF_0000
-	extReceivedRRSN := r.extHighestSN - uint64(uint16(r.extHighestSN)-uint16(rr.LastSequenceNumber))
-	if r.lastRRTime != 0 && rr.LastSequenceNumber == r.lastRR.LastSequenceNumber {
+	behind := uint16(r.extHighestSN) - uint16(rr.LastSequenceNumber)
+	extReceivedRRSN := r.extHighestSN - uint64(behind)
+	if r.lastRRTime != 0 && uint16(rr.LastSequenceNumber) == uint16(r.extHighestSNFromRR) {
 		// there are clients that never update the last received sequence number,
 		// do not let those move with the highest sent
 		extReceivedRRSN = r.extHighestSNFromRR + extStartCycles
+	} else if behind >= (1 << 15) {
+		// ahead of the highest sent, or too far behind to tell the two apart
+		r.logger.Infow(
+			"receiver report runaway, dropping",
+			"receivedRR", rr,
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
+		)
+		return
 	}
 	if extReceivedRRSN < r.extStartSN || extReceivedRRSN > r.extHighestSN {
 		// it is possible that the `LastSequenceNumber` in the receiver report is before the starting

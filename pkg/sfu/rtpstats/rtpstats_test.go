@@ -429,6 +429,23 @@ func Test_RTPStatsSender_ReceiverReportCycles(t *testing.T) {
 		require.Equal(t, highest-10, r.extHighestSNFromRR)
 	})
 
+	t.Run("report ahead of the highest sent is dropped after a roll over", func(t *testing.T) {
+		r, highest := newSender(1169, 70000)
+		r.UpdateFromReceiverReport(rtcp.ReceptionReport{LastSequenceNumber: uint32(highest+3) & 0xFFFF, Jitter: 50})
+		require.Zero(t, r.extHighestSNFromRR)
+		require.Zero(t, r.jitterFromRR)
+	})
+
+	t.Run("repeated stale report does not replace a newer report", func(t *testing.T) {
+		r, _ := newSender(1169, 2000)
+		r.UpdateFromReceiverReport(rtcp.ReceptionReport{LastSequenceNumber: 3000, Jitter: 10, TotalLost: 5})
+		r.UpdateFromReceiverReport(rtcp.ReceptionReport{LastSequenceNumber: 2900, Jitter: 99, TotalLost: 1})
+		r.UpdateFromReceiverReport(rtcp.ReceptionReport{LastSequenceNumber: 2900, Jitter: 99, TotalLost: 1})
+		require.EqualValues(t, 3000, r.extHighestSNFromRR)
+		require.EqualValues(t, 10, r.jitterFromRR)
+		require.EqualValues(t, 5, r.packetsLostFromRR)
+	})
+
 	t.Run("report from before the start does not block later reports", func(t *testing.T) {
 		// start is above the first cycle, the first report is for a packet before the start
 		r, highest := newSender(65540, 101)
