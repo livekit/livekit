@@ -26,6 +26,14 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/flexfec"
 )
 
+func fecDisabled() *livekit.FECProtection {
+	return &livekit.FECProtection{}
+}
+
+func fecFixed(level livekit.FECProtectionLevel) *livekit.FECProtection {
+	return &livekit.FECProtection{Mode: livekit.FECProtectionMode_FEC_MODE_FIXED, Level: level}
+}
+
 type fecTrackContext struct {
 	webrtc.TrackLocalContext
 	ssrcFEC webrtc.SSRC
@@ -47,7 +55,7 @@ func TestDownTrackFECNegotiationAndLifecycle(t *testing.T) {
 			case "no ssrc":
 				c.ssrcFEC = 0
 			}
-			d.SetFECProtection(livekit.FECProtection_FEC_MEDIUM)
+			d.SetFECProtection(fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_MEDIUM))
 			d.bindFEC(c)
 			if name != "enabled" {
 				require.Nil(t, d.fecEncoder.Load())
@@ -60,7 +68,7 @@ func TestDownTrackFECNegotiationAndLifecycle(t *testing.T) {
 			for i := range 5 {
 				p.SequenceNumber++
 				p.Marker = i == 4
-				repair := old.Encode(&p, []byte{1, 2, 3})
+				repair := old.Encode(&p, []byte{1, 2, 3}, false)
 				if i == 4 {
 					require.Len(t, repair, 1)
 					require.EqualValues(t, 456, repair[0].SSRC)
@@ -73,8 +81,8 @@ func TestDownTrackFECNegotiationAndLifecycle(t *testing.T) {
 			for i := range 5 {
 				p.SequenceNumber++
 				p.Marker = i == 4
-				require.Empty(t, old.Encode(&p, []byte{1, 2, 3}), "old queued writes cannot generate repair")
-				for _, repair := range d.fecEncoder.Load().Encode(&p, []byte{1, 2, 3}) {
+				require.Empty(t, old.Encode(&p, []byte{1, 2, 3}, false), "old queued writes cannot generate repair")
+				for _, repair := range d.fecEncoder.Load().Encode(&p, []byte{1, 2, 3}, false) {
 					require.Equal(t, lastSequenceNumber+1, repair.SequenceNumber, "reusing an SSRC must preserve repair sequencing")
 				}
 			}
@@ -90,7 +98,7 @@ func TestDownTrackFECBandwidthReservation(t *testing.T) {
 	d := &DownTrack{receiver: receiver}
 	_, got := d.getLayeredBitrateWithFEC()
 	require.Equal(t, rates, got)
-	d.SetFECProtection(livekit.FECProtection_FEC_MEDIUM)
+	d.SetFECProtection(fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_MEDIUM))
 	encoder := flexfec.NewEncoder(115, 456, nil)
 	encoder.SetProtectionPercent(25)
 	d.fecEncoder.Store(encoder)
@@ -124,20 +132,20 @@ func TestDownTrackFECMeasuredBandwidthReservation(t *testing.T) {
 		negotiatedCodecParameters: []webrtc.RTPCodecParameters{{RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeFlexFEC03}, PayloadType: 115}},
 		streamAllocatorListener:   listener,
 	}
-	d.SetFECProtection(livekit.FECProtection_FEC_LOW)
+	d.SetFECProtection(fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_LOW))
 	d.bindFEC(fecTrackContext{ssrcFEC: 456})
 	e := d.fecEncoder.Load()
 	p := rtp.Header{Version: 2, SSRC: 123, PayloadType: 96, Marker: true}
 	for range 2 {
 		p.SequenceNumber++
-		repairs := e.Encode(&p, make([]byte, 100))
+		repairs := e.Encode(&p, make([]byte, 100), false)
 		require.Len(t, repairs, 1)
 		e.RecordSent(1, len(repairs[0].Payload), repairs[0].MarshalSize())
 	}
 	_, rates := d.getLayeredBitrateWithFEC()
 	require.EqualValues(t, 218_000, rates[0][0], "reserve actual small-frame overhead, including RTP/FEC headers")
 	require.Equal(t, 1, listener.changes, "reallocate on an overhead change, not on every repair")
-	d.SetFECProtection(livekit.FECProtection_FEC_NONE)
+	d.SetFECProtection(fecDisabled())
 	_, rates = d.getLayeredBitrateWithFEC()
 	require.EqualValues(t, 100_000, rates[0][0])
 	require.Equal(t, 2, listener.changes)
@@ -151,7 +159,7 @@ func TestDownTrackFECProtectionChanges(t *testing.T) {
 		negotiatedCodecParameters: []webrtc.RTPCodecParameters{{RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeFlexFEC03}, PayloadType: 115}},
 	}
 	// Cached settings can arrive before Pion binds the track.
-	d.SetFECProtection(livekit.FECProtection_FEC_MEDIUM)
+	d.SetFECProtection(fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_MEDIUM))
 	d.bindFEC(fecTrackContext{ssrcFEC: 456})
 	encoder := d.fecEncoder.Load()
 	require.NotNil(t, encoder)
@@ -163,21 +171,29 @@ func TestDownTrackFECProtectionChanges(t *testing.T) {
 		for i := range 20 {
 			p.SequenceNumber++
 			p.Marker = i == 19
-			count += len(d.fecEncoder.Load().Encode(&p, []byte{1, 2, 3}))
+			count += len(d.fecEncoder.Load().Encode(&p, []byte{1, 2, 3}, false))
 		}
 		return count
 	}
 	require.Equal(t, 5, send())
 	for _, tc := range []struct {
-		level   livekit.FECProtection
+		level   *livekit.FECProtection
 		percent int64
 	}{
-		{livekit.FECProtection_FEC_NONE, 0},
-		{livekit.FECProtection_FEC_LOW, 15},
-		{livekit.FECProtection_FEC_MEDIUM, 25},
-		{livekit.FECProtection_FEC_HIGH, 35},
-		{-1, 0},
-		{99, 0},
+		{fecDisabled(), 0},
+		{fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_LOW), 15},
+		{fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_MEDIUM), 25},
+		{fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_HIGH), 35},
+		{nil, 0},
+		{&livekit.FECProtection{Mode: -1, Level: livekit.FECProtectionLevel_FEC_LEVEL_HIGH}, 0},
+		{&livekit.FECProtection{Mode: 99, Level: livekit.FECProtectionLevel_FEC_LEVEL_HIGH}, 0},
+		// an unspecified or unknown level is the server default, low
+		{fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_UNSPECIFIED), 15},
+		{fecFixed(99), 15},
+		// without receiver reports, adaptive protection is off and minimum
+		// protection is at its floor
+		{&livekit.FECProtection{Mode: livekit.FECProtectionMode_FEC_MODE_ADAPTIVE, Level: livekit.FECProtectionLevel_FEC_LEVEL_HIGH}, 0},
+		{&livekit.FECProtection{Mode: livekit.FECProtectionMode_FEC_MODE_MINIMUM, Level: livekit.FECProtectionLevel_FEC_LEVEL_MEDIUM}, 25},
 	} {
 		d.SetFECProtection(tc.level)
 		require.Same(t, encoder, d.fecEncoder.Load(), "updates do not rebind or reset repair sequencing")
@@ -186,7 +202,7 @@ func TestDownTrackFECProtectionChanges(t *testing.T) {
 		require.EqualValues(t, tc.percent/5, send())
 	}
 	d.closeFEC()
-	d.SetFECProtection(livekit.FECProtection_FEC_HIGH)
+	d.SetFECProtection(fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_HIGH))
 	d.bindFEC(fecTrackContext{ssrcFEC: 456})
 	require.NotSame(t, encoder, d.fecEncoder.Load())
 	require.Equal(t, 7, send(), "rebind retains the subscriber's preset")

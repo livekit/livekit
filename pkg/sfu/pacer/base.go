@@ -90,7 +90,7 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 	}
 
 	if p.FEC != nil && written > 0 && !p.IsRTX && !p.IsProbe {
-		repair := p.FEC.Encode(p.Header, p.Payload)
+		repair := p.FEC.Encode(p.Header, p.Payload, p.IsKeyFrame)
 		sent, payloadBytes, rtpBytes := 0, 0, 0
 		for i := range repair {
 			packet := &repair[i]

@@ -70,6 +70,14 @@ func (c *fecWireCapture) Write(raw []byte) (int, error) {
 	return c.ReadWriteCloser.Write(raw)
 }
 
+func fecDisabled() *livekit.FECProtection {
+	return &livekit.FECProtection{}
+}
+
+func fecFixed(level livekit.FECProtectionLevel) *livekit.FECProtection {
+	return &livekit.FECProtection{Mode: livekit.FECProtectionMode_FEC_MODE_FIXED, Level: level}
+}
+
 func TestDownTrackFlexFECOnWire(t *testing.T) {
 	for _, tc := range []struct {
 		name                           string
@@ -79,18 +87,18 @@ func TestDownTrackFlexFECOnWire(t *testing.T) {
 		protectionPercent              uint32
 		framePackets, frameRepairs     int
 	}{
-		{"pass through", true, true, false, "pass", livekit.FECProtection_FEC_MEDIUM.Enum(), 25, 20, 5},
-		{"queued", true, true, false, "queue", livekit.FECProtection_FEC_MEDIUM.Enum(), 25, 20, 5},
-		{"low", true, true, false, "queue", livekit.FECProtection_FEC_LOW.Enum(), 15, 20, 3},
-		{"high", true, true, false, "leaky", livekit.FECProtection_FEC_HIGH.Enum(), 35, 20, 7},
-		{"none", true, true, false, "pass", livekit.FECProtection_FEC_NONE.Enum(), 0, 20, 0},
+		{"pass through", true, true, false, "pass", fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_MEDIUM), 25, 20, 5},
+		{"queued", true, true, false, "queue", fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_MEDIUM), 25, 20, 5},
+		{"low", true, true, false, "queue", fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_LOW), 15, 20, 3},
+		{"high", true, true, false, "leaky", fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_HIGH), 35, 20, 7},
+		{"none", true, true, false, "pass", fecDisabled(), 0, 20, 0},
 		{"default none", true, true, false, "pass", nil, 0, 20, 0},
-		{"paced encrypted", true, true, true, "leaky", livekit.FECProtection_FEC_MEDIUM.Enum(), 25, 20, 5},
-		{"subscriber declines", true, false, false, "pass", livekit.FECProtection_FEC_HIGH.Enum(), 35, 20, 0},
-		{"disabled", false, true, false, "pass", livekit.FECProtection_FEC_HIGH.Enum(), 35, 20, 0},
-		{"single packet frames", true, true, false, "pass", livekit.FECProtection_FEC_LOW.Enum(), 15, 1, 1},
-		{"small frames", true, true, false, "queue", livekit.FECProtection_FEC_LOW.Enum(), 15, 2, 1},
-		{"large frames", true, true, false, "leaky", livekit.FECProtection_FEC_HIGH.Enum(), 35, 99, 35},
+		{"paced encrypted", true, true, true, "leaky", fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_MEDIUM), 25, 20, 5},
+		{"subscriber declines", true, false, false, "pass", fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_HIGH), 35, 20, 0},
+		{"disabled", false, true, false, "pass", fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_HIGH), 35, 20, 0},
+		{"single packet frames", true, true, false, "pass", fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_LOW), 15, 1, 1},
+		{"small frames", true, true, false, "queue", fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_LOW), 15, 2, 1},
+		{"large frames", true, true, false, "leaky", fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_HIGH), 35, 99, 35},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := vnettest.NewHosts(t)
@@ -148,7 +156,7 @@ func TestDownTrackFlexFECOnWire(t *testing.T) {
 			})
 			require.NoError(t, err)
 			if tc.level != nil {
-				dt.SetFECProtection(*tc.level)
+				dt.SetFECProtection(tc.level)
 			}
 			tr, err := sender.AddTransceiverFromTrack(dt, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly})
 			require.NoError(t, err)
@@ -246,12 +254,12 @@ func TestDownTrackFlexFECOnWire(t *testing.T) {
 				sequence := repair[len(repair)-1].SequenceNumber
 				start := mediaCount
 				for _, update := range []struct {
-					level           livekit.FECProtection
+					level           *livekit.FECProtection
 					repairsPerFrame int
 				}{
-					{livekit.FECProtection_FEC_HIGH, 7},
-					{livekit.FECProtection_FEC_NONE, 0},
-					{livekit.FECProtection_FEC_LOW, 3},
+					{fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_HIGH), 7},
+					{fecDisabled(), 0},
+					{fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_LOW), 3},
 				} {
 					before := capture.count()
 					dt.SetFECProtection(update.level)
@@ -293,7 +301,7 @@ func TestDownTrackFlexFECOnWire(t *testing.T) {
 					}
 				})
 				next.SetTransceiver(tr)
-				next.SetFECProtection(livekit.FECProtection_FEC_MEDIUM)
+				next.SetFECProtection(fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_MEDIUM))
 				require.NoError(t, tr.Sender().ReplaceTrack(next))
 				dt = next
 				dt.SetConnected()

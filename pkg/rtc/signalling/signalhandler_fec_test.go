@@ -25,7 +25,13 @@ import (
 )
 
 func TestSignalTrackFECProtection(t *testing.T) {
-	for _, level := range []*livekit.FECProtection{nil, livekit.FECProtection_FEC_NONE.Enum(), livekit.FECProtection_FEC_LOW.Enum(), livekit.FECProtection_FEC_MEDIUM.Enum(), livekit.FECProtection_FEC_HIGH.Enum()} {
+	for _, level := range []*livekit.FECProtection{
+		nil,
+		{},
+		{Mode: livekit.FECProtectionMode_FEC_MODE_ADAPTIVE},
+		{Mode: livekit.FECProtectionMode_FEC_MODE_FIXED, Level: livekit.FECProtectionLevel_FEC_LEVEL_HIGH},
+		{Mode: livekit.FECProtectionMode_FEC_MODE_MINIMUM, Level: livekit.FECProtectionLevel_FEC_LEVEL_MEDIUM},
+	} {
 		participant := &typesfakes.FakeLocalParticipant{}
 		handler := NewSignalHandler(SignalHandlerParams{Participant: participant, Logger: logger.GetLogger()})
 		signal := &livekit.SignalRequest{Message: &livekit.SignalRequest_TrackSetting{TrackSetting: &livekit.UpdateTrackSettings{
@@ -40,7 +46,7 @@ func TestSignalTrackFECProtection(t *testing.T) {
 		for i, sid := range []livekit.TrackID{"track-a", "track-b"} {
 			actualSID, settings := participant.UpdateSubscribedTrackSettingsArgsForCall(i)
 			require.Equal(t, sid, actualSID)
-			require.Equal(t, level, settings.Fec)
+			require.True(t, proto.Equal(level, settings.Fec))
 		}
 	}
 }

@@ -1435,6 +1435,12 @@ func (c *RTCClient) IsLocalCandidateRelaySelected() bool {
 	return false
 }
 
+// WriteSubscriberRTCP sends RTCP on the subscriber connection, for tests that
+// report reception statistics themselves.
+func (c *RTCClient) WriteSubscriberRTCP(packets []rtcp.Packet) error {
+	return c.subscriber.WriteRTCP(packets)
+}
+
 func (c *RTCClient) SendNacks(count int) {
 	var packets []rtcp.Packet
 	c.lock.Lock()

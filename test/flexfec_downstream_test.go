@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
@@ -125,6 +126,8 @@ type fecLossRecorder struct {
 	recovered    map[uint16]bool // value reports a bit-exact match
 	mediaPackets int
 	fecPackets   int
+	// highest media sequence number seen, including dropped packets
+	highestSeq uint16
 }
 
 func newFECLossRecorder() *fecLossRecorder {
@@ -189,6 +192,9 @@ func (r *fecLossRecorder) filter(pkt *rtp.Packet) bool {
 	if err != nil {
 		return true
 	}
+	if r.mediaPackets == 0 || int16(pkt.SequenceNumber-r.highestSeq) > 0 {
+		r.highestSeq = pkt.SequenceNumber
+	}
 	r.mediaPackets++
 	if r.dropEvery > 0 && r.mediaPackets%r.dropEvery == 0 {
 		r.dropped[pkt.SequenceNumber] = raw
@@ -235,6 +241,28 @@ func (r *fecLossRecorder) result() fecWindowResult {
 	return res
 }
 
+// receiverReport reports the simulated loss pattern for the media SSRC. The
+// test client does not send receiver reports itself, so the test reports what
+// a receiver would see, as input for adaptive protection.
+func (r *fecLossRecorder) receiverReport() *rtcp.ReceiverReport {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.mediaSSRC == 0 {
+		return nil
+	}
+	var fractionLost uint8
+	if r.dropEvery > 0 {
+		fractionLost = uint8(256 / r.dropEvery)
+	}
+	return &rtcp.ReceiverReport{
+		Reports: []rtcp.ReceptionReport{{
+			SSRC:               r.mediaSSRC,
+			FractionLost:       fractionLost,
+			LastSequenceNumber: uint32(r.highestSeq),
+		}},
+	}
+}
+
 // subscriberVideoSSRCs returns the media, FlexFEC and RTX SSRCs of the first
 // video m-section the SFU offered to the subscriber.
 func subscriberVideoSSRCs(sd *webrtc.SessionDescription) (media, fec, rtx uint32, err error) {
@@ -276,15 +304,112 @@ func subscriberVideoSSRCs(sd *webrtc.SessionDescription) (media, fec, rtx uint32
 	return 0, 0, 0, fmt.Errorf("no FEC-FR ssrc-group in subscriber description")
 }
 
-func sendFECSetting(t *testing.T, c *testclient.RTCClient, trackSID livekit.TrackID, level livekit.FECProtection) {
+func fecDisabled() *livekit.FECProtection {
+	return &livekit.FECProtection{}
+}
+
+func fecFixed(level livekit.FECProtectionLevel) *livekit.FECProtection {
+	return &livekit.FECProtection{Mode: livekit.FECProtectionMode_FEC_MODE_FIXED, Level: level}
+}
+
+func sendFECSetting(t *testing.T, c *testclient.RTCClient, trackSID livekit.TrackID, fec *livekit.FECProtection) {
 	require.NoError(t, c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_TrackSetting{
 			TrackSetting: &livekit.UpdateTrackSettings{
 				TrackSids: []string{string(trackSID)},
-				Fec:       level.Enum(),
+				Fec:       fec,
 			},
 		},
 	}))
+}
+
+// fecDownstreamSession is a publisher sending the test VP8 track through the
+// SFU to a FlexFEC-capable subscriber whose received packets are recorded.
+type fecDownstreamSession struct {
+	sub      *testclient.RTCClient
+	trackSID livekit.TrackID
+	// subscriber's remote description once FlexFEC was negotiated
+	offerSDP string
+	recorder *fecLossRecorder
+}
+
+func startFlexFECDownstreamSession(t *testing.T) *fecDownstreamSession {
+	_, finish := setupFlexFECDownstreamTest(t.Name())
+	t.Cleanup(finish)
+
+	recorder := newFECLossRecorder()
+	pub := createRTCClient("fec_down_pub", fecDownstreamServerPort, testRTCServicePathv0, nil)
+	sub := createRTCClient("fec_down_sub", fecDownstreamServerPort, testRTCServicePathv0, &testclient.Options{
+		AutoSubscribe:       true,
+		EnableFlexFEC:       true,
+		SubscriberRTPFilter: recorder.filter,
+	})
+	t.Cleanup(func() { stopClients(pub, sub) })
+	waitUntilConnected(t, pub, sub)
+
+	writer, err := pub.AddFileTrack(writeFlexFECTestIVF(t, 900), "video", "fecdownvideo")
+	require.NoError(t, err)
+	t.Cleanup(writer.Stop)
+
+	session := &fecDownstreamSession{sub: sub, recorder: recorder}
+	testutils.WithTimeout(t, func() string {
+		tracks := sub.SubscribedTracks()[pub.ID()]
+		if len(tracks) == 0 {
+			return "subscriber has not subscribed to the publisher's track"
+		}
+		_, session.trackSID = rtc.UnpackStreamID(tracks[0].StreamID())
+		if session.trackSID == "" {
+			return "subscribed track has no track SID yet"
+		}
+		return ""
+	})
+
+	testutils.WithTimeout(t, func() string {
+		answer := sub.SubscriberLocalDescription()
+		if answer == nil || !strings.Contains(answer.SDP, "flexfec-03") {
+			return "subscriber did not negotiate flexfec-03"
+		}
+		sd := sub.SubscriberRemoteDescription()
+		media, fec, rtx, err := subscriberVideoSSRCs(sd)
+		if err != nil {
+			return err.Error()
+		}
+		recorder.setSSRCs(media, fec, rtx)
+		session.offerSDP = sd.SDP
+		return ""
+	})
+
+	done := make(chan struct{})
+	t.Cleanup(func() { close(done) })
+	go func() {
+		ticker := time.NewTicker(200 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if rr := recorder.receiverReport(); rr != nil {
+					_ = sub.WriteSubscriberRTCP([]rtcp.Packet{rr})
+				}
+			}
+		}
+	}()
+	return session
+}
+
+// measure drops every dropEvery-th media packet (none for 0) for duration and
+// returns what the subscriber received and recovered in that window.
+func (s *fecDownstreamSession) measure(dropEvery int, duration time.Duration) fecWindowResult {
+	s.recorder.startWindow(dropEvery)
+	time.Sleep(duration)
+	res := s.recorder.result()
+	logger.Infow("flexfec downstream window", "dropEvery", dropEvery, "result", fmt.Sprintf("%+v", res))
+	return res
+}
+
+func (s *fecDownstreamSession) setFEC(t *testing.T, fec *livekit.FECProtection) {
+	sendFECSetting(t, s.sub, s.trackSID, fec)
 }
 
 // TestFlexFECDownstreamRecovery publishes a VP8 track through the SFU to a
@@ -297,71 +422,20 @@ func TestFlexFECDownstreamRecovery(t *testing.T) {
 		return
 	}
 
-	_, finish := setupFlexFECDownstreamTest("TestFlexFECDownstreamRecovery")
-	defer finish()
+	session := startFlexFECDownstreamSession(t)
+	sub, trackSID, offerSDP, measure := session.sub, session.trackSID, session.offerSDP, session.measure
 
-	recorder := newFECLossRecorder()
-	pub := createRTCClient("fec_down_pub", fecDownstreamServerPort, testRTCServicePathv0, nil)
-	sub := createRTCClient("fec_down_sub", fecDownstreamServerPort, testRTCServicePathv0, &testclient.Options{
-		AutoSubscribe:       true,
-		EnableFlexFEC:       true,
-		SubscriberRTPFilter: recorder.filter,
-	})
-	defer stopClients(pub, sub)
-	waitUntilConnected(t, pub, sub)
-
-	writer, err := pub.AddFileTrack(writeFlexFECTestIVF(t, 900), "video", "fecdownvideo")
-	require.NoError(t, err)
-	defer writer.Stop()
-
-	var trackSID livekit.TrackID
-	testutils.WithTimeout(t, func() string {
-		tracks := sub.SubscribedTracks()[pub.ID()]
-		if len(tracks) == 0 {
-			return "subscriber has not subscribed to the publisher's track"
-		}
-		_, trackSID = rtc.UnpackStreamID(tracks[0].StreamID())
-		if trackSID == "" {
-			return "subscribed track has no track SID yet"
-		}
-		return ""
-	})
-
-	var offerSDP string
-	testutils.WithTimeout(t, func() string {
-		answer := sub.SubscriberLocalDescription()
-		if answer == nil || !strings.Contains(answer.SDP, "flexfec-03") {
-			return "subscriber did not negotiate flexfec-03"
-		}
-		sd := sub.SubscriberRemoteDescription()
-		media, fec, rtx, err := subscriberVideoSSRCs(sd)
-		if err != nil {
-			return err.Error()
-		}
-		recorder.setSSRCs(media, fec, rtx)
-		offerSDP = sd.SDP
-		return ""
-	})
-
-	measure := func(dropEvery int, duration time.Duration) fecWindowResult {
-		recorder.startWindow(dropEvery)
-		time.Sleep(duration)
-		res := recorder.result()
-		logger.Infow("flexfec downstream window", "dropEvery", dropEvery, "result", fmt.Sprintf("%+v", res))
-		return res
-	}
-
-	// FEC_NONE is the default: no repairs, and simulated loss is not recovered.
+	// FEC_MODE_DISABLED is the default: no repairs, and simulated loss is not recovered.
 	res := measure(7, 3*time.Second)
 	require.Greater(t, res.mediaPackets, 100, "media is not flowing")
 	require.Zero(t, res.fecPackets, "repairs were sent before a preset was selected")
 	require.NotZero(t, res.dropped)
 	require.Zero(t, res.recovered, "dropped packets were recovered without FEC")
 
-	for _, level := range []livekit.FECProtection{
-		livekit.FECProtection_FEC_LOW,
-		livekit.FECProtection_FEC_MEDIUM,
-		livekit.FECProtection_FEC_HIGH,
+	for _, level := range []*livekit.FECProtection{
+		fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_LOW),
+		fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_MEDIUM),
+		fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_HIGH),
 	} {
 		sendFECSetting(t, sub, trackSID, level)
 		testutils.WithTimeout(t, func() string {
@@ -381,15 +455,96 @@ func TestFlexFECDownstreamRecovery(t *testing.T) {
 			"%s: recovered %d of %d dropped packets", level, res.recovered, res.dropped)
 	}
 
-	// Switching back to FEC_NONE stops repairs, still without renegotiation.
-	sendFECSetting(t, sub, trackSID, livekit.FECProtection_FEC_NONE)
+	// Switching back to FEC_MODE_DISABLED stops repairs, still without renegotiation.
+	sendFECSetting(t, sub, trackSID, fecDisabled())
 	testutils.WithTimeout(t, func() string {
 		if measure(0, 500*time.Millisecond).fecPackets != 0 {
-			return "repairs continue after selecting FEC_NONE"
+			return "repairs continue after selecting FEC_MODE_DISABLED"
 		}
 		return ""
 	})
 	require.Equal(t, offerSDP, sub.SubscriberRemoteDescription().SDP, "FEC preset changes renegotiated")
+}
+
+// TestFlexFECDownstreamAdaptive checks, like libwebrtc's
+// AdaptiveSendsNoFecWithoutLoss, that adaptive protection sends no repairs
+// without loss. With loss it protects the test track, whose frames are all key
+// frames: libwebrtc's low RTT rule leaves delta frames to NACK, not key frames.
+func TestFlexFECDownstreamAdaptive(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	session := startFlexFECDownstreamSession(t)
+	session.setFEC(t, &livekit.FECProtection{Mode: livekit.FECProtectionMode_FEC_MODE_ADAPTIVE})
+	res := session.measure(0, 3*time.Second)
+	require.Greater(t, res.mediaPackets, 100, "media is not flowing")
+	require.Zero(t, res.fecPackets, "adaptive protection sent repairs without loss")
+
+	testutils.WithTimeout(t, func() string {
+		if session.measure(7, 500*time.Millisecond).fecPackets == 0 {
+			return "adaptive protection did not respond to reported loss"
+		}
+		return ""
+	})
+	res = session.measure(7, 3*time.Second)
+	require.NotZero(t, res.dropped)
+	require.Zero(t, res.mismatched, "recovered packets differ from the originals")
+	require.GreaterOrEqual(t, res.recovered*100, res.dropped*90,
+		"recovered %d of %d dropped packets", res.recovered, res.dropped)
+	require.Equal(t, session.offerSDP, session.sub.SubscriberRemoteDescription().SDP, "FEC mode changes renegotiated")
+}
+
+// TestFlexFECDownstreamMinimum checks, like libwebrtc's
+// MinimumSendsFecWithoutLoss, that minimum protection keeps its level as a
+// floor without loss, sending as many repairs as fixed protection at that
+// level, and that it rises above the floor with loss.
+func TestFlexFECDownstreamMinimum(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	session := startFlexFECDownstreamSession(t)
+	ratio := func(res fecWindowResult) float64 {
+		return float64(res.fecPackets) / float64(res.mediaPackets)
+	}
+
+	session.setFEC(t, fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_HIGH))
+	testutils.WithTimeout(t, func() string {
+		if session.measure(0, 300*time.Millisecond).fecPackets == 0 {
+			return "no repairs with fixed protection"
+		}
+		return ""
+	})
+	fixed := session.measure(0, 3*time.Second)
+	require.Greater(t, fixed.mediaPackets, 100, "media is not flowing")
+	require.NotZero(t, fixed.fecPackets)
+
+	session.setFEC(t, &livekit.FECProtection{
+		Mode:  livekit.FECProtectionMode_FEC_MODE_MINIMUM,
+		Level: livekit.FECProtectionLevel_FEC_LEVEL_HIGH,
+	})
+	// let the change and in-flight packets settle
+	session.measure(0, 500*time.Millisecond)
+	minimum := session.measure(0, 3*time.Second)
+	require.Greater(t, minimum.mediaPackets, 100, "media is not flowing")
+	require.NotZero(t, minimum.fecPackets, "minimum protection sent no repairs without loss")
+	require.InDelta(t, ratio(fixed), ratio(minimum), 0.05,
+		"minimum protection without loss must match its level: fixed %+v, minimum %+v", fixed, minimum)
+
+	// With loss, protection rises above the floor: every frame of the test
+	// track is a key frame, which the low RTT rule leaves to FEC.
+	session.measure(7, 500*time.Millisecond)
+	res := session.measure(7, 3*time.Second)
+	require.Greater(t, ratio(res), ratio(minimum)+0.1,
+		"minimum protection did not rise with loss: without loss %+v, with loss %+v", minimum, res)
+	require.NotZero(t, res.dropped)
+	require.Zero(t, res.mismatched, "recovered packets differ from the originals")
+	require.GreaterOrEqual(t, res.recovered*100, res.dropped*90,
+		"recovered %d of %d dropped packets", res.recovered, res.dropped)
+	require.Equal(t, session.offerSDP, session.sub.SubscriberRemoteDescription().SDP, "FEC mode changes renegotiated")
 }
 
 // TestFlexFECDownstreamNotNegotiated checks that a subscriber without FlexFEC
@@ -454,7 +609,7 @@ func TestFlexFECDownstreamNotNegotiated(t *testing.T) {
 	mu.Unlock()
 
 	_, trackSID := rtc.UnpackStreamID(track.StreamID())
-	sendFECSetting(t, sub, trackSID, livekit.FECProtection_FEC_HIGH)
+	sendFECSetting(t, sub, trackSID, fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_HIGH))
 	time.Sleep(2 * time.Second)
 
 	mu.Lock()

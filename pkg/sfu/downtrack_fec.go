@@ -16,11 +16,13 @@ package sfu
 
 import (
 	"strings"
+	"time"
 
 	"github.com/pion/webrtc/v4"
 
 	"github.com/livekit/protocol/livekit"
 
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/flexfec"
 )
 
@@ -37,7 +39,7 @@ func (d *DownTrack) bindFEC(t webrtc.TrackLocalContext) {
 		if strings.EqualFold(codec.MimeType, webrtc.MimeTypeFlexFEC03) {
 			encoder := flexfec.NewEncoder(uint8(codec.PayloadType), uint32(t.SSRCForwardErrorCorrection()), d.onFECSent)
 			encoder.SeedState(d.fecState)
-			encoder.SetProtectionPercent(d.fecProtectionPercent.Load())
+			encoder.SetProtection(d.fecProtection)
 			d.fecNotifiedOverhead.Store(encoder.OverheadPercent())
 			d.fecEncoder.Store(encoder)
 			return
@@ -113,30 +115,53 @@ func (d *DownTrack) getLayeredBitrateWithFEC() ([]int32, Bitrates) {
 	return layers, bitrates
 }
 
-// SetFECProtection updates a subscriber's video FEC preset, using the same
-// 0/15/25/35 percent levels as the publish-track options. Unknown levels disable FEC.
+// Repair-to-media packet ratios of the protection levels, matching the
+// publish-track options. FEC_LEVEL_UNSPECIFIED is the server default, low.
+var fecLevelPercent = map[livekit.FECProtectionLevel]uint32{
+	livekit.FECProtectionLevel_FEC_LEVEL_UNSPECIFIED: 15,
+	livekit.FECProtectionLevel_FEC_LEVEL_LOW:         15,
+	livekit.FECProtectionLevel_FEC_LEVEL_MEDIUM:      25,
+	livekit.FECProtectionLevel_FEC_LEVEL_HIGH:        35,
+}
+
+// fecProtectionFromProto maps a subscriber's setting to encoder protection.
+// nil and unknown modes disable FEC; unknown levels are treated as unspecified.
+func fecProtectionFromProto(fec *livekit.FECProtection) flexfec.Protection {
+	var mode flexfec.ProtectionMode
+	switch fec.GetMode() {
+	case livekit.FECProtectionMode_FEC_MODE_ADAPTIVE:
+		return flexfec.Protection{Mode: flexfec.ProtectionAdaptive}
+	case livekit.FECProtectionMode_FEC_MODE_FIXED:
+		mode = flexfec.ProtectionFixed
+	case livekit.FECProtectionMode_FEC_MODE_MINIMUM:
+		mode = flexfec.ProtectionMinimum
+	default:
+		return flexfec.Protection{}
+	}
+	percent, ok := fecLevelPercent[fec.GetLevel()]
+	if !ok {
+		percent = fecLevelPercent[livekit.FECProtectionLevel_FEC_LEVEL_UNSPECIFIED]
+	}
+	return flexfec.Protection{Mode: mode, Factor: flexfec.ProtectionFactorFromPercent(percent)}
+}
+
+// SetFECProtection updates a subscriber's video FEC protection. Fixed and
+// minimum levels use the same 15/25/35 percent ratios as the publish-track
+// options; adaptive protection follows receiver reports like libwebrtc.
 // It can run before Bind and never enables FEC unless it was negotiated and
 // permitted by the server. Changes take effect without SDP renegotiation.
-func (d *DownTrack) SetFECProtection(level livekit.FECProtection) {
-	var percent uint32
-	switch level {
-	case livekit.FECProtection_FEC_LOW:
-		percent = 15
-	case livekit.FECProtection_FEC_MEDIUM:
-		percent = 25
-	case livekit.FECProtection_FEC_HIGH:
-		percent = 35
-	}
+func (d *DownTrack) SetFECProtection(fec *livekit.FECProtection) {
+	protection := fecProtectionFromProto(fec)
 	d.fecLock.Lock()
-	previous := d.fecProtectionPercent.Swap(percent)
-	if previous == percent {
+	if d.fecProtection == protection {
 		d.fecLock.Unlock()
 		return
 	}
+	d.fecProtection = protection
 	encoder := d.fecEncoder.Load()
 	if encoder != nil {
-		encoder.SetProtectionPercent(percent)
-		d.fecNotifiedOverhead.Store(percent)
+		encoder.SetProtection(protection)
+		d.fecNotifiedOverhead.Store(encoder.OverheadPercent())
 	}
 	d.fecLock.Unlock()
 	if encoder != nil {
@@ -144,4 +169,44 @@ func (d *DownTrack) SetFECProtection(level livekit.FECProtection) {
 			listener.OnSubscriptionChanged(d)
 		}
 	}
+}
+
+// onFECReceiverReport feeds a reception report of the media SSRC to adaptive
+// and minimum protection, and lets the allocator reserve a changed overhead.
+func (d *DownTrack) onFECReceiverReport(fractionLost uint8, rttMs uint32) {
+	encoder := d.fecEncoder.Load()
+	if encoder == nil {
+		return
+	}
+	width, height := d.getForwardedVideoDimensions()
+	encoder.OnReceiverReport(flexfec.NetworkStats{
+		FractionLost: fractionLost,
+		RTT:          time.Duration(rttMs) * time.Millisecond,
+		Width:        width,
+		Height:       height,
+	})
+	percent := encoder.OverheadPercent()
+	if d.fecNotifiedOverhead.Swap(percent) != percent {
+		if listener := d.getStreamAllocatorListener(); listener != nil {
+			listener.OnSubscriptionChanged(d)
+		}
+	}
+}
+
+// getForwardedVideoDimensions returns the published dimensions of the layer
+// currently forwarded, or zeros when they are unknown.
+func (d *DownTrack) getForwardedVideoDimensions() (uint32, uint32) {
+	spatial := d.forwarder.CurrentLayer().Spatial
+	if spatial < 0 {
+		return 0, 0
+	}
+	mimeType := d.Mime()
+	trackInfo := d.Receiver().TrackInfo()
+	quality := buffer.SpatialLayerToVideoQuality(mimeType, spatial, trackInfo)
+	for _, layer := range buffer.GetVideoLayersForMimeType(mimeType, trackInfo) {
+		if layer.GetQuality() == quality {
+			return layer.GetWidth(), layer.GetHeight()
+		}
+	}
+	return 0, 0
 }
