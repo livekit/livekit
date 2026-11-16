@@ -273,6 +273,13 @@ type DownTrack struct {
 	rtxSequenceNumber atomic.Uint64
 	rtxBudget         *rtxBudget
 
+	// New subscriber structures for O(1) look‑ups.
+	// For rooms with <= sliceThresh subscribers a slice is used (cache-friendly iteration).
+	// Above that threshold a map provides O(1) add/remove and avoids scanning.
+	subsMu      sync.RWMutex
+	subsMap     map[uint32]struct{} // subscriber SSRC set, used when len > sliceThresh
+	subSlice    []uint32            // subscriber SSRC list for small rooms
+
 	receiverLock sync.RWMutex
 	receiver     TrackReceiver
 
