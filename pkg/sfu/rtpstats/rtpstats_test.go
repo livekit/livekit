@@ -427,7 +427,31 @@ func Test_RTPStatsSender_ReceiverReportCycles(t *testing.T) {
 		r.UpdateFromReceiverReport(rtcp.ReceptionReport{LastSequenceNumber: uint32(highest - 10)})
 		r.UpdateFromReceiverReport(rtcp.ReceptionReport{LastSequenceNumber: uint32(highest + 3)})
 		require.Equal(t, highest-10, r.extHighestSNFromRR)
-		require.Zero(t, r.extHighestSNFromRRMisalignment)
+	})
+
+	t.Run("report from before the start does not block later reports", func(t *testing.T) {
+		// start is above the first cycle, the first report is for a packet before the start
+		r, highest := newSender(65540, 101)
+		startCycles := uint64(65536)
+		r.UpdateFromReceiverReport(rtcp.ReceptionReport{LastSequenceNumber: 0xFFFF_FFFE})
+		require.Zero(t, r.extHighestSNFromRR)
+
+		// remote extended sequence number wraps
+		r.UpdateFromReceiverReport(rtcp.ReceptionReport{LastSequenceNumber: uint32(highest-10) & 0xFFFF})
+		require.Equal(t, highest-10, r.extHighestSNFromRR+startCycles)
+		r.UpdateFromReceiverReport(rtcp.ReceptionReport{LastSequenceNumber: uint32(highest) & 0xFFFF})
+		require.Equal(t, highest, r.extHighestSNFromRR+startCycles)
+	})
+
+	t.Run("report that never changes does not move with the highest sent", func(t *testing.T) {
+		r, highest := newSender(1169, 2000)
+		r.UpdateFromReceiverReport(rtcp.ReceptionReport{LastSequenceNumber: uint32(highest - 10)})
+		at := time.Now().UnixNano()
+		for i := uint64(1); i <= 70000; i++ {
+			r.Update(at, highest+i, 1000+i*3000, true, 12, 1000, 0, false)
+		}
+		r.UpdateFromReceiverReport(rtcp.ReceptionReport{LastSequenceNumber: uint32(highest - 10)})
+		require.Equal(t, highest-10, r.extHighestSNFromRR)
 	})
 }
 
@@ -465,6 +489,11 @@ func Test_RTPStatsSender_PublisherClockRate(t *testing.T) {
 		for _, report := range run(clockRate, passThrough) {
 			require.NotNil(t, report)
 		}
+		// publisher time stamp does not advance at all
+		stopped := run(0, passThrough)
+		require.NotNil(t, stopped[0])
+		require.Nil(t, stopped[1])
+		require.Nil(t, stopped[3])
 		// off by less than the factor
 		for _, report := range run(clockRate*3/4, passThrough) {
 			require.NotNil(t, report)

@@ -357,10 +357,9 @@ type rttMarker struct {
 type RTPStatsSender struct {
 	*rtpStatsBase
 
-	extStartSN                     uint64
-	extHighestSN                   uint64
-	extHighestSNFromRR             uint64
-	extHighestSNFromRRMisalignment uint64
+	extStartSN         uint64
+	extHighestSN       uint64
+	extHighestSNFromRR uint64
 
 	rttMarker rttMarker
 
@@ -389,6 +388,7 @@ type RTPStatsSender struct {
 	publisherSRNTP             uint64
 	publisherSRRTPExt          uint64
 	publisherClockRate         float64
+	isPublisherClockRateKnown  bool
 	publisherClockRateOffCount int
 	timeReversedCount          int
 }
@@ -413,7 +413,6 @@ func (r *RTPStatsSender) Seed(from *RTPStatsSender) {
 	r.extStartSN = from.extStartSN
 	r.extHighestSN = from.extHighestSN
 	r.extHighestSNFromRR = from.extHighestSNFromRR
-	r.extHighestSNFromRRMisalignment = from.extHighestSNFromRRMisalignment
 
 	r.rttMarker = from.rttMarker
 
@@ -672,19 +671,23 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		return
 	}
 
+	// The remote can report a wrong cycle count. Cases seen
+	//   - no report for minutes, a roll over in that interval is missed
+	//   - cycle count one below the actual, 0xFFFF when the actual is 0
+	// Use the low 16 bits only, the report is for the latest such sequence number at or before the highest sent.
 	extStartCycles := r.extStartSN & 0xFFFF_FFFF_FFFF_0000
-	extHighestSNFromRR := r.extHighestSNFromRR&0xFFFF_FFFF_0000_0000 + uint64(rr.LastSequenceNumber) + r.extHighestSNFromRRMisalignment
-	if r.lastRRTime != 0 {
-		if (rr.LastSequenceNumber-r.lastRR.LastSequenceNumber) < (1<<31) && rr.LastSequenceNumber < r.lastRR.LastSequenceNumber {
-			extHighestSNFromRR += (1 << 32)
-		}
+	extReceivedRRSN := r.extHighestSN - uint64(uint16(r.extHighestSN)-uint16(rr.LastSequenceNumber))
+	if r.lastRRTime != 0 && rr.LastSequenceNumber == r.lastRR.LastSequenceNumber {
+		// there are clients that never update the last received sequence number,
+		// do not let those move with the highest sent
+		extReceivedRRSN = r.extHighestSNFromRR + extStartCycles
 	}
-	extReceivedRRSN := extHighestSNFromRR + extStartCycles
-	if extReceivedRRSN < r.extStartSN {
+	if extReceivedRRSN < r.extStartSN || extReceivedRRSN > r.extHighestSN {
 		// it is possible that the `LastSequenceNumber` in the receiver report is before the starting
 		// sequence number when dummy packets are used to trigger Pion's OnTrack path.
 		return
 	}
+	extHighestSNFromRR := extReceivedRRSN - extStartCycles
 
 	nowNano := mono.UnixNano()
 	defer func() {
@@ -696,46 +699,16 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 	if r.lastRRTime != 0 {
 		timeSinceLastRR = time.Duration(nowNano - r.lastRRTime)
 	}
-	loggingFields := func() []any {
-		return []any{
+
+	if r.extHighestSNFromRR > extHighestSNFromRR {
+		r.logger.Debugw(
+			"receiver report out-of-order, dropping",
 			"timeSinceLastRR", timeSinceLastRR,
 			"receivedRR", rr,
 			"extHighestSNFromRR", extHighestSNFromRR,
 			"extReceivedRRSN", extReceivedRRSN,
 			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
-		}
-	}
-
-	// The remote can report a wrong cycle count. Cases seen
-	//   - no report for minutes, a roll over in that interval is missed
-	//   - cycle count one below the actual, 0xFFFF when the actual is 0
-	// The low 16 bits are still right, align to the highest sent in whole cycles.
-	//
-	// There are clients that never update the last received sequence number,
-	// do not treat those as a missed roll over.
-	behind := int64(r.extHighestSN - extReceivedRRSN)
-	cycles := int64(0)
-	if behind < 0 {
-		// round, a report a few packets ahead of the highest sent is not a cycle off
-		cycles = (behind + (1 << 15)) >> 16
-	} else if r.extHighestSNFromRR != extHighestSNFromRR {
-		cycles = behind >> 16
-	}
-	if cycles != 0 {
-		r.logger.Infow("receiver report cycles misaligned, adjusting", append(loggingFields(), "cycles", cycles)...)
-		adjustment := uint64(cycles) << 16
-		extHighestSNFromRR += adjustment
-		r.extHighestSNFromRRMisalignment += adjustment
-		extReceivedRRSN += adjustment
-	}
-
-	if r.extHighestSN < extReceivedRRSN {
-		r.logger.Infow("receiver report runaway, dropping", loggingFields()...)
-		return
-	}
-
-	if r.extHighestSNFromRR > extHighestSNFromRR {
-		r.logger.Debugw("receiver report out-of-order, dropping", loggingFields()...)
+		)
 		return
 	}
 	r.extHighestSNFromRR = extHighestSNFromRR
@@ -986,14 +959,14 @@ func (r *RTPStatsSender) updatePublisherClockRate(publisherSRData *livekit.RTCPS
 			return
 		}
 		r.publisherClockRate = float64(int64(rtpExt-r.publisherSRRTPExt)) / elapsed.Seconds()
+		r.isPublisherClockRateKnown = true
 	}
 	r.publisherSRNTP = publisherSRData.NtpTimestamp
 	r.publisherSRRTPExt = rtpExt
 }
 
 func (r *RTPStatsSender) isPublisherClockRateOff() bool {
-	if r.publisherClockRate == 0 {
-		// not measured yet
+	if !r.isPublisherClockRateKnown {
 		return false
 	}
 
@@ -1428,7 +1401,6 @@ func (r lockedRTPStatsSenderLogEncoder) MarshalLogObject(e zapcore.ObjectEncoder
 	e.AddTime("lastRRTime", time.Unix(0, r.lastRRTime))
 	e.AddReflected("lastRR", r.lastRR)
 	e.AddUint64("extHighestSNFromRR", r.extHighestSNFromRR)
-	e.AddUint64("extHighestSNFromRRMisalignment", r.extHighestSNFromRRMisalignment)
 	e.AddUint64("packetsLostFromRR", r.packetsLostFromRR)
 	e.AddFloat64("packetsLostFromRRRate", float64(r.packetsLostFromRR)/elapsedSeconds)
 	if packetsExpected != 0 {
