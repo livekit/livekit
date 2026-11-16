@@ -16,6 +16,7 @@ package service_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -39,6 +40,7 @@ func TestCreateURLPullIngressScheme(t *testing.T) {
 
 		svc := service.NewIngressServiceWithIngressLauncher(
 			&config.IngressConfig{EnableUDPURLPull: enableUDP},
+			config.LimitConfig{},
 			"nodeID",
 			nil,
 			nil,
@@ -124,6 +126,7 @@ func TestIngressAPIWithNilState(t *testing.T) {
 
 		svc := service.NewIngressServiceWithIngressLauncher(
 			&config.IngressConfig{},
+			config.LimitConfig{},
 			"nodeID",
 			nil,
 			unusedIngressClient{},
@@ -153,5 +156,89 @@ func TestIngressAPIWithNilState(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, livekit.IngressState_ENDPOINT_INACTIVE, info.State.Status)
 		require.Equal(t, 1, store.DeleteIngressCallCount())
+	})
+}
+
+// The ingress joins the room with a token holding the ingress' room name, identity, name
+// and metadata, and the join path checks those against the limits. The API must reject
+// values the ingress could never join with, as CreateRoom and UpdateParticipant do.
+func TestIngressLimits(t *testing.T) {
+	limits := config.LimitConfig{
+		MaxRoomNameLength:            8,
+		MaxParticipantIdentityLength: 8,
+		MaxParticipantNameLength:     8,
+		MaxMetadataSize:              8,
+	}
+	adminCtx := service.WithGrants(context.Background(), &auth.ClaimGrants{Video: &auth.VideoGrant{IngressAdmin: true}}, "")
+	long := strings.Repeat("a", 9)
+
+	over := map[string]func(*livekit.CreateIngressRequest){
+		"room name": func(r *livekit.CreateIngressRequest) { r.RoomName = long },
+		"identity":  func(r *livekit.CreateIngressRequest) { r.ParticipantIdentity = long },
+		"name":      func(r *livekit.CreateIngressRequest) { r.ParticipantName = long },
+		"metadata":  func(r *livekit.CreateIngressRequest) { r.ParticipantMetadata = long },
+	}
+
+	t.Run("CreateIngress", func(t *testing.T) {
+		launcher := &servicefakes.FakeIngressLauncher{}
+		launcher.LaunchPullIngressCalls(func(_ context.Context, info *livekit.IngressInfo) (*livekit.IngressInfo, error) {
+			return info, nil
+		})
+		svc := service.NewIngressServiceWithIngressLauncher(
+			&config.IngressConfig{}, limits, "nodeID", nil, nil, &servicefakes.FakeIngressStore{}, nil, nil, launcher,
+		)
+		newReq := func() *livekit.CreateIngressRequest {
+			return &livekit.CreateIngressRequest{
+				InputType:           livekit.IngressInput_URL_INPUT,
+				Url:                 "https://example.com/live",
+				RoomName:            "room",
+				ParticipantIdentity: "ingress",
+				ParticipantName:     "name",
+				ParticipantMetadata: "meta",
+			}
+		}
+
+		for field, set := range over {
+			req := newReq()
+			set(req)
+			_, err := svc.CreateIngress(adminCtx, req)
+			require.Error(t, err, field)
+		}
+		require.Zero(t, launcher.LaunchPullIngressCallCount())
+
+		_, err := svc.CreateIngress(adminCtx, newReq())
+		require.NoError(t, err)
+		require.Equal(t, 1, launcher.LaunchPullIngressCallCount())
+	})
+
+	t.Run("UpdateIngress", func(t *testing.T) {
+		store := &servicefakes.FakeIngressStore{}
+		store.LoadIngressReturns(&livekit.IngressInfo{
+			IngressId:           "IN_test",
+			StreamKey:           "sk",
+			RoomName:            "room",
+			ParticipantIdentity: "ingress",
+			Reusable:            true,
+			State:               &livekit.IngressState{},
+		}, nil)
+		svc := service.NewIngressServiceWithIngressLauncher(
+			&config.IngressConfig{}, limits, "nodeID", nil, unusedIngressClient{}, store,
+			&servicefakes.FakeIOClient{}, &telemetryfakes.FakeTelemetryService{}, &servicefakes.FakeIngressLauncher{},
+		)
+
+		for field, req := range map[string]*livekit.UpdateIngressRequest{
+			"room name": {IngressId: "IN_test", RoomName: long},
+			"identity":  {IngressId: "IN_test", ParticipantIdentity: long},
+			"name":      {IngressId: "IN_test", ParticipantName: long},
+			"metadata":  {IngressId: "IN_test", ParticipantMetadata: long},
+		} {
+			_, err := svc.UpdateIngress(adminCtx, req)
+			require.Error(t, err, field)
+		}
+		require.Zero(t, store.UpdateIngressCallCount())
+
+		_, err := svc.UpdateIngress(adminCtx, &livekit.UpdateIngressRequest{IngressId: "IN_test", ParticipantName: "renamed"})
+		require.NoError(t, err)
+		require.Equal(t, 1, store.UpdateIngressCallCount())
 	})
 }

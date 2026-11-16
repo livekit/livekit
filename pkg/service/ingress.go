@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net/url"
 
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -38,6 +39,7 @@ type IngressLauncher interface {
 
 type IngressService struct {
 	conf        *config.IngressConfig
+	limitConf   config.LimitConfig
 	nodeID      livekit.NodeID
 	bus         psrpc.MessageBus
 	psrpcClient rpc.IngressClient
@@ -49,6 +51,7 @@ type IngressService struct {
 
 func NewIngressServiceWithIngressLauncher(
 	conf *config.IngressConfig,
+	limitConf config.LimitConfig,
 	nodeID livekit.NodeID,
 	bus psrpc.MessageBus,
 	psrpcClient rpc.IngressClient,
@@ -60,6 +63,7 @@ func NewIngressServiceWithIngressLauncher(
 
 	return &IngressService{
 		conf:        conf,
+		limitConf:   limitConf,
 		nodeID:      nodeID,
 		bus:         bus,
 		psrpcClient: psrpcClient,
@@ -72,6 +76,7 @@ func NewIngressServiceWithIngressLauncher(
 
 func NewIngressService(
 	conf *config.IngressConfig,
+	limitConf config.LimitConfig,
 	nodeID livekit.NodeID,
 	bus psrpc.MessageBus,
 	psrpcClient rpc.IngressClient,
@@ -79,7 +84,7 @@ func NewIngressService(
 	io IOClient,
 	ts telemetry.TelemetryService,
 ) *IngressService {
-	s := NewIngressServiceWithIngressLauncher(conf, nodeID, bus, psrpcClient, store, io, ts, nil)
+	s := NewIngressServiceWithIngressLauncher(conf, limitConf, nodeID, bus, psrpcClient, store, io, ts, nil)
 
 	s.launcher = s
 
@@ -122,6 +127,9 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 	err := EnsureIngressAdminPermission(ctx)
 	if err != nil {
 		return nil, twirpAuthError(err)
+	}
+	if err := s.checkLimits(req.RoomName, req.ParticipantIdentity, req.ParticipantName, req.ParticipantMetadata); err != nil {
+		return nil, err
 	}
 	if s.store == nil {
 		return nil, ErrIngressNotConnected
@@ -220,6 +228,12 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 	return info, nil
 }
 
+// checkLimits rejects values the ingress participant could not join with, as the join path
+// runs the same check on the token the ingress mints from them.
+func (s *IngressService) checkLimits(roomName, identity, name, metadata string) error {
+	return CheckConnectLimits(s.limitConf, identity, livekit.RoomName(roomName), &auth.ClaimGrants{Name: name, Metadata: metadata})
+}
+
 func (s *IngressService) LaunchPullIngress(ctx context.Context, info *livekit.IngressInfo) (*livekit.IngressInfo, error) {
 	req := &rpc.StartIngressRequest{
 		Info: info,
@@ -298,6 +312,9 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 	err := EnsureIngressAdminPermission(ctx)
 	if err != nil {
 		return nil, twirpAuthError(err)
+	}
+	if err := s.checkLimits(req.RoomName, req.ParticipantIdentity, req.ParticipantName, req.ParticipantMetadata); err != nil {
+		return nil, err
 	}
 
 	if s.psrpcClient == nil {

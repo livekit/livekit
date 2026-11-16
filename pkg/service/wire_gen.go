@@ -111,7 +111,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	ingressService := NewIngressService(ingressConfig, nodeID, v, ingressClient, ingressStore, ioInfoService, telemetryService)
+	ingressService := NewIngressService(ingressConfig, limitConfig, nodeID, v, ingressClient, ingressStore, ioInfoService, telemetryService)
 	sipConfig := getSIPConfig(conf)
 	sipClient, err := newSIPClient(clientParams)
 	if err != nil {
