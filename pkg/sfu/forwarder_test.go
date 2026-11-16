@@ -3144,7 +3144,12 @@ func TestForwarderSkipReferenceTSRestartNoOffset(t *testing.T) {
 // A bandwidth downgrade keeps the subscriber on the higher spatial layer until a lower-layer
 // keyframe is close enough in time. These tests keep the higher layer flowing, with sender
 // reports, and ask whether a lower layer that trails by a fixed amount is ever forwarded.
+// Trails are LayerSwitchBehindThresholdSeconds plus or minus 10ms.
 const downgradeTrailClockRate = 90000
+
+func downgradeSwitchThreshold() time.Duration {
+	return time.Duration(LayerSwitchBehindThresholdSeconds * float64(time.Second))
+}
 
 func downgradeTrailBitrates() Bitrates {
 	var brs Bitrates
@@ -3221,19 +3226,28 @@ func offerDowngradeTrail(t *testing.T, f *Forwarder, highSN, lowSN uint16, frame
 }
 
 func TestForwarderDowngradeWhenLowerLayerTrails(t *testing.T) {
-	t.Run("40ms trail still switches", func(t *testing.T) {
+	t.Run("less than the layer switch threshold", func(t *testing.T) {
 		f := startDowngradeTrailForwarder(t)
-		highDropped, lowDropped := offerDowngradeTrail(t, f, 1002, 2000, 2, 40*time.Millisecond)
+		highDropped, lowDropped := offerDowngradeTrail(t, f, 1002, 2000, 2, downgradeSwitchThreshold()-10*time.Millisecond)
 		require.True(t, highDropped, "higher layer should be held back while deficient")
-		require.False(t, lowDropped, "40ms behind the 50ms limit should still switch")
+		require.False(t, lowDropped, "a trail under the layer switch threshold should switch")
 		require.Equal(t, int32(0), f.CurrentLayer().Spatial)
 	})
 
-	t.Run("60ms trail resumes once dropped frames stop moving the clock", func(t *testing.T) {
+	t.Run("more than the layer switch threshold", func(t *testing.T) {
 		f := startDowngradeTrailForwarder(t)
-		highDropped, lowDropped := offerDowngradeTrail(t, f, 1002, 2000, 2, 60*time.Millisecond)
+		highDropped, lowDropped := offerDowngradeTrail(t, f, 1002, 2000, 2, downgradeSwitchThreshold()+10*time.Millisecond)
 		require.True(t, highDropped, "higher layer should be held back while deficient")
-		require.False(t, lowDropped, "lower layer should resume")
+		require.False(t, lowDropped, "a trail over the layer switch threshold should switch")
 		require.Equal(t, int32(0), f.CurrentLayer().Spatial)
 	})
+}
+
+func TestForwarderDowngradePadsGap(t *testing.T) {
+	f := startDowngradeTrailForwarder(t)
+	// 1002 is lost, 1003 arrives after the gap
+	tp, err := f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCHigh, 1003, 1_000_000+2*wrapTestFrame, 0, 2), 2)
+	require.NoError(t, err)
+	require.True(t, tp.shouldDrop)
+	require.True(t, tp.padDroppedSlot, "a dropped packet after a gap should pad its slot")
 }
