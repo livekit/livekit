@@ -16,11 +16,17 @@ package rtpstats
 
 import (
 	"math/rand"
+	"slices"
 	"testing"
 	"time"
 
+	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/mediatransportutil"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/utils/mono"
 )
 
 func getPacket(sn uint16, ts uint32, payloadSize int) *rtp.Packet {
@@ -270,31 +276,86 @@ func Test_RTPStatsReceiver_UpdateFEC(t *testing.T) {
 }
 
 func Test_RTPStatsReceiver_Restart(t *testing.T) {
-	clockRate := uint32(90000)
-	r := NewRTPStatsReceiver(RTPStatsParams{})
-	r.SetClockRate(clockRate)
+	frame := int64(33 * time.Millisecond)
+	// one packet per frame, returns the reason of each packet
+	feed := func(r *RTPStatsReceiver, at *int64, sn uint16, ts uint32, n int) []RTPFlowUnhandledReason {
+		reasons := make([]RTPFlowUnhandledReason, 0, n)
+		for i := 0; i < n; i++ {
+			fs := r.Update(*at, sn+uint16(i), ts+uint32(i)*3000, true, 12, 1000, 0)
+			reasons = append(reasons, fs.UnhandledReason)
+			*at += frame
+		}
+		return reasons
+	}
+	newReceiver := func() (*RTPStatsReceiver, *int64) {
+		r := NewRTPStatsReceiver(RTPStatsParams{})
+		r.SetClockRate(90000)
+		t.Cleanup(r.Stop)
+		at := time.Now().UnixNano()
+		return r, &at
+	}
+	countRestarts := func(reasons []RTPFlowUnhandledReason) int {
+		n := 0
+		for _, reason := range reasons {
+			if reason == RTPFlowUnhandledReasonRestart {
+				n++
+			}
+		}
+		return n
+	}
 
-	// should not restart till there are at least threshold packets
-	require.False(t, r.maybeRestart(10, 20, 1000))
-	require.False(t, r.maybeRestart(11, 20, 1000))
-	require.False(t, r.maybeRestart(13, 20, 1000))
-	require.False(t, r.maybeRestart(14, 20, 1000))
-	// although adding 5th packet should have enough packets for a check,
-	// still should not restart as there is a sequence number gap between 11 and 13
-	require.False(t, r.maybeRestart(15, 20, 1000))
-	require.False(t, r.maybeRestart(16, 19, 1000))
-	// has enough packets, but still cannot restart because timestamps are not increasing
-	require.False(t, r.maybeRestart(17, 21, 1000))
-	require.False(t, r.maybeRestart(18, 21, 1000))
-	require.False(t, r.maybeRestart(19, 21, 1000))
-	// can restart as there are enough packets with proper sequencing
-	require.True(t, r.maybeRestart(20, 21, 1000))
-	require.Equal(t, restartThreshold, r.restartPacketsN)
+	t.Run("late packets from before the start do not restart", func(t *testing.T) {
+		r, at := newReceiver()
+		feed(r, at, 7784, 1554058566, 1)
+		for sn := uint16(7779); sn < 7784; sn++ {
+			fs := r.Update(*at, sn, 1554058566, false, 12, 1000, 0)
+			require.Equal(t, RTPFlowUnhandledReasonPreStartSequenceNumber, fs.UnhandledReason)
+		}
+		require.Zero(t, countRestarts(feed(r, at, 7785, 1554058566+3000, 60)))
+		require.Zero(t, r.restartRun.count)
+	})
 
-	r.resetRestart()
-	require.Zero(t, r.restartPacketsN)
+	t.Run("timestamp jump with continuous sequence numbers restarts once", func(t *testing.T) {
+		r, at := newReceiver()
+		feed(r, at, 3411, 3099713139, 29)
+		reasons := feed(r, at, 3440, 1127077245, 90)
+		require.Equal(t, 1, countRestarts(reasons))
+		// declared only after the run lasted restartMinDuration
+		declaredAt := slices.Index(reasons, RTPFlowUnhandledReasonRestart)
+		require.GreaterOrEqual(t, int64(declaredAt)*frame, restartMinDuration)
+		require.Less(t, int64(declaredAt-1)*frame, restartMinDuration)
+		require.True(t, r.restartRun.isDeclared)
+		require.Equal(t, 90, r.restartRun.count)
+	})
 
-	r.Stop()
+	t.Run("timestamp steps back after the start and moves forward from there", func(t *testing.T) {
+		r, at := newReceiver()
+		feed(r, at, 100, 500_000_000, 300)
+		// sequence numbers continue, timestamp is behind the highest but ahead of the start
+		fs := r.Update(*at, 400, 500_000_000+30_000, true, 12, 1000, 0)
+		require.Equal(t, RTPFlowUnhandledReasonOldSequenceNumber, fs.UnhandledReason)
+		require.Equal(t, 1, countRestarts(feed(r, at, 401, 500_000_000+33_000, 90)))
+	})
+
+	t.Run("loss inside the run still restarts", func(t *testing.T) {
+		r, at := newReceiver()
+		feed(r, at, 3411, 3099713139, 29)
+		restarts := 0
+		for sn, ts := uint16(3440), uint32(1127077245); sn < 3540; sn, ts = sn+3, ts+9000 {
+			restarts += countRestarts(feed(r, at, sn, ts, 2))
+		}
+		require.Equal(t, 1, restarts)
+	})
+
+	t.Run("accepted packet ends the run", func(t *testing.T) {
+		r, at := newReceiver()
+		feed(r, at, 3411, 3099713139, 29)
+		require.Zero(t, countRestarts(feed(r, at, 3440, 1127077245, 20)))
+		require.Equal(t, 20, r.restartRun.count)
+		// the stream returns to its timeline before the run lasted long enough
+		require.Zero(t, countRestarts(feed(r, at, 3460, 3099713139+49*3000, 60)))
+		require.Zero(t, r.restartRun.count)
+	})
 }
 
 func Test_RTPStatsSender_getIntervalStats(t *testing.T) {
@@ -328,5 +389,85 @@ func BenchmarkRTPStatsReceiver_Update(b *testing.B) {
 		packetTime += 33 * int64(time.Millisecond) // ~30fps
 		marker := (i+1)%100 == 0                   // marker every 100 packets
 		r.Update(packetTime, sn, ts, marker, hdrSize, payloadSize, paddingSize)
+	}
+}
+
+func Test_RTPStatsSender_ReceiverReportCycles(t *testing.T) {
+	newSender := func(startSN uint64, numPackets int) (*RTPStatsSender, uint64) {
+		r := NewRTPStatsSender(RTPStatsParams{}, 128)
+		r.SetClockRate(90000)
+		t.Cleanup(r.Stop)
+		at := time.Now().UnixNano()
+		for i := 0; i < numPackets; i++ {
+			r.Update(at, startSN+uint64(i), uint64(1000+i*3000), true, 12, 1000, 0, false)
+			at += int64(time.Millisecond)
+		}
+		return r, startSN + uint64(numPackets) - 1
+	}
+
+	t.Run("cycle count one below the actual", func(t *testing.T) {
+		// started at 1169, no roll over yet, remote reports cycles as 0xFFFF
+		r, highest := newSender(1169, 2000)
+		r.UpdateFromReceiverReport(rtcp.ReceptionReport{LastSequenceNumber: 0xFFFF_0000 | uint32(highest-10)})
+		require.Equal(t, highest-10, r.extHighestSNFromRR+(r.extStartSN&0xFFFF_FFFF_FFFF_0000))
+
+		// alignment holds for the next report
+		r.UpdateFromReceiverReport(rtcp.ReceptionReport{LastSequenceNumber: 0xFFFF_0000 | uint32(highest)})
+		require.Equal(t, highest, r.extHighestSNFromRR)
+	})
+
+	t.Run("missed roll over", func(t *testing.T) {
+		r, highest := newSender(1169, 70000)
+		r.UpdateFromReceiverReport(rtcp.ReceptionReport{LastSequenceNumber: uint32(highest & 0xFFFF)})
+		require.Equal(t, highest, r.extHighestSNFromRR)
+	})
+
+	t.Run("report ahead of the highest sent is dropped", func(t *testing.T) {
+		r, highest := newSender(1169, 2000)
+		r.UpdateFromReceiverReport(rtcp.ReceptionReport{LastSequenceNumber: uint32(highest - 10)})
+		r.UpdateFromReceiverReport(rtcp.ReceptionReport{LastSequenceNumber: uint32(highest + 3)})
+		require.Equal(t, highest-10, r.extHighestSNFromRR)
+		require.Zero(t, r.extHighestSNFromRRMisalignment)
+	})
+}
+
+func Test_RTPStatsSender_PublisherClockRate(t *testing.T) {
+	const clockRate = 48000
+	// feeds publisher reports that are 3 seconds apart and advance at reportRate
+	run := func(reportRate int, passThrough bool) []*rtcp.SenderReport {
+		r := NewRTPStatsSender(RTPStatsParams{}, 128)
+		r.SetClockRate(clockRate)
+		t.Cleanup(r.Stop)
+		r.Update(time.Now().UnixNano(), 100, 1000, true, 12, 100, 0, false)
+
+		now := mono.UnixNano()
+		var reports []*rtcp.SenderReport
+		for i := 3; i >= 0; i-- {
+			// each report is used as soon as it is received
+			reports = append(reports, r.GetRtcpSenderReport(1234, &livekit.RTCPSenderReportState{
+				NtpTimestamp:    uint64(mediatransportutil.ToNtpTime(time.Unix(0, now-int64(i)*int64(3*time.Second)))),
+				RtpTimestampExt: 500_000 + uint64((3-i)*3*reportRate),
+				At:              mono.UnixNano(),
+				AtAdjusted:      mono.UnixNano(),
+			}, 0, passThrough))
+		}
+		return reports
+	}
+
+	for _, passThrough := range []bool{true, false} {
+		// rate is not known on the first report, the report is sent
+		muted := run(8000, passThrough)
+		require.NotNil(t, muted[0])
+		require.Nil(t, muted[1])
+		require.Nil(t, muted[2])
+		require.Nil(t, muted[3])
+
+		for _, report := range run(clockRate, passThrough) {
+			require.NotNil(t, report)
+		}
+		// off by less than the factor
+		for _, report := range run(clockRate*3/4, passThrough) {
+			require.NotNil(t, report)
+		}
 	}
 }

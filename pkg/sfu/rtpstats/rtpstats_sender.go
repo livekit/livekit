@@ -43,6 +43,9 @@ const (
 // max number of receiver reports kept per sender snapshot for logging
 const cMaxProcessedReceptionReports = 64
 
+// publisher sender reports that advance faster or slower than the clock rate by this factor are not used
+const cPublisherClockRateOffFactor = 2.0
+
 type snInfo struct {
 	pktSize uint16
 	hdrSize uint8
@@ -380,8 +383,14 @@ type RTPStatsSender struct {
 	nextSenderSnapshotID uint32
 	senderSnapshots      []senderSnapshot
 
-	clockSkewCount    int
-	timeReversedCount int
+	clockSkewCount int
+
+	// last publisher sender report seen, time stamp is in the time stamp space of this sender
+	publisherSRNTP             uint64
+	publisherSRRTPExt          uint64
+	publisherClockRate         float64
+	publisherClockRateOffCount int
+	timeReversedCount          int
 }
 
 func NewRTPStatsSender(params RTPStatsParams, cacheSize int) *RTPStatsSender {
@@ -514,6 +523,21 @@ func (r *RTPStatsSender) Update(
 	pktSize := uint64(hdrSize + payloadSize + paddingSize)
 	isDuplicate := false
 	gapSN := int64(extSequenceNumber - r.extHighestSN)
+	loggingFields := func() *senderUpdateLoggingFields {
+		return &senderUpdateLoggingFields{
+			packetTime:        packetTime,
+			extSequenceNumber: extSequenceNumber,
+			extTimestamp:      extTimestamp,
+			marker:            marker,
+			hdrSize:           hdrSize,
+			payloadSize:       payloadSize,
+			paddingSize:       paddingSize,
+			gapSN:             gapSN,
+			gapTS:             int64(extTimestamp - r.extHighestTS),
+			timeSinceHighest:  packetTime - r.highestTime,
+			rtpStats:          r,
+		}
+	}
 	if gapSN <= 0 { // duplicate OR out-of-order
 		if payloadSize == 0 && extSequenceNumber < r.extStartSN && !r.params.IsRTX {
 			// do not start on a padding only packet
@@ -534,22 +558,9 @@ func (r *RTPStatsSender) Update(
 				r.senderSnapshots[i].maybeReinit(r.extStartSN, extSequenceNumber)
 			}
 
-			sulf := &senderUpdateLoggingFields{
-				packetTime:        packetTime,
-				extSequenceNumber: extSequenceNumber,
-				extTimestamp:      extTimestamp,
-				marker:            marker,
-				hdrSize:           hdrSize,
-				payloadSize:       payloadSize,
-				paddingSize:       paddingSize,
-				gapSN:             gapSN,
-				gapTS:             int64(extTimestamp - r.extHighestTS),
-				timeSinceHighest:  packetTime - r.highestTime,
-				rtpStats:          r,
-			}
 			r.logger.Infow(
 				"adjusting start sequence number",
-				zap.Inline(sulf),
+				zap.Inline(loggingFields()),
 				"snAfter", extSequenceNumber,
 				"tsAfter", extTimestamp,
 			)
@@ -573,22 +584,9 @@ func (r *RTPStatsSender) Update(
 		if extTimestamp < r.extHighestTS {
 			r.timeReversedCount++
 			if shouldLog(r.timeReversedCount) {
-				sulf := &senderUpdateLoggingFields{
-					packetTime:        packetTime,
-					extSequenceNumber: extSequenceNumber,
-					extTimestamp:      extTimestamp,
-					marker:            marker,
-					hdrSize:           hdrSize,
-					payloadSize:       payloadSize,
-					paddingSize:       paddingSize,
-					gapSN:             gapSN,
-					gapTS:             int64(extTimestamp - r.extHighestTS),
-					timeSinceHighest:  packetTime - r.highestTime,
-					rtpStats:          r,
-				}
 				r.logger.Warnw(
 					"time reversed", nil,
-					zap.Inline(sulf),
+					zap.Inline(loggingFields()),
 					"count", r.timeReversedCount,
 				)
 			}
@@ -607,22 +605,9 @@ func (r *RTPStatsSender) Update(
 	}
 
 	if extTimestamp < r.extStartTS {
-		sulf := &senderUpdateLoggingFields{
-			packetTime:        packetTime,
-			extSequenceNumber: extSequenceNumber,
-			extTimestamp:      extTimestamp,
-			marker:            marker,
-			hdrSize:           hdrSize,
-			payloadSize:       payloadSize,
-			paddingSize:       paddingSize,
-			gapSN:             gapSN,
-			gapTS:             int64(extTimestamp - r.extHighestTS),
-			timeSinceHighest:  packetTime - r.highestTime,
-			rtpStats:          r,
-		}
 		r.logger.Infow(
 			"adjusting start timestamp",
-			zap.Inline(sulf),
+			zap.Inline(loggingFields()),
 			"snAfter", extSequenceNumber,
 			"tsAfter", extTimestamp,
 		)
@@ -687,13 +672,15 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		return
 	}
 
+	extStartCycles := r.extStartSN & 0xFFFF_FFFF_FFFF_0000
 	extHighestSNFromRR := r.extHighestSNFromRR&0xFFFF_FFFF_0000_0000 + uint64(rr.LastSequenceNumber) + r.extHighestSNFromRRMisalignment
 	if r.lastRRTime != 0 {
 		if (rr.LastSequenceNumber-r.lastRR.LastSequenceNumber) < (1<<31) && rr.LastSequenceNumber < r.lastRR.LastSequenceNumber {
 			extHighestSNFromRR += (1 << 32)
 		}
 	}
-	if (extHighestSNFromRR + (r.extStartSN & 0xFFFF_FFFF_FFFF_0000)) < r.extStartSN {
+	extReceivedRRSN := extHighestSNFromRR + extStartCycles
+	if extReceivedRRSN < r.extStartSN {
 		// it is possible that the `LastSequenceNumber` in the receiver report is before the starting
 		// sequence number when dummy packets are used to trigger Pion's OnTrack path.
 		return
@@ -709,93 +696,46 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 	if r.lastRRTime != 0 {
 		timeSinceLastRR = time.Duration(nowNano - r.lastRRTime)
 	}
-
-	extReceivedRRSN := extHighestSNFromRR + (r.extStartSN & 0xFFFF_FFFF_FFFF_0000)
-	if int64(r.extHighestSN-extReceivedRRSN) < 0 || int64(r.extHighestSN-extReceivedRRSN) > (1<<32) {
-		r.logger.Infow(
-			"receiver report runaway, dropping",
+	loggingFields := func() []any {
+		return []any{
 			"timeSinceLastRR", timeSinceLastRR,
 			"receivedRR", rr,
 			"extHighestSNFromRR", extHighestSNFromRR,
 			"extReceivedRRSN", extReceivedRRSN,
 			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
-		)
-		return
+		}
 	}
 
-	if r.extHighestSNFromRR != extHighestSNFromRR && int64(r.extHighestSN-extReceivedRRSN) >= (1<<16) {
-		// there are cases where remote does not send RTCP Receiver Report for extended periods of time,
-		// some times several minutes, in that interval the sequence number rolls over,
-		//
-		// NOTE: even if there is a large gap in time, the sequence number should be higher
-		// than previous report (extended sequence number in receiver report is 32-bit wide and
-		// should not roll over for long time, for e. g. it will approximately take 100 days at 500 pps).
-		// So, there seems to be a remote reporter issue where the sequence number rollover is missed.
-		//
-		// catch up till difference between highest sent and highest received via receiver report is
-		// less than full 16-bit range.
-		//
-		// in a different flavor, there are clients that do not report properly,
-		// i. e. never update the last received sequence number,
-		// so skip any catch up if the last receeved sequence number reported in
-		// RTCP RR does not change.
-		r.logger.Infow(
-			"receiver report missed rollover, adjusting",
-			"timeSinceLastRR", timeSinceLastRR,
-			"receivedRR", rr,
-			"extHighestSNFromRR", extHighestSNFromRR,
-			"extReceivedRRSN", extReceivedRRSN,
-			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
-		)
-		for int64(r.extHighestSN-extReceivedRRSN) >= (1 << 16) {
-			extHighestSNFromRR += (1 << 16)
-			r.extHighestSNFromRRMisalignment += (1 << 16)
-			extReceivedRRSN = extHighestSNFromRR + (r.extStartSN & 0xFFFF_FFFF_FFFF_0000)
-		}
-		r.logger.Infow(
-			"receiver report missed rollover, adjusted",
-			"timeSinceLastRR", timeSinceLastRR,
-			"receivedRR", rr,
-			"extHighestSNFromRR", extHighestSNFromRR,
-			"extReceivedRRSN", extReceivedRRSN,
-			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
-		)
+	// The remote can report a wrong cycle count. Cases seen
+	//   - no report for minutes, a roll over in that interval is missed
+	//   - cycle count one below the actual, 0xFFFF when the actual is 0
+	// The low 16 bits are still right, align to the highest sent in whole cycles.
+	//
+	// There are clients that never update the last received sequence number,
+	// do not treat those as a missed roll over.
+	behind := int64(r.extHighestSN - extReceivedRRSN)
+	cycles := int64(0)
+	if behind < 0 {
+		// round, a report a few packets ahead of the highest sent is not a cycle off
+		cycles = (behind + (1 << 15)) >> 16
+	} else if r.extHighestSNFromRR != extHighestSNFromRR {
+		cycles = behind >> 16
+	}
+	if cycles != 0 {
+		r.logger.Infow("receiver report cycles misaligned, adjusting", append(loggingFields(), "cycles", cycles)...)
+		adjustment := uint64(cycles) << 16
+		extHighestSNFromRR += adjustment
+		r.extHighestSNFromRRMisalignment += adjustment
+		extReceivedRRSN += adjustment
 	}
 
 	if r.extHighestSN < extReceivedRRSN {
-		// if remote adjusts somehow, roll back alignment
-		r.logger.Infow(
-			"receiver report caught up rollover, adjusting",
-			"timeSinceLastRR", timeSinceLastRR,
-			"receivedRR", rr,
-			"extHighestSNFromRR", extHighestSNFromRR,
-			"extReceivedRRSN", extReceivedRRSN,
-			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
-		)
-		for r.extHighestSN < extReceivedRRSN {
-			extHighestSNFromRR -= (1 << 16)
-			r.extHighestSNFromRRMisalignment -= (1 << 16)
-			extReceivedRRSN = extHighestSNFromRR + (r.extStartSN & 0xFFFF_FFFF_FFFF_0000)
-		}
-		r.logger.Infow(
-			"receiver report caught up rollover, adjusted",
-			"timeSinceLastRR", timeSinceLastRR,
-			"receivedRR", rr,
-			"extHighestSNFromRR", extHighestSNFromRR,
-			"extReceivedRRSN", extReceivedRRSN,
-			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
-		)
+		r.logger.Infow("receiver report runaway, dropping", loggingFields()...)
+		return
 	}
 
 	if r.extHighestSNFromRR > extHighestSNFromRR {
-		r.logger.Debugw(
-			"receiver report out-of-order, dropping",
-			"timeSinceLastRR", timeSinceLastRR,
-			"receivedRR", rr,
-			"extHighestSNFromRR", extHighestSNFromRR,
-			"extReceivedRRSN", extReceivedRRSN,
-			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
-		)
+		r.logger.Debugw("receiver report out-of-order, dropping", loggingFields()...)
 		return
 	}
 	r.extHighestSNFromRR = extHighestSNFromRR
@@ -829,10 +769,9 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 	}
 
 	// update snapshots
-	for i := uint32(0); i < r.nextSnapshotID-cFirstSnapshotID; i++ {
-		s := &r.snapshots[i]
-		if isRttChanged {
-			s.maybeUpdateMaxRTT(rtt)
+	if isRttChanged {
+		for i := uint32(0); i < r.nextSnapshotID-cFirstSnapshotID; i++ {
+			r.snapshots[i].maybeUpdateMaxRTT(rtt)
 		}
 	}
 
@@ -924,25 +863,21 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 	}
 
 	var (
-		reportTime         int64
-		reportTimeAdjusted int64
-		nowNTP             mediatransportutil.NtpTime
-		nowRTPExt          uint64
+		nowNTP    mediatransportutil.NtpTime
+		nowRTPExt uint64
 	)
 	nowNano := mono.UnixNano()
+	reportTimeAdjusted := nowNano
 	if passThrough {
 		timeSincePublisherSR := time.Duration(nowNano - publisherSRData.At)
-		reportTime = publisherSRData.At + timeSincePublisherSR.Nanoseconds()
 		reportTimeAdjusted = publisherSRData.AtAdjusted + timeSincePublisherSR.Nanoseconds()
 
 		nowNTP = mediatransportutil.ToNtpTime(mediatransportutil.NtpTime(publisherSRData.NtpTimestamp).Time().Add(timeSincePublisherSR))
 		nowRTPExt = publisherSRData.RtpTimestampExt - tsOffset + r.rtpConverter.ToRTPExt(timeSincePublisherSR)
 	} else {
 		timeSincePublisherSRAdjusted := time.Duration(nowNano - publisherSRData.AtAdjusted)
-		reportTimeAdjusted = publisherSRData.AtAdjusted + timeSincePublisherSRAdjusted.Nanoseconds()
-		reportTime = reportTimeAdjusted
 
-		nowNTP = mediatransportutil.ToNtpTime(time.Unix(0, reportTime))
+		nowNTP = mediatransportutil.ToNtpTime(time.Unix(0, nowNano))
 		nowRTPExt = publisherSRData.RtpTimestampExt - tsOffset + r.rtpConverter.ToRTPExt(timeSincePublisherSRAdjusted)
 	}
 
@@ -952,13 +887,42 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 		NtpTimestamp:    uint64(nowNTP),
 		RtpTimestamp:    uint32(nowRTPExt),
 		RtpTimestampExt: nowRTPExt,
-		At:              reportTime,
+		At:              nowNano,
 		AtAdjusted:      reportTimeAdjusted,
 		Packets:         packetCount,
 		Octets:          octetCount,
 	}
 
-	if r.srNewest != nil && nowRTPExt >= r.srNewest.RtpTimestampExt && r.clockRate != 0 {
+	loggingFields := func() *senderReportLoggingFields {
+		return &senderReportLoggingFields{
+			srData:             srData,
+			publisherSRData:    publisherSRData,
+			tsOffset:           tsOffset,
+			reportTime:         nowNano,
+			reportTimeAdjusted: reportTimeAdjusted,
+			nowNano:            nowNano,
+			nowRTPExt:          nowRTPExt,
+			rtpStats:           r,
+		}
+	}
+
+	r.updatePublisherClockRate(publisherSRData, tsOffset)
+	if r.isPublisherClockRateOff() {
+		// Extrapolating such a report at the clock rate does not match the publisher time line.
+		// Seen with audio RED while muted, the publisher report advances at 8 kHz for a 48 kHz clock.
+		r.publisherClockRateOffCount++
+		if shouldLog(r.publisherClockRateOffCount) {
+			r.logger.Infow(
+				"sending sender report, publisher clock rate off, skipping",
+				zap.Inline(loggingFields()),
+				"publisherClockRate", r.publisherClockRate,
+				"count", r.publisherClockRateOffCount,
+			)
+		}
+		return nil
+	}
+
+	if r.srNewest != nil && nowRTPExt >= r.srNewest.RtpTimestampExt {
 		nowTime := nowNTP.Time()
 		srNewestTime := mediatransportutil.NtpTime(r.srNewest.NtpTimestamp).Time()
 		timeSinceLastReport := nowTime.Sub(srNewestTime)
@@ -967,19 +931,9 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 		if timeSinceLastReport.Seconds() > 0.2 && math.Abs(float64(r.clockRate)-windowClockRate) > 0.2*float64(r.clockRate) {
 			r.clockSkewCount++
 			if shouldLog(r.clockSkewCount) {
-				srlf := &senderReportLoggingFields{
-					srData:             srData,
-					publisherSRData:    publisherSRData,
-					tsOffset:           tsOffset,
-					reportTime:         reportTime,
-					reportTimeAdjusted: reportTimeAdjusted,
-					nowNano:            nowNano,
-					nowRTPExt:          nowRTPExt,
-					rtpStats:           r,
-				}
 				r.logger.Infow(
 					"sending sender report, clock skew",
-					zap.Inline(srlf),
+					zap.Inline(loggingFields()),
 					"timeSinceLastReport", timeSinceLastReport,
 					"rtpDiffSinceLastReport", rtpDiffSinceLastReport,
 					"windowClockRate", windowClockRate,
@@ -990,21 +944,12 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 	}
 
 	if r.srNewest != nil && nowRTPExt < r.srNewest.RtpTimestampExt {
-		// If report being generated is behind the last report, skip it.
-		// Should not happen.
-		srlf := &senderReportLoggingFields{
-			srData:             srData,
-			publisherSRData:    publisherSRData,
-			tsOffset:           tsOffset,
-			reportTime:         reportTime,
-			reportTimeAdjusted: reportTimeAdjusted,
-			nowNano:            nowNano,
-			nowRTPExt:          nowRTPExt,
-			rtpStats:           r,
-		}
+		// Skip a report that is behind the last report. Cases seen
+		//   - publisher report arrives late, its receive time is far from its adjusted receive time
+		//   - media is paused and the publisher report time stamp does not advance with its clock
 		r.logger.Infow(
 			"sending sender report, out-of-order, skipping",
-			zap.Inline(srlf),
+			zap.Inline(loggingFields()),
 		)
 		return nil
 	}
@@ -1026,6 +971,34 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 		PacketCount: packetCount,
 		OctetCount:  uint32(octetCount),
 	}
+}
+
+// updatePublisherClockRate measures the rate at which publisher sender reports advance.
+func (r *RTPStatsSender) updatePublisherClockRate(publisherSRData *livekit.RTCPSenderReportState, tsOffset uint64) {
+	if publisherSRData.NtpTimestamp == r.publisherSRNTP {
+		return
+	}
+
+	rtpExt := publisherSRData.RtpTimestampExt - tsOffset
+	if r.publisherSRNTP != 0 {
+		elapsed := mediatransportutil.NtpTime(publisherSRData.NtpTimestamp).Time().Sub(mediatransportutil.NtpTime(r.publisherSRNTP).Time())
+		if elapsed <= 0 {
+			return
+		}
+		r.publisherClockRate = float64(int64(rtpExt-r.publisherSRRTPExt)) / elapsed.Seconds()
+	}
+	r.publisherSRNTP = publisherSRData.NtpTimestamp
+	r.publisherSRRTPExt = rtpExt
+}
+
+func (r *RTPStatsSender) isPublisherClockRateOff() bool {
+	if r.publisherClockRate == 0 {
+		// not measured yet
+		return false
+	}
+
+	clockRate := float64(r.clockRate)
+	return r.publisherClockRate < clockRate/cPublisherClockRateOffFactor || r.publisherClockRate > clockRate*cPublisherClockRateOffFactor
 }
 
 func (r *RTPStatsSender) DeltaInfo(snapshotID uint32) *RTPDeltaInfo {
