@@ -17,7 +17,10 @@ package service
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/netip"
 	"net/url"
+	"strings"
 
 	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
@@ -137,6 +140,11 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 		}
 		switch urlObj.Scheme {
 		case "http", "https", "srt":
+			if !s.conf.AllowPrivateURLPull {
+				if err := checkURLPullHost(ctx, urlObj.Hostname()); err != nil {
+					return nil, err
+				}
+			}
 		case "udp":
 			if !s.conf.EnableUDPURLPull {
 				return nil, ingress.ErrInvalidIngress("udp url pull is not enabled")
@@ -427,4 +435,36 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 	s.telemetry.IngressDeleted(ctx, info)
 
 	return info, nil
+}
+
+var lookupNetIP = net.DefaultResolver.LookupNetIP
+
+var cgnatPrefix = netip.MustParsePrefix("100.64.0.0/10")
+
+func checkURLPullHost(ctx context.Context, host string) error {
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return ingress.ErrInvalidIngress("url host is not allowed")
+	}
+
+	addrs, err := lookupNetIP(ctx, "ip", host)
+	if err != nil || len(addrs) == 0 {
+		return ingress.ErrInvalidIngress(fmt.Sprintf("cannot resolve url host %s", host))
+	}
+	for _, addr := range addrs {
+		if !isPublicAddr(addr) {
+			return ingress.ErrInvalidIngress("url host is not allowed")
+		}
+	}
+	return nil
+}
+
+func isPublicAddr(addr netip.Addr) bool {
+	addr = addr.Unmap()
+	if addr.Is4() && addr.As4()[0] == 0 {
+		return false
+	}
+	return addr.IsGlobalUnicast() &&
+		!addr.IsPrivate() &&
+		!cgnatPrefix.Contains(addr)
 }

@@ -544,6 +544,9 @@ type IngressConfig struct {
 	//     room, using the ingress as a relay for streams on the handler's local network the caller has
 	//     no direct access to.
 	EnableUDPURLPull bool `yaml:"enable_udp_url_pull,omitempty"`
+	// Allow http, https and srt URL pull ingresses whose host is, or resolves to, a loopback,
+	// private, link-local, CGNAT, unspecified or multicast address. Disabled by default.
+	AllowPrivateURLPull bool `yaml:"allow_private_url_pull,omitempty"`
 }
 
 type SIPConfig struct{}
