@@ -34,6 +34,25 @@ const (
 
 var participantRanks = []rank{{participantJoining, 0}, {participantActive, 1}, {participantLeft, 2}, {participantAborted, 2}}
 
+var agentKind = livekit.ParticipantInfo_AGENT.String()
+
+// namesAgent reports whether an agent attribute is stored without store_metadata: the agent name the server stamps
+// on every agent, and the mark OpenVidu agents set, so the dashboard can tell them apart from other agents.
+func namesAgent(key string) bool {
+	return key == "lk.agent_name" || key == "openvidu.agent" || strings.HasPrefix(key, "openvidu.agent.")
+}
+
+// attributesDocument holds the attributes that keep reports true for, sorted by key; nil when there are none.
+func attributesDocument(attributes map[string]string, keep func(key string) bool) bson.D {
+	var document bson.D
+	for _, key := range sortedKeys(attributes) {
+		if keep(key) {
+			document = append(document, bson.E{Key: key, Value: attributes[key]})
+		}
+	}
+	return document
+}
+
 func (p *projector) participant() {
 	info := p.event.GetParticipant()
 	sid := firstNonEmpty(p.event.GetParticipantId(), info.GetSid())
@@ -79,11 +98,11 @@ func (p *projector) participant() {
 		if info.GetMetadata() != "" {
 			f.set("metadata", info.GetMetadata())
 		}
-		if len(info.GetAttributes()) > 0 {
-			attributes := bson.D{}
-			for _, key := range sortedKeys(info.GetAttributes()) {
-				attributes = append(attributes, bson.E{Key: key, Value: info.GetAttributes()[key]})
-			}
+		if attributes := attributesDocument(info.GetAttributes(), func(string) bool { return true }); attributes != nil {
+			f.set("attributes", literal(attributes))
+		}
+	} else if kind == agentKind {
+		if attributes := attributesDocument(info.GetAttributes(), namesAgent); attributes != nil {
 			f.set("attributes", literal(attributes))
 		}
 	}

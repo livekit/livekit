@@ -419,6 +419,49 @@ func TestWriter(t *testing.T) {
 		require.Equal(t, map[string]int32{"none": 1}, hourly.Participants.ByBrowser)
 	})
 
+	t.Run("agents keep the attributes that name them without store_metadata", func(t *testing.T) {
+		env := newEnv(t, client)
+		var ev events
+		openvidu := participantInfo("PA_o", "agent-AJ_o", livekit.ParticipantInfo_AGENT, at("1s"))
+		openvidu.Attributes = map[string]string{
+			"lk.agent_name": "speech-processing", "openvidu.agent": "speech-processing", "openvidu.agent.version": "3.10.0",
+			"lk.agent.name": "SECRET-sdk-name", "lk.agent.state": "SECRET-listening", "openvidu.agents": "SECRET-prefix",
+			"customer": "SECRET-customer",
+		}
+		other := participantInfo("PA_d", "agent-AJ_d", livekit.ParticipantInfo_AGENT, at("1s"))
+		other.Attributes = map[string]string{"lk.agent_name": "dummy-agent", "lk.agent.state": "SECRET-listening"}
+		unnamed := participantInfo("PA_u", "agent-AJ_u", livekit.ParticipantInfo_AGENT, at("1s"))
+		unnamed.Attributes = map[string]string{"lk.agent.state": "SECRET-listening"}
+		user := participantInfo("PA_s", "alice", livekit.ParticipantInfo_STANDARD, at("1s"))
+		user.Attributes = map[string]string{"lk.agent_name": "SECRET-user", "openvidu.agent": "SECRET-user"}
+		env.apply([]*livekit.AnalyticsEvent{ev.roomCreated("RM_1", "Daily", at("0s")),
+			ev.joined("RM_1", openvidu, at("1s")), ev.joined("RM_1", other, at("1s")), ev.joined("RM_1", unnamed, at("1s")),
+			ev.joined("RM_1", user, at("1s")), ev.left("RM_1", openvidu, at("9s"), livekit.DisconnectReason_CLIENT_INITIATED)})
+
+		marked := find[schema.ParticipantDocument](env, schema.CollectionParticipants, "PA_o")
+		require.Equal(t, map[string]string{
+			"lk.agent_name": "speech-processing", "openvidu.agent": "speech-processing", "openvidu.agent.version": "3.10.0",
+		}, marked.Attributes)
+		require.Empty(t, marked.Metadata)
+		require.Equal(t, map[string]string{"lk.agent_name": "dummy-agent"},
+			find[schema.ParticipantDocument](env, schema.CollectionParticipants, "PA_d").Attributes)
+		require.Nil(t, find[schema.ParticipantDocument](env, schema.CollectionParticipants, "PA_u").Attributes)
+		require.Nil(t, find[schema.ParticipantDocument](env, schema.CollectionParticipants, "PA_s").Attributes)
+		// raw events keep no attribute without store_metadata, agents' included
+		assertNoSecrets(t, env)
+		require.Zero(t, count(env, schema.CollectionEvents, bson.D{{Key: "payload.participant.attributes", Value: bson.D{{Key: "$exists", Value: true}}}}))
+	})
+
+	t.Run("agents keep every attribute with store_metadata", func(t *testing.T) {
+		env := newEnv(t, client, func(c *openviduconfig.AnalyticsConfig) { c.StoreMetadata = true })
+		var ev events
+		agent := participantInfo("PA_o", "agent-AJ_o", livekit.ParticipantInfo_AGENT, at("1s"))
+		agent.Attributes = map[string]string{"lk.agent_name": "speech-processing", "lk.agent.state": "listening", "customer": "acme"}
+		env.apply([]*livekit.AnalyticsEvent{ev.roomCreated("RM_1", "Daily", at("0s")), ev.joined("RM_1", agent, at("1s"))})
+
+		require.Equal(t, agent.Attributes, find[schema.ParticipantDocument](env, schema.CollectionParticipants, "PA_o").Attributes)
+	})
+
 	t.Run("values starting with $ stored as they are", func(t *testing.T) {
 		env := newEnv(t, client, func(c *openviduconfig.AnalyticsConfig) { c.StoreMetadata = true })
 		var ev events
