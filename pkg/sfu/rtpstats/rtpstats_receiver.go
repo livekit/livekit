@@ -99,6 +99,9 @@ type RTPFlowState struct {
 
 	IsDuplicate  bool
 	IsOutOfOrder bool
+	// IsLossFilled is set when the packet arrived for a sequence number that
+	// was counted as lost.
+	IsLossFilled bool
 
 	ExtSequenceNumber uint64
 	ExtTimestamp      uint64
@@ -448,6 +451,7 @@ func (r *RTPStatsReceiver) Update(
 				flowState.IsDuplicate = true
 			} else {
 				r.packetsLost--
+				flowState.IsLossFilled = true
 			}
 		}
 
@@ -715,6 +719,19 @@ func (r *RTPStatsReceiver) LastSenderReportTime() time.Time {
 	return time.Time{}
 }
 
+// UpdateRepaired records a lost packet that was filled by a repair, an RTX
+// retransmission or a FEC recovery. Receiver reports keep counting it as lost.
+func (r *RTPStatsReceiver) UpdateRepaired() {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if r.endTime != 0 {
+		return
+	}
+
+	r.packetsRepaired++
+}
+
 func (r *RTPStatsReceiver) GetRtcpReceptionReport(ssrc uint32, proxyFracLost uint8, snapshotID uint32) *rtcp.ReceptionReport {
 	r.lock.Lock()
 	defer r.lock.Unlock()
@@ -738,14 +755,18 @@ func (r *RTPStatsReceiver) GetRtcpReceptionReport(ssrc uint32, proxyFracLost uin
 		return nil
 	}
 
-	packetsLost := uint32(now.packetsLost - then.packetsLost)
+	// Report loss before repair, as libwebrtc receivers do: packets restored by
+	// RTX or recovered by FEC are not counted as received. Otherwise a sender's
+	// loss-based protection, such as FlexFEC, sees no loss as long as repairs
+	// keep up, and backs off.
+	packetsLost := uint32((now.packetsLost + now.packetsRepaired) - (then.packetsLost + then.packetsRepaired))
 	if int32(packetsLost) < 0 {
 		packetsLost = 0
 	}
 	lossRate := float32(packetsLost) / float32(packetsExpected)
-	fracLost := max(proxyFracLost, uint8(lossRate*256.0))
+	fracLost := max(proxyFracLost, uint8(min(lossRate*256.0, 255.0)))
 
-	totalLost := min(r.packetsLost, 0xffffff) // 24-bits max
+	totalLost := min(r.packetsLost+r.packetsRepaired, 0xffffff) // 24-bits max
 
 	lastSR := uint32(0)
 	dlsr := uint32(0)
