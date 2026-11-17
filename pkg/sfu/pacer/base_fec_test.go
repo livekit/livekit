@@ -94,7 +94,7 @@ func TestPacerFECFinalHeadersAndAccounting(t *testing.T) {
 		require.Equal(t, p.MarshalSize(), bw.sizes[i], "BWE must account for every media and repair byte")
 		require.EqualValues(t, i+1, binary.BigEndian.Uint16(p.GetExtension(5)))
 		if i < 5 && i != 2 {
-			media[p.SequenceNumber], _ = p.Marshal()
+			media[p.SequenceNumber], _ = zeroMutableExtensions(p).Marshal()
 		}
 	}
 	require.Equal(t, wireBytes, total, "repair bytes must consume the pacer budget")
@@ -107,9 +107,20 @@ func TestPacerFECFinalHeadersAndAccounting(t *testing.T) {
 	}, logger.GetLogger())
 	recovered := decoder.DecodeFEC(w.packets[5])
 	require.Len(t, recovered, 1)
-	expected, _ := w.packets[2].Marshal()
+	expected, _ := zeroMutableExtensions(w.packets[2]).Marshal()
 	actual, _ := recovered[0].Marshal()
-	require.Equal(t, expected, actual, "FEC must cover post-interceptor headers")
+	require.Equal(t, expected, actual, "FEC must cover post-interceptor headers with zeroed AST/TWCC")
+}
+
+// zeroMutableExtensions returns a copy of a sent packet with abs-send-time
+// (ID 3) and the transport-wide sequence number (ID 5) zeroed, as a libwebrtc
+// FlexFEC receiver does before recovery.
+func zeroMutableExtensions(p *rtp.Packet) *rtp.Packet {
+	p = p.Clone()
+	for _, id := range []uint8{3, 5} {
+		clear(p.GetExtension(id))
+	}
+	return p
 }
 
 func TestPacerFECSkipsRTXProbesAndFailedWrites(t *testing.T) {

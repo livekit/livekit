@@ -90,6 +90,13 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 	}
 
 	if p.FEC != nil && written > 0 && !p.IsRTX && !p.IsProbe {
+		// libwebrtc generates FEC before the sender fills in abs-send-time and
+		// the transport-wide sequence number, and its FlexFEC receiver zeroes
+		// both in media packets before recovery. Protect them as zeros too, or
+		// recovered packets get wrong bytes there, and in the payload when the
+		// header lengths in a group differ. The media is already written.
+		zeroHeaderExtension(p.Header, p.AbsSendTimeExtID)
+		zeroHeaderExtension(p.Header, p.TransportWideExtID)
 		repair := p.FEC.Encode(p.Header, p.Payload, p.IsKeyFrame)
 		sent, payloadBytes, rtpBytes := 0, 0, 0
 		for i := range repair {
@@ -124,6 +131,12 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 		p.FEC.RecordSent(sent, payloadBytes, rtpBytes)
 	}
 	return written, nil
+}
+
+func zeroHeaderExtension(header *rtp.Header, id uint8) {
+	if id != 0 {
+		clear(header.GetExtension(id))
+	}
 }
 
 // patch just abs-send-time and transport-cc extensions if applicable
