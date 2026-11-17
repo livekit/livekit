@@ -1183,6 +1183,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 			ddBytes,
 			actBytes,
 			trailerStripped,
+			extPkt.StreamGeneration,
 		)
 	}
 
@@ -2508,7 +2509,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		nackAcks++
 
 		pktBuff := *src
-		n, err := receiver.ReadRTP(pktBuff, uint8(epm.layer), epm.sourceSeqNo)
+		n, err := receiver.ReadRTP(pktBuff, uint8(epm.layer), epm.sourceSeqNo, epm.sourceStreamGeneration)
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -2615,7 +2616,7 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 			}
 
 			pktBuff := *src
-			n, err := receiver.ReadRTP(pktBuff, uint8(epm.layer), epm.sourceSeqNo)
+			n, err := receiver.ReadRTP(pktBuff, uint8(epm.layer), epm.sourceSeqNo, epm.sourceStreamGeneration)
 			if err != nil {
 				if err == io.EOF {
 					break

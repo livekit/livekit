@@ -17,6 +17,7 @@ package buffer
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"math"
 	"sync"
 	"testing"
@@ -30,6 +31,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/mediatransportutil/pkg/bucket"
 	"github.com/livekit/mediatransportutil/pkg/nack"
 
 	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
@@ -1009,4 +1011,57 @@ func TestDependencyDescriptorRestartRequestsKeyFrame(t *testing.T) {
 		}
 	}
 	require.Eventually(t, func() bool { return plis.Load() > 0 }, 3*time.Second, 50*time.Millisecond)
+}
+
+func TestGetPacketForStream(t *testing.T) {
+	newBound := func() *Buffer {
+		b := NewBuffer(123, 100, 100)
+		b.OnRtcpFeedback(func([]rtcp.Packet) {})
+		require.NoError(t, b.Bind(webrtc.RTPParameters{Codecs: []webrtc.RTPCodecParameters{opusCodec}}, opusCodec.RTPCodecCapability, 0))
+		t.Cleanup(func() { b.Close() })
+		return b
+	}
+	write := func(b *Buffer, tail byte) *ExtPacket {
+		raw, err := (&rtp.Packet{
+			Header:  rtp.Header{Version: 2, PayloadType: 111, SSRC: 123, SequenceNumber: 6000, Timestamp: 90000},
+			Payload: []byte{tail},
+		}).Marshal()
+		require.NoError(t, err)
+		_, err = b.Write(raw)
+		require.NoError(t, err)
+		ep, err := b.ReadExtended(make([]byte, 1500))
+		require.NoError(t, err)
+		t.Cleanup(func() { ReleaseExtPacket(ep) })
+		return ep
+	}
+
+	b := newBound()
+	old := write(b, 0x11)
+	buf := make([]byte, 1500)
+	n, err := b.GetPacketForStream(buf, old.ExtSequenceNumber, old.StreamGeneration)
+	require.NoError(t, err)
+	require.Equal(t, old.RawPacket, buf[:n])
+
+	// A different buffer with the same SSRC and sequence number is not the old cache.
+	other := newBound()
+	write(other, 0x22)
+	_, err = other.GetPacketForStream(buf, old.ExtSequenceNumber, old.StreamGeneration)
+	require.ErrorIs(t, err, bucket.ErrPacketMismatch)
+
+	for _, tail := range []byte{0x22, 0x33} {
+		b.RestartStream("test")
+		// Resync is deferred until the next write, but old metadata is already obsolete.
+		_, err = b.GetPacketForStream(buf, old.ExtSequenceNumber, old.StreamGeneration)
+		require.ErrorIs(t, err, bucket.ErrPacketMismatch)
+		fresh := write(b, tail)
+		_, err = b.GetPacketForStream(buf, old.ExtSequenceNumber, old.StreamGeneration)
+		require.ErrorIs(t, err, bucket.ErrPacketMismatch)
+		n, err = b.GetPacketForStream(buf, fresh.ExtSequenceNumber, fresh.StreamGeneration)
+		require.NoError(t, err)
+		require.Equal(t, fresh.RawPacket, buf[:n])
+		old = fresh
+	}
+	require.NoError(t, b.Close())
+	_, err = b.GetPacketForStream(buf, old.ExtSequenceNumber, old.StreamGeneration)
+	require.ErrorIs(t, err, io.EOF)
 }

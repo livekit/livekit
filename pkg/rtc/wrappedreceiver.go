@@ -315,9 +315,9 @@ func (d *DummyReceiver) HeaderExtensions() []webrtc.RTPHeaderExtensionParameter 
 	return d.headerExtensions
 }
 
-func (d *DummyReceiver) ReadRTP(buf []byte, layer uint8, esn uint64) (int, error) {
+func (d *DummyReceiver) ReadRTP(buf []byte, layer uint8, esn uint64, streamGeneration uint64) (int, error) {
 	if receiver := d.getReceiver(); receiver != nil {
-		return receiver.ReadRTP(buf, layer, esn)
+		return receiver.ReadRTP(buf, layer, esn, streamGeneration)
 	}
 	return 0, errors.New("no receiver")
 }
@@ -564,9 +564,9 @@ func (d *DummyRedReceiver) GetDownTracks() []sfu.TrackSender {
 	return slices.Collect(maps.Values(d.downTracks))
 }
 
-func (d *DummyRedReceiver) ReadRTP(buf []byte, layer uint8, esn uint64) (int, error) {
+func (d *DummyRedReceiver) ReadRTP(buf []byte, layer uint8, esn uint64, streamGeneration uint64) (int, error) {
 	if r, ok := d.redReceiver.Load().(sfu.TrackReceiver); ok {
-		return r.ReadRTP(buf, layer, esn)
+		return r.ReadRTP(buf, layer, esn, streamGeneration)
 	}
 	return 0, errors.New("no receiver")
 }
