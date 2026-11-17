@@ -1065,3 +1065,37 @@ func TestGetPacketForStream(t *testing.T) {
 	_, err = b.GetPacketForStream(buf, old.ExtSequenceNumber, old.StreamGeneration)
 	require.ErrorIs(t, err, io.EOF)
 }
+
+func TestHandleIncomingPacketStreamGeneration(t *testing.T) {
+	b := NewBuffer(123, 100, 100)
+	b.OnRtcpFeedback(func([]rtcp.Packet) {})
+	require.NoError(t, b.Bind(webrtc.RTPParameters{Codecs: []webrtc.RTPCodecParameters{opusCodec}}, opusCodec.RTPCodecCapability, 0))
+	t.Cleanup(func() { b.Close() })
+
+	handle := func(sn uint16) (uint64, uint64, []byte) {
+		raw, err := (&rtp.Packet{
+			Header:  rtp.Header{Version: 2, PayloadType: 111, SSRC: 123, SequenceNumber: sn, Timestamp: 90000},
+			Payload: []byte{byte(sn)},
+		}).Marshal()
+		require.NoError(t, err)
+		esn, generation, err := b.HandleIncomingPacket(raw, nil, time.Now().UnixNano(), false, false, nil, 0)
+		require.NoError(t, err)
+		return esn, generation, raw
+	}
+
+	buf := make([]byte, 1500)
+	oldESN, oldGeneration, raw := handle(6000)
+	require.NotZero(t, oldGeneration)
+	n, err := b.GetPacketForStream(buf, oldESN, oldGeneration)
+	require.NoError(t, err)
+	require.Equal(t, raw, buf[:n])
+
+	b.RestartStream("test")
+	esn, generation, raw := handle(6000)
+	require.NotEqual(t, oldGeneration, generation)
+	_, err = b.GetPacketForStream(buf, oldESN, oldGeneration)
+	require.ErrorIs(t, err, bucket.ErrPacketMismatch)
+	n, err = b.GetPacketForStream(buf, esn, generation)
+	require.NoError(t, err)
+	require.Equal(t, raw, buf[:n])
+}
