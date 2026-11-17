@@ -128,6 +128,10 @@ type fecLossRecorder struct {
 	fecPackets   int
 	// highest media sequence number seen, including dropped packets
 	highestSeq uint16
+	// sequence number cycles and media packets dropped since the start,
+	// for the cumulative counters of receiver reports
+	seqCycles uint32
+	totalLost uint32
 }
 
 func newFECLossRecorder() *fecLossRecorder {
@@ -193,11 +197,15 @@ func (r *fecLossRecorder) filter(pkt *rtp.Packet) bool {
 		return true
 	}
 	if r.mediaPackets == 0 || int16(pkt.SequenceNumber-r.highestSeq) > 0 {
+		if pkt.SequenceNumber < r.highestSeq {
+			r.seqCycles++
+		}
 		r.highestSeq = pkt.SequenceNumber
 	}
 	r.mediaPackets++
 	if r.dropEvery > 0 && r.mediaPackets%r.dropEvery == 0 {
 		r.dropped[pkt.SequenceNumber] = raw
+		r.totalLost++
 		return false
 	}
 	r.received[pkt.SequenceNumber] = raw
@@ -241,9 +249,10 @@ func (r *fecLossRecorder) result() fecWindowResult {
 	return res
 }
 
-// receiverReport reports the simulated loss pattern for the media SSRC. The
-// test client does not send receiver reports itself, so the test reports what
-// a receiver would see, as input for adaptive protection.
+// receiverReport reports the simulated loss for the media SSRC. The test
+// client does not send receiver reports itself, so the test reports what a
+// receiver would see, as input for adaptive protection. The SFU derives loss
+// from the cumulative counters, so they must reflect the dropped packets.
 func (r *fecLossRecorder) receiverReport() *rtcp.ReceiverReport {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -258,7 +267,8 @@ func (r *fecLossRecorder) receiverReport() *rtcp.ReceiverReport {
 		Reports: []rtcp.ReceptionReport{{
 			SSRC:               r.mediaSSRC,
 			FractionLost:       fractionLost,
-			LastSequenceNumber: uint32(r.highestSeq),
+			TotalLost:          r.totalLost,
+			LastSequenceNumber: r.seqCycles<<16 | uint32(r.highestSeq),
 		}},
 	}
 }

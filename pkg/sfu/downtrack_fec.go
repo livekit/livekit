@@ -171,8 +171,9 @@ func (d *DownTrack) SetFECProtection(fec *livekit.FECProtection) {
 	}
 }
 
-// onFECReceiverReport feeds a reception report of the media SSRC to adaptive
-// and minimum protection, and lets the allocator reserve a changed overhead.
+// onFECReceiverReport feeds a loss sample aggregated from reception reports
+// of the media SSRC to adaptive and minimum protection, and lets the allocator
+// reserve a changed overhead.
 func (d *DownTrack) onFECReceiverReport(fractionLost uint8, rttMs uint32) {
 	encoder := d.fecEncoder.Load()
 	if encoder == nil {
