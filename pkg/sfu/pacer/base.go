@@ -89,7 +89,54 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 		return 0, err
 	}
 
+	if p.FEC != nil && written > 0 && !p.IsRTX && !p.IsProbe {
+		// libwebrtc generates FEC before the sender fills in abs-send-time and
+		// the transport-wide sequence number, and its FlexFEC receiver zeroes
+		// both in media packets before recovery. Protect them as zeros too, or
+		// recovered packets get wrong bytes there, and in the payload when the
+		// header lengths in a group differ. The media is already written.
+		zeroHeaderExtension(p.Header, p.AbsSendTimeExtID)
+		zeroHeaderExtension(p.Header, p.TransportWideExtID)
+		repair := p.FEC.Encode(p.Header, p.Payload, p.IsKeyFrame)
+		sent, payloadBytes, rtpBytes := 0, 0, 0
+		for i := range repair {
+			packet := &repair[i]
+			fec := PacketFactory.Get().(*Packet)
+			*fec = Packet{
+				Header:             &packet.Header,
+				Payload:            packet.Payload,
+				AbsSendTimeExtID:   p.AbsSendTimeExtID,
+				TransportWideExtID: p.TransportWideExtID,
+				WriteStream:        p.WriteStream,
+				ProbeClusterId:     p.ProbeClusterId,
+			}
+			// Include extension space in BWE/probe accounting before patching.
+			if fec.AbsSendTimeExtID != 0 {
+				_ = fec.Header.SetExtension(fec.AbsSendTimeExtID, []byte{0, 0, 0})
+			}
+			if fec.TransportWideExtID != 0 {
+				_ = fec.Header.SetExtension(fec.TransportWideExtID, []byte{0, 0})
+			}
+			fec.HeaderSize = fec.Header.MarshalSize()
+			// Charge repair bytes to this send's pacer budget. Repairs immediately
+			// follow their media group even when there is a long media queue.
+			n, fecErr := b.SendPacket(fec)
+			written += n
+			if fecErr == nil && n > 0 {
+				sent++
+				payloadBytes += len(packet.Payload)
+				rtpBytes += packet.MarshalSize()
+			}
+		}
+		p.FEC.RecordSent(sent, payloadBytes, rtpBytes)
+	}
 	return written, nil
+}
+
+func zeroHeaderExtension(header *rtp.Header, id uint8) {
+	if id != 0 {
+		clear(header.GetExtension(id))
+	}
 }
 
 // patch just abs-send-time and transport-cc extensions if applicable
