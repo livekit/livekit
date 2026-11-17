@@ -874,22 +874,28 @@ func (r *Room) GetAgentDispatches(dispatchID string) ([]*livekit.AgentDispatch, 
 }
 
 func (r *Room) AddAgentDispatch(dispatch *livekit.AgentDispatch) (*livekit.AgentDispatch, error) {
-	ad, err := r.createAgentDispatch(dispatch)
-	if err != nil {
-		return nil, err
+	ad := newAgentDispatchWithState(dispatch)
+	if r.agentStore != nil {
+		if err := r.agentStore.StoreAgentDispatch(context.Background(), ad.AgentDispatch); err != nil {
+			return nil, err
+		}
 	}
 
 	r.launchRoomAgents([]*agentDispatch{ad})
 
-	r.lock.RLock()
-	// launchPublisherAgents starts a goroutine to send requests, so is safe to call locked
+	// Add the dispatch and launch its jobs for the current participants under one lock hold.
+	// Join and onTrackPublished launch the jobs of every dispatch in the map under the lock, so
+	// a participant that joins or publishes concurrently gets each job exactly once.
+	r.lock.Lock()
+	r.agentDispatches[ad.Id] = ad
+	// launchTargetAgents starts a goroutine to send requests, so is safe to call locked
 	for _, p := range r.participants {
-		if p.IsPublisher() {
+		if r.hasPublished[p.Identity()] && p.IsPublisher() {
 			r.launchTargetAgents([]*agentDispatch{ad}, p, livekit.JobType_JT_PUBLISHER)
 		}
 		r.launchTargetAgents([]*agentDispatch{ad}, p, livekit.JobType_JT_PARTICIPANT)
 	}
-	r.lock.RUnlock()
+	r.lock.Unlock()
 
 	return ad.AgentDispatch, nil
 }
@@ -1103,17 +1109,14 @@ func (r *Room) onTrackPublished(participant types.Participant, track types.Media
 
 	// launch jobs
 	r.lock.Lock()
-	hasPublished := r.hasPublished[participant.Identity()]
+	if !r.hasPublished[participant.Identity()] {
+		// in the same lock hold as setting hasPublished, see AddAgentDispatch
+		r.launchTargetAgents(slices.Collect(maps.Values(r.agentDispatches)), participant, livekit.JobType_JT_PUBLISHER)
+	}
 	r.hasPublished[participant.Identity()] = true
 	launchedParticipantEgress := r.launchedParticipantEgress[participant.Identity()]
 	r.launchedParticipantEgress[participant.Identity()] = true
 	r.lock.Unlock()
-
-	if !hasPublished {
-		r.lock.RLock()
-		r.launchTargetAgents(slices.Collect(maps.Values(r.agentDispatches)), participant, livekit.JobType_JT_PUBLISHER)
-		r.lock.RUnlock()
-	}
 	if !launchedParticipantEgress && r.internal != nil && r.internal.ParticipantEgress != nil {
 		go func() {
 			if err := StartParticipantEgress(
@@ -1863,11 +1866,15 @@ func (r *Room) DebugInfo() map[string]any {
 	return info
 }
 
-func (r *Room) createAgentDispatch(dispatch *livekit.AgentDispatch) (*agentDispatch, error) {
+func newAgentDispatchWithState(dispatch *livekit.AgentDispatch) *agentDispatch {
 	dispatch.State = &livekit.AgentDispatchState{
 		CreatedAt: time.Now().UnixNano(),
 	}
-	ad := newAgentDispatch(dispatch)
+	return newAgentDispatch(dispatch)
+}
+
+func (r *Room) createAgentDispatch(dispatch *livekit.AgentDispatch) (*agentDispatch, error) {
+	ad := newAgentDispatchWithState(dispatch)
 
 	r.lock.Lock()
 	r.agentDispatches[ad.Id] = ad
