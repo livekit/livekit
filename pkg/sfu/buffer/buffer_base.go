@@ -866,6 +866,11 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 		return 0, fmt.Errorf("unhandled reason: %s", flowState.UnhandledReason.String())
 	}
 
+	if isRTX && flowState.IsLossFilled {
+		// RTX retransmissions and FEC recoveries both arrive as repairs
+		b.rtpStats.UpdateRepaired()
+	}
+
 	if b.params.IsOOBSequenceNumber {
 		b.updateOOBNACKState(oobSequenceNumber, arrivalTime, len(rawPkt))
 	} else {

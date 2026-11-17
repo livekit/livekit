@@ -269,6 +269,67 @@ func Test_RTPStatsReceiver_UpdateFEC(t *testing.T) {
 	require.EqualValues(t, 3, stats.FecPacketsRecovered)
 }
 
+func Test_RTPStatsReceiver_ReceptionReportCountsRepairedAsLost(t *testing.T) {
+	r := NewRTPStatsReceiver(RTPStatsParams{})
+	r.SetClockRate(90000)
+	snapshotID := r.NewSnapshotId()
+
+	update := func(sn uint16) RTPFlowState {
+		packet := getPacket(sn, 3000*uint32(sn), 1000)
+		return r.Update(
+			time.Now().UnixNano(),
+			packet.SequenceNumber,
+			packet.Timestamp,
+			packet.Marker,
+			packet.Header.MarshalSize(),
+			len(packet.Payload),
+			0,
+		)
+	}
+
+	// 101-104 are lost
+	update(100)
+	for sn := uint16(105); sn < 110; sn++ {
+		require.False(t, update(sn).IsLossFilled)
+	}
+	// 101 and 102 are repaired, 103 is only reordered
+	for _, sn := range []uint16{101, 102} {
+		require.True(t, update(sn).IsLossFilled)
+		r.UpdateRepaired()
+	}
+	require.True(t, update(103).IsLossFilled)
+	// a duplicate does not fill a loss
+	require.False(t, update(102).IsLossFilled)
+	for sn := uint16(110); sn < 120; sn++ {
+		update(sn)
+	}
+
+	// 20 packets expected, 1 still lost and 2 repaired
+	rr := r.GetRtcpReceptionReport(1234, 0, snapshotID)
+	require.NotNil(t, rr)
+	require.EqualValues(t, 38, rr.FractionLost) // 3/20 in Q8
+	require.EqualValues(t, 3, rr.TotalLost)
+
+	// a late repair does not take loss away from the next interval
+	require.True(t, update(104).IsLossFilled)
+	r.UpdateRepaired()
+	for sn := uint16(120); sn < 130; sn++ {
+		update(sn)
+	}
+	rr = r.GetRtcpReceptionReport(1234, 0, snapshotID)
+	require.NotNil(t, rr)
+	require.EqualValues(t, 0, rr.FractionLost)
+	require.EqualValues(t, 3, rr.TotalLost)
+
+	// the proxied loss still applies when it is higher
+	for sn := uint16(130); sn < 140; sn++ {
+		update(sn)
+	}
+	rr = r.GetRtcpReceptionReport(1234, 64, snapshotID)
+	require.NotNil(t, rr)
+	require.EqualValues(t, 64, rr.FractionLost)
+}
+
 func Test_RTPStatsReceiver_Restart(t *testing.T) {
 	clockRate := uint32(90000)
 	r := NewRTPStatsReceiver(RTPStatsParams{})
