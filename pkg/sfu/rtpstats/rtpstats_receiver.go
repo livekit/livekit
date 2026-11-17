@@ -42,7 +42,8 @@ const (
 
 	restartThreshold = 5
 
-	// a run of rejected packets must last this long, with no accepted packet, to be a restart
+	// a run of rejected packets must last this long, with no accepted packet, to be a restart.
+	// Restarts are rare, the wait covers enough packets to tell a restart from a burst of bad packets.
 	restartMinDuration = int64(time.Second)
 
 	// sequence number gap allowed inside a run of rejected packets, covers loss and padding
@@ -486,7 +487,10 @@ func (r *RTPStatsReceiver) Update(
 			r.updateJitter(resTS.ExtendedVal, packetTime)
 		}
 	}
-	r.resetRestart(packetTime)
+	// skipped sequence numbers are reported with no payload, they do not show that the stream is alive
+	if payloadSize > 0 {
+		r.resetRestart(packetTime)
+	}
 	return
 }
 
@@ -857,12 +861,23 @@ func (r *RTPStatsReceiver) dropPacketLocked(
 	return reason
 }
 
+// maybeRestart reports a likely restart, false positives are possible.
+// A declared run that ends with an accepted packet logs "stream recovered without restart".
 func (r *RTPStatsReceiver) maybeRestart(packetTime int64, sn uint16, ts uint32, payloadSize int) bool {
+	rr := &r.restartRun
 	if payloadSize == 0 {
+		// padding moves the run forward in sequence number, it does not count towards a restart
+		if rr.count != 0 && sn-rr.last.sequenceNumber-1 < restartMaxSNGap {
+			rr.last.sequenceNumber = sn
+		}
 		return false
 	}
 
-	rr := &r.restartRun
+	// a reordered or duplicate packet of the run does not change the run
+	if rr.count != 0 && rr.last.sequenceNumber-sn < restartMaxSNGap {
+		return false
+	}
+
 	if rr.isDeclared {
 		rr.last = packet{sn, ts}
 		rr.count++

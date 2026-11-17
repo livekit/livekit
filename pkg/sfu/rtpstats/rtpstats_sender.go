@@ -46,6 +46,9 @@ const cMaxProcessedReceptionReports = 64
 // publisher sender reports that advance faster or slower than the clock rate by this factor are not used
 const cPublisherClockRateOffFactor = 2.0
 
+// publisher reports closer than this do not give a reliable rate
+const cPublisherClockRateMinElapsed = time.Second
+
 type snInfo struct {
 	pktSize uint16
 	hdrSize uint8
@@ -320,7 +323,6 @@ type senderReportLoggingFields struct {
 	srData             *livekit.RTCPSenderReportState
 	publisherSRData    *livekit.RTCPSenderReportState
 	tsOffset           uint64
-	reportTime         int64
 	reportTimeAdjusted int64
 	nowNano            int64
 	nowRTPExt          uint64
@@ -333,7 +335,6 @@ func (srlf *senderReportLoggingFields) MarshalLogObject(e zapcore.ObjectEncoder)
 		e.AddObject("feed", WrappedRTCPSenderReportStateLogger{srlf.publisherSRData})
 		e.AddUint64("tsOffset", srlf.tsOffset)
 		e.AddTime("timeNow", time.Now())
-		e.AddInt64("reportTime", srlf.reportTime)
 		e.AddInt64("reportTimeAdjusted", srlf.reportTimeAdjusted)
 		e.AddDuration("timeSinceHighest", time.Duration(srlf.nowNano-srlf.rtpStats.highestTime))
 		e.AddDuration("timeSinceFirst", time.Duration(srlf.nowNano-srlf.rtpStats.firstTime))
@@ -409,6 +410,8 @@ func (r *RTPStatsSender) Seed(from *RTPStatsSender) {
 	if !r.seed(from.rtpStatsBase) {
 		return
 	}
+
+	// publisher clock rate is not seeded, a pair of publisher reports across nodes does not give a valid rate
 
 	r.extStartSN = from.extStartSN
 	r.extHighestSN = from.extHighestSN
@@ -880,7 +883,6 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 			srData:             srData,
 			publisherSRData:    publisherSRData,
 			tsOffset:           tsOffset,
-			reportTime:         nowNano,
 			reportTimeAdjusted: reportTimeAdjusted,
 			nowNano:            nowNano,
 			nowRTPExt:          nowRTPExt,
@@ -964,11 +966,14 @@ func (r *RTPStatsSender) updatePublisherClockRate(publisherSRData *livekit.RTCPS
 	rtpExt := publisherSRData.RtpTimestampExt - tsOffset
 	if r.publisherSRNTP != 0 {
 		elapsed := mediatransportutil.NtpTime(publisherSRData.NtpTimestamp).Time().Sub(mediatransportutil.NtpTime(r.publisherSRNTP).Time())
-		if elapsed <= 0 {
+		if elapsed > 0 && elapsed < cPublisherClockRateMinElapsed {
 			return
 		}
-		r.publisherClockRate = float64(int64(rtpExt-r.publisherSRRTPExt)) / elapsed.Seconds()
-		r.isPublisherClockRateKnown = true
+		// an older report comes with a publisher restart or a layer switch, measure again from that report
+		r.isPublisherClockRateKnown = elapsed > 0
+		if elapsed > 0 {
+			r.publisherClockRate = float64(int64(rtpExt-r.publisherSRRTPExt)) / elapsed.Seconds()
+		}
 	}
 	r.publisherSRNTP = publisherSRData.NtpTimestamp
 	r.publisherSRRTPExt = rtpExt

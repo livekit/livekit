@@ -356,6 +356,52 @@ func Test_RTPStatsReceiver_Restart(t *testing.T) {
 		require.Zero(t, countRestarts(feed(r, at, 3460, 3099713139+49*3000, 60)))
 		require.Zero(t, r.restartRun.count)
 	})
+
+	t.Run("reordered and duplicate packets inside the run still restart", func(t *testing.T) {
+		r, at := newReceiver()
+		feed(r, at, 3411, 3099713139, 29)
+		restarts := 0
+		for sn, ts := uint16(3440), uint32(1127077245); sn < 3540; sn, ts = sn+10, ts+30000 {
+			restarts += countRestarts(feed(r, at, sn, ts, 10))
+			// a duplicate of the last packet and a packet from 3 back
+			restarts += countRestarts(feed(r, at, sn+9, ts+9*3000, 1))
+			restarts += countRestarts(feed(r, at, sn+6, ts+6*3000, 1))
+		}
+		require.Equal(t, 1, restarts)
+	})
+
+	t.Run("padding burst inside the run still restarts", func(t *testing.T) {
+		r, at := newReceiver()
+		feed(r, at, 3411, 3099713139, 29)
+		restarts := 0
+		sn, ts := uint16(3440), uint32(1127077245)
+		for i := 0; i < 10; i++ {
+			restarts += countRestarts(feed(r, at, sn, ts, 10))
+			sn, ts = sn+10, ts+30000
+			// padding burst longer than restartMaxSNGap at the timestamp of the last packet
+			for j := 0; j < 2*restartMaxSNGap; j++ {
+				fs := r.Update(*at, sn, ts-3000, false, 12, 0, 200)
+				require.NotEqual(t, RTPFlowUnhandledReasonRestart, fs.UnhandledReason)
+				sn++
+			}
+		}
+		require.Equal(t, 1, restarts)
+	})
+
+	t.Run("skipped sequence numbers do not end the run", func(t *testing.T) {
+		r, at := newReceiver()
+		feed(r, at, 3411, 3099713139, 29)
+		restarts := 0
+		sn, ts := uint16(3440), uint32(1127077245)
+		for i := 0; i < 10; i++ {
+			// skipped sequence number is reported at the highest timestamp with no payload
+			r.Update(*at, sn, r.HighestTimestamp(), false, 0, 0, 0)
+			sn++
+			restarts += countRestarts(feed(r, at, sn, ts, 10))
+			sn, ts = sn+10, ts+30000
+		}
+		require.Equal(t, 1, restarts)
+	})
 }
 
 func Test_RTPStatsSender_getIntervalStats(t *testing.T) {
@@ -516,4 +562,43 @@ func Test_RTPStatsSender_PublisherClockRate(t *testing.T) {
 			require.NotNil(t, report)
 		}
 	}
+
+	// feeds one publisher report, ntpOffset is relative to a fixed base
+	base := mono.UnixNano()
+	newSender := func() *RTPStatsSender {
+		r := NewRTPStatsSender(RTPStatsParams{}, 128)
+		r.SetClockRate(clockRate)
+		t.Cleanup(r.Stop)
+		r.Update(time.Now().UnixNano(), 100, 1000, true, 12, 100, 0, false)
+		return r
+	}
+	feed := func(r *RTPStatsSender, ntpOffset time.Duration, rtpExt uint64) *rtcp.SenderReport {
+		return r.GetRtcpSenderReport(1234, &livekit.RTCPSenderReportState{
+			NtpTimestamp:    uint64(mediatransportutil.ToNtpTime(time.Unix(0, base+int64(ntpOffset)))),
+			RtpTimestampExt: rtpExt,
+			At:              mono.UnixNano(),
+			AtAdjusted:      mono.UnixNano(),
+		}, 0, false)
+	}
+
+	t.Run("reports close together do not give a rate", func(t *testing.T) {
+		r := newSender()
+		require.NotNil(t, feed(r, 0, 500_000))
+		// 10 ms later with a mapping error of one video frame, rate would be far above the factor
+		require.NotNil(t, feed(r, 10*time.Millisecond, 500_000+480+3000))
+		require.False(t, r.isPublisherClockRateKnown)
+		// measured against the first report once far enough from it
+		require.NotNil(t, feed(r, 3*time.Second, 500_000+3*clockRate))
+		require.True(t, r.isPublisherClockRateKnown)
+	})
+
+	t.Run("older report starts a new measurement", func(t *testing.T) {
+		r := newSender()
+		require.NotNil(t, feed(r, 10*time.Second, 500_000))
+		require.Nil(t, feed(r, 13*time.Second, 500_000+3*8000))
+		// rate is not known on the older report, the report is sent
+		require.NotNil(t, feed(r, 0, 2_000_000))
+		require.False(t, r.isPublisherClockRateKnown)
+		require.NotNil(t, feed(r, 3*time.Second, 2_000_000+3*clockRate))
+	})
 }
