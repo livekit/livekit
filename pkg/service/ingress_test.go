@@ -224,6 +224,13 @@ func TestCreateURLPullIngressHost(t *testing.T) {
 		"http://[2001:0:4136:e378:8000:63bf:3fff:fdd2]/live",
 		"http://[2001:2::1]/live",
 		"http://[2001:db8::1]/live",
+		"http://[3fff::1]/live",
+		"http://[5f00::1]/live",
+		"http://[100:0:0:1::1]/live",
+		"http://[::7f00:1]/live",
+		"http://[::a9fe:a9fe]/live",
+		"http://[1fff:ffff::1]/live",
+		"http://[4000::1]/live",
 		"http://internal.example/live",
 		"http://mixed.example/live",
 		"http://unresolvable.example/live",
@@ -258,6 +265,7 @@ func TestCreateURLPullIngressHost(t *testing.T) {
 			"http://203.0.112.1/live",
 			"http://203.0.114.1/live",
 			"http://[2001:4860:4860::8888]/live",
+			"http://[3fff:1000::1]/live",
 		} {
 			svc, _ := newService(false)
 			info, err := create(svc, url)
