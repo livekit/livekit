@@ -838,6 +838,7 @@ func (r *RTPStatsReceiver) LastSenderReportTime() time.Time {
 
 // UpdateRepaired records a lost packet that was filled by a repair, an RTX
 // retransmission or a FEC recovery. Receiver reports keep counting it as lost.
+// Callers decide which streams report loss before repair.
 func (r *RTPStatsReceiver) UpdateRepaired() {
 	r.lock.Lock()
 	defer r.lock.Unlock()
