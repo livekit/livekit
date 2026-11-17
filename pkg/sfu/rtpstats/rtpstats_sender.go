@@ -984,7 +984,9 @@ func (r *RTPStatsSender) isPublisherClockRateOff() bool {
 		return false
 	}
 
-	// a high rate is not off, the pair of reports across an unmute reads high and the report after unmute is correct
+	// a high rate is not off
+	//   - the pair of reports across an unmute reads high and the report after unmute is correct
+	//   - a publisher with a fast clock stamps media at that rate too, its report is the correct mapping
 	return r.publisherClockRate < float64(r.clockRate)/cPublisherClockRateOffFactor
 }
 
