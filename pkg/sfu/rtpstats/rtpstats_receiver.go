@@ -878,6 +878,7 @@ func (r *RTPStatsReceiver) maybeRestart(packetTime int64, sn uint16, ts uint32, 
 		return false
 	}
 
+	// a declared run is final, the time to recover is measured from its first packet
 	if rr.isDeclared {
 		rr.last = packet{sn, ts}
 		rr.count++

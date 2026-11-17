@@ -561,6 +561,10 @@ func Test_RTPStatsSender_PublisherClockRate(t *testing.T) {
 		for _, report := range run(clockRate*3/4, passThrough) {
 			require.NotNil(t, report)
 		}
+		// a high rate is not skipped, the pair of reports across an unmute reads high
+		for _, report := range run(clockRate*3, passThrough) {
+			require.NotNil(t, report)
+		}
 	}
 
 	// feeds one publisher report, ntpOffset is relative to a fixed base

@@ -43,7 +43,7 @@ const (
 // max number of receiver reports kept per sender snapshot for logging
 const cMaxProcessedReceptionReports = 64
 
-// publisher sender reports that advance faster or slower than the clock rate by this factor are not used
+// publisher sender reports that advance slower than the clock rate by this factor are not used
 const cPublisherClockRateOffFactor = 2.0
 
 // publisher reports closer than this do not give a reliable rate
@@ -984,8 +984,8 @@ func (r *RTPStatsSender) isPublisherClockRateOff() bool {
 		return false
 	}
 
-	clockRate := float64(r.clockRate)
-	return r.publisherClockRate < clockRate/cPublisherClockRateOffFactor || r.publisherClockRate > clockRate*cPublisherClockRateOffFactor
+	// a high rate is not off, the pair of reports across an unmute reads high and the report after unmute is correct
+	return r.publisherClockRate < float64(r.clockRate)/cPublisherClockRateOffFactor
 }
 
 func (r *RTPStatsSender) DeltaInfo(snapshotID uint32) *RTPDeltaInfo {
