@@ -15,6 +15,7 @@
 package rtc
 
 import (
+	"io"
 	"maps"
 	"slices"
 	"sync"
@@ -184,4 +185,34 @@ func TestDummyReceiverUpgradeRacingDeleteDownTrack(t *testing.T) {
 
 	t.Run("receiver", func(t *testing.T) { run(t, false) })
 	t.Run("red", func(t *testing.T) { run(t, true) })
+}
+
+func TestDummyReceiverReadRTP(t *testing.T) {
+	for _, red := range []bool{false, true} {
+		identity := uint64(42)
+		d := &DummyReceiver{}
+		var receiver sfu.TrackReceiver = d
+		fake := &sfufakes.FakeTrackReceiver{}
+		if red {
+			r := NewDummyRedReceiver(d, true)
+			receiver = r
+		}
+		_, err := receiver.ReadRTP(nil, 2, 6000, identity)
+		require.Error(t, err)
+		if r, ok := receiver.(*DummyRedReceiver); ok {
+			r.redReceiver.Store(fake)
+		} else {
+			d.receiver.Store(fake)
+		}
+		fake.ReadRTPReturns(7, io.EOF)
+		buf := make([]byte, 20)
+		n, err := receiver.ReadRTP(buf, 2, 6000, identity)
+		require.Equal(t, 7, n)
+		require.ErrorIs(t, err, io.EOF)
+		gotBuf, layer, esn, generation := fake.ReadRTPArgsForCall(0)
+		require.Equal(t, buf, gotBuf)
+		require.EqualValues(t, 2, layer)
+		require.EqualValues(t, 6000, esn)
+		require.Equal(t, identity, generation)
+	}
 }

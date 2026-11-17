@@ -27,21 +27,41 @@ import (
 
 	. "github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
+	"github.com/livekit/livekit-server/pkg/sfu/sfufakes"
 	"github.com/livekit/livekit-server/pkg/testutils/vnettest"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
 
 func TestDownTrackRetransmitAcrossReceiverRestart(t *testing.T) {
+	testDownTrackRepairAcrossReceiverRestart(t, false)
+}
+
+func TestDownTrackProbeAcrossReceiverRestart(t *testing.T) {
+	testDownTrackRepairAcrossReceiverRestart(t, true)
+}
+
+func testDownTrackRepairAcrossReceiverRestart(t *testing.T, probe bool) {
+	t.Helper()
 	for _, stage := range []string{"none", "before lookup", "before read", "after read"} {
 		t.Run(stage, func(t *testing.T) {
 			h := vnettest.NewHosts(t)
 			factory := buffer.NewFactoryOfBufferFactory(500, 500).CreateBufferFactory()
 			cp := &capturingPacer{inner: pacer.NewPassThrough(logger.GetLogger(), newNullBWE())}
 			t.Cleanup(cp.Stop)
-			dh := newBoundDownTrack(t, h, factory, vp8CodecParams, cp, vnettest.MediaEngineConfig{Video: true})
+			dh := newBoundDownTrack(t, h, factory, vp8CodecParams, cp, vnettest.MediaEngineConfig{Video: true, HeaderExtensions: probe})
 			require.NotZero(t, dh.dt.SSRCRTX())
+			if probe {
+				listener := &sfufakes.FakeDownTrackStreamAllocatorListener{}
+				listener.IsBWEEnabledReturns(true)
+				listener.BWETypeReturns(bwe.BWETypeRemote)
+				dh.dt.SetStreamAllocatorListener(listener)
+				dh.dt.SetRTPHeaderExtensionsForTest()
+				abs, twcc := dh.dt.ExtIDsForTest()
+				require.NotZero(t, abs|twcc)
+			}
 			dh.dt.ForceForwardLayerForTest(buffer.VideoLayer{Spatial: 0, Temporal: 0})
 
 			receiver := NewReceiverBase(ReceiverBaseParams{
@@ -69,16 +89,19 @@ func TestDownTrackRetransmitAcrossReceiverRestart(t *testing.T) {
 			require.Equal(t, int32(1), dh.dt.WriteRTP(ep, 0))
 			original := append([]byte(nil), ep.Packet.Payload...)
 			buffer.ReleaseExtPacket(ep)
+			if probe {
+				feedReceiverReport(t, dh.dt, 6000)
+			}
 
 			restart := func() {
 				receiver.Restart("test")
 				write(0x22)
 			}
-			dh.receiver.ReadRTPCalls(func(buf []byte, layer uint8, esn uint64) (int, error) {
+			dh.receiver.ReadRTPCalls(func(buf []byte, layer uint8, esn uint64, streamGeneration uint64) (int, error) {
 				if stage == "before read" {
 					restart()
 				}
-				n, err := receiver.ReadRTP(buf, layer, esn)
+				n, err := receiver.ReadRTP(buf, layer, esn, streamGeneration)
 				if stage == "after read" {
 					restart()
 				}
@@ -89,8 +112,18 @@ func TestDownTrackRetransmitAcrossReceiverRestart(t *testing.T) {
 			if stage == "before lookup" {
 				restart()
 			}
-			dh.dt.RetransmitPacketsForTest([]uint16{6000})
-			repairs := cp.rtxPackets()
+			var repairs []capturedRTX
+			if probe {
+				require.Positive(t, dh.dt.WriteProbePackets(1, false))
+				for _, p := range cp.probePackets() {
+					if len(p.payload) != 0 {
+						repairs = append(repairs, p)
+					}
+				}
+			} else {
+				dh.dt.RetransmitPacketsForTest([]uint16{6000})
+				repairs = cp.rtxPackets()
+			}
 			if stage == "none" || stage == "after read" {
 				require.Len(t, repairs, 1)
 			}
