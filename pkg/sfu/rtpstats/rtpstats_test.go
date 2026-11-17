@@ -572,33 +572,42 @@ func Test_RTPStatsSender_PublisherClockRate(t *testing.T) {
 		r.Update(time.Now().UnixNano(), 100, 1000, true, 12, 100, 0, false)
 		return r
 	}
-	feed := func(r *RTPStatsSender, ntpOffset time.Duration, rtpExt uint64) *rtcp.SenderReport {
+	feed := func(r *RTPStatsSender, ntpOffset time.Duration, rtpExt uint64, tsOffset uint64) *rtcp.SenderReport {
 		return r.GetRtcpSenderReport(1234, &livekit.RTCPSenderReportState{
 			NtpTimestamp:    uint64(mediatransportutil.ToNtpTime(time.Unix(0, base+int64(ntpOffset)))),
 			RtpTimestampExt: rtpExt,
 			At:              mono.UnixNano(),
 			AtAdjusted:      mono.UnixNano(),
-		}, 0, false)
+		}, tsOffset, false)
 	}
 
 	t.Run("reports close together do not give a rate", func(t *testing.T) {
 		r := newSender()
-		require.NotNil(t, feed(r, 0, 500_000))
+		require.NotNil(t, feed(r, 0, 500_000, 0))
 		// 10 ms later with a mapping error of one video frame, rate would be far above the factor
-		require.NotNil(t, feed(r, 10*time.Millisecond, 500_000+480+3000))
+		require.NotNil(t, feed(r, 10*time.Millisecond, 500_000+480+3000, 0))
 		require.False(t, r.isPublisherClockRateKnown)
 		// measured against the first report once far enough from it
-		require.NotNil(t, feed(r, 3*time.Second, 500_000+3*clockRate))
+		require.NotNil(t, feed(r, 3*time.Second, 500_000+3*clockRate, 0))
 		require.True(t, r.isPublisherClockRateKnown)
 	})
 
 	t.Run("older report starts a new measurement", func(t *testing.T) {
 		r := newSender()
-		require.NotNil(t, feed(r, 10*time.Second, 500_000))
-		require.Nil(t, feed(r, 13*time.Second, 500_000+3*8000))
+		require.NotNil(t, feed(r, 10*time.Second, 500_000, 0))
+		require.Nil(t, feed(r, 13*time.Second, 500_000+3*8000, 0))
 		// rate is not known on the older report, the report is sent
-		require.NotNil(t, feed(r, 0, 2_000_000))
+		require.NotNil(t, feed(r, 0, 2_000_000, 0))
 		require.False(t, r.isPublisherClockRateKnown)
-		require.NotNil(t, feed(r, 3*time.Second, 2_000_000+3*clockRate))
+		require.NotNil(t, feed(r, 3*time.Second, 2_000_000+3*clockRate, 0))
+	})
+
+	t.Run("reports from sources with different timestamp bases", func(t *testing.T) {
+		r := newSender()
+		// both sources map to the same output timeline through their offsets
+		require.NotNil(t, feed(r, 0, 500_000, 400_000))
+		require.NotNil(t, feed(r, 3*time.Second, 3_000_000_000, 3_000_000_000-100_000-3*clockRate))
+		require.True(t, r.isPublisherClockRateKnown)
+		require.InDelta(t, clockRate, r.publisherClockRate, 1)
 	})
 }
