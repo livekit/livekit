@@ -145,7 +145,7 @@ type BufferProvider interface {
 		isRTX bool,
 		skippedSeqs []uint16,
 		oobSequenceNumber uint16,
-	) (uint64, error)
+	) (extSequenceNumber uint64, streamGeneration uint64, err error)
 
 	MarkForRestartStream(reason string)
 	RestartStream(reason string)
@@ -753,6 +753,7 @@ func (b *BufferBase) NotifyRead() {
 	b.readCond.Broadcast()
 }
 
+// HandleIncomingPacket returns the extended sequence number and the packet cache identity to use with GetPacketForStream.
 func (b *BufferBase) HandleIncomingPacket(
 	rawPkt []byte,
 	rtpPacket *rtp.Packet,
@@ -761,15 +762,15 @@ func (b *BufferBase) HandleIncomingPacket(
 	isRTX bool,
 	skippedSeqs []uint16,
 	oobSequenceNumber uint16,
-) (uint64, error) {
+) (uint64, uint64, error) {
 	b.Lock()
 	defer b.Unlock()
 
 	if b.isClosed.Load() {
-		return 0, io.EOF
+		return 0, 0, io.EOF
 	}
 
-	return b.HandleIncomingPacketLocked(
+	extSequenceNumber, err := b.HandleIncomingPacketLocked(
 		rawPkt,
 		rtpPacket,
 		arrivalTime,
@@ -778,6 +779,8 @@ func (b *BufferBase) HandleIncomingPacket(
 		skippedSeqs,
 		oobSequenceNumber,
 	)
+	// a restart in the call above happens before the packet is cached, so this is the generation of the packet
+	return extSequenceNumber, b.streamGeneration, err
 }
 
 func (b *BufferBase) HandleIncomingPacketLocked(
