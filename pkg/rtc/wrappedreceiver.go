@@ -231,11 +231,15 @@ func (d *DummyReceiver) Receiver() sfu.TrackReceiver {
 }
 
 func (d *DummyReceiver) Upgrade(receiver sfu.TrackReceiver) {
+	// publish the receiver under downTrackLock: a DeleteDownTrack that saw it before the
+	// pending down tracks moved would delete from the receiver, not the pending map, and
+	// the move below would then register the deleted down track on the receiver
+	d.downTrackLock.Lock()
 	if !d.receiver.CompareAndSwap(nil, receiver) {
+		d.downTrackLock.Unlock()
 		return
 	}
 
-	d.downTrackLock.Lock()
 	for _, t := range d.downTracks {
 		receiver.AddDownTrack(t)
 	}
@@ -574,9 +578,11 @@ func (d *DummyRedReceiver) upgrade(receiver sfu.TrackReceiver) {
 	} else {
 		redReceiver = receiver.GetPrimaryReceiverForRed()
 	}
+	// same as DummyReceiver.Upgrade, publish under downTrackLock so that a concurrent
+	// DeleteDownTrack can't miss a down track that is about to move
+	d.downTrackLock.Lock()
 	d.redReceiver.Store(redReceiver)
 
-	d.downTrackLock.Lock()
 	for _, t := range d.downTracks {
 		redReceiver.AddDownTrack(t)
 	}
