@@ -907,8 +907,11 @@ func (b *BufferBase) handleIncomingPacketLocked(
 		return 0, fmt.Errorf("unhandled reason: %s", flowState.UnhandledReason.String())
 	}
 
-	if isRTX && flowState.IsLossFilled {
-		// RTX retransmissions and FEC recoveries both arrive as repairs
+	if isRTX && flowState.IsLossFilled && b.fecPayloadType != 0 {
+		// RTX retransmissions and FEC recoveries both arrive as repairs. Report
+		// them as lost only to publishers that negotiated FlexFEC, whose
+		// protection follows reported loss; other publishers keep seeing loss
+		// after repair, as before.
 		b.rtpStats.UpdateRepaired()
 	}
 

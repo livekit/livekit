@@ -717,6 +717,62 @@ func TestBufferFECNACKNotSentForRecoveredPacket(t *testing.T) {
 	assert.False(t, nackedSNs[media[3].SequenceNumber], "FEC-recovered packet %d must not be NACKed", media[3].SequenceNumber)
 }
 
+func TestBufferReportsRepairedAsLostOnlyWithFlexFEC(t *testing.T) {
+	const (
+		rtxSSRC = uint32(0x33333333)
+		rtxPT   = uint8(97)
+	)
+	rtxCodec := webrtc.RTPCodecParameters{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:    webrtc.MimeTypeRTX,
+			ClockRate:   90000,
+			SDPFmtpLine: "apt=96",
+		},
+		PayloadType: webrtc.PayloadType(rtxPT),
+	}
+
+	for _, tc := range []struct {
+		name      string
+		codecs    []webrtc.RTPCodecParameters
+		totalLost uint32
+	}{
+		{"without FlexFEC", []webrtc.RTPCodecParameters{vp8Codec, rtxCodec}, 0},
+		{"with FlexFEC", []webrtc.RTPCodecParameters{vp8Codec, rtxCodec, flexFECCodec}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+			primary := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
+			rtxBuff := factory.GetOrNew(packetio.RTPBufferPacket, rtxSSRC).(*Buffer)
+			factory.SetRTXPair(rtxSSRC, fecTestMediaSSRC, "")
+
+			primary.codecType = webrtc.RTPCodecTypeVideo
+			require.NoError(t, primary.Bind(webrtc.RTPParameters{Codecs: tc.codecs}, vp8Codec.RTPCodecCapability, 0))
+
+			media := rtptest.GenerateVP8Packets(100, 10, uint8(vp8Codec.PayloadType), fecTestMediaSSRC)
+			const lostIdx = 4
+			for i := range media {
+				if i != lostIdx {
+					writePacket(t, primary, &media[i])
+				}
+			}
+
+			retransmitted := media[lostIdx].Clone()
+			retransmitted.SSRC = rtxSSRC
+			retransmitted.PayloadType = rtxPT
+			retransmitted.SequenceNumber = 500
+			retransmitted.Payload = binary.BigEndian.AppendUint16(nil, media[lostIdx].SequenceNumber)
+			retransmitted.Payload = append(retransmitted.Payload, media[lostIdx].Payload...)
+			writePacket(t, rtxBuff, retransmitted)
+
+			primary.Lock()
+			rr := primary.GetRtcpReceptionReportLocked(0)
+			primary.Unlock()
+			require.NotNil(t, rr)
+			require.Equal(t, tc.totalLost, rr.TotalLost)
+		})
+	}
+}
+
 func TestBufferFECDecoderRecreatedOnStreamRestart(t *testing.T) {
 	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
 
