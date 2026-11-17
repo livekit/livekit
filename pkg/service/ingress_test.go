@@ -20,6 +20,7 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -34,10 +35,6 @@ import (
 )
 
 func TestCreateURLPullIngressScheme(t *testing.T) {
-	service.SetLookupNetIP(t, func(context.Context, string, string) ([]netip.Addr, error) {
-		return []netip.Addr{netip.MustParseAddr("93.184.215.14")}, nil
-	})
-
 	newService := func(enableUDP bool) (*service.IngressService, *servicefakes.FakeIngressLauncher) {
 		launcher := &servicefakes.FakeIngressLauncher{}
 		launcher.LaunchPullIngressCalls(func(_ context.Context, info *livekit.IngressInfo) (*livekit.IngressInfo, error) {
@@ -54,6 +51,9 @@ func TestCreateURLPullIngressScheme(t *testing.T) {
 			nil,
 			launcher,
 		)
+		svc.SetLookupNetIP(func(context.Context, string, string) ([]netip.Addr, error) {
+			return []netip.Addr{netip.MustParseAddr("93.184.215.14")}, nil
+		})
 		return svc, launcher
 	}
 
@@ -105,7 +105,22 @@ func TestCreateURLPullIngressScheme(t *testing.T) {
 }
 
 func TestCreateURLPullIngressHost(t *testing.T) {
-	newService := func(allowPrivate bool) (*service.IngressService, *servicefakes.FakeIngressLauncher) {
+	stubLookup := func(_ context.Context, _, host string) ([]netip.Addr, error) {
+		switch strings.ToLower(host) {
+		case "public.example", "localhost", "localhost.", "foo.localhost":
+			return []netip.Addr{netip.MustParseAddr("93.184.215.14")}, nil
+		case "internal.example":
+			return []netip.Addr{netip.MustParseAddr("10.1.2.3")}, nil
+		case "mixed.example":
+			return []netip.Addr{netip.MustParseAddr("93.184.215.14"), netip.MustParseAddr("169.254.169.254")}, nil
+		}
+		if addr, err := netip.ParseAddr(host); err == nil {
+			return []netip.Addr{addr}, nil
+		}
+		return nil, errors.New("no such host")
+	}
+
+	newServiceWithLookup := func(allowPrivate bool) (*service.IngressService, *servicefakes.FakeIngressLauncher) {
 		launcher := &servicefakes.FakeIngressLauncher{}
 		launcher.LaunchPullIngressCalls(func(_ context.Context, info *livekit.IngressInfo) (*livekit.IngressInfo, error) {
 			return info, nil
@@ -123,6 +138,11 @@ func TestCreateURLPullIngressHost(t *testing.T) {
 		)
 		return svc, launcher
 	}
+	newService := func(allowPrivate bool) (*service.IngressService, *servicefakes.FakeIngressLauncher) {
+		svc, launcher := newServiceWithLookup(allowPrivate)
+		svc.SetLookupNetIP(stubLookup)
+		return svc, launcher
+	}
 
 	ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{Video: &auth.VideoGrant{IngressAdmin: true}}, "")
 
@@ -136,7 +156,7 @@ func TestCreateURLPullIngressHost(t *testing.T) {
 	}
 
 	t.Run("resolved internal addresses rejected", func(t *testing.T) {
-		svc, launcher := newService(false)
+		svc, launcher := newServiceWithLookup(false)
 		for _, url := range []string{
 			"http://localhost/live",
 			"http://127.0.0.1/live",
@@ -151,19 +171,17 @@ func TestCreateURLPullIngressHost(t *testing.T) {
 		require.Zero(t, launcher.LaunchPullIngressCallCount())
 	})
 
-	service.SetLookupNetIP(t, func(_ context.Context, _, host string) ([]netip.Addr, error) {
-		switch strings.ToLower(host) {
-		case "public.example", "localhost", "localhost.", "foo.localhost":
+	t.Run("lookup has a deadline", func(t *testing.T) {
+		svc, launcher := newServiceWithLookup(false)
+		svc.SetLookupNetIP(func(ctx context.Context, _, _ string) ([]netip.Addr, error) {
+			deadline, ok := ctx.Deadline()
+			require.True(t, ok, "lookup context has no deadline")
+			require.WithinDuration(t, time.Now().Add(5*time.Second), deadline, time.Second)
 			return []netip.Addr{netip.MustParseAddr("93.184.215.14")}, nil
-		case "internal.example":
-			return []netip.Addr{netip.MustParseAddr("10.1.2.3")}, nil
-		case "mixed.example":
-			return []netip.Addr{netip.MustParseAddr("93.184.215.14"), netip.MustParseAddr("169.254.169.254")}, nil
-		}
-		if addr, err := netip.ParseAddr(host); err == nil {
-			return []netip.Addr{addr}, nil
-		}
-		return nil, errors.New("no such host")
+		})
+		_, err := create(svc, "http://public.example/live")
+		require.NoError(t, err)
+		require.Equal(t, 1, launcher.LaunchPullIngressCallCount())
 	})
 
 	rejected := []string{
@@ -197,6 +215,15 @@ func TestCreateURLPullIngressHost(t *testing.T) {
 		"http://[64:ff9b::a00:1]/live",
 		"http://[2002:a9fe:a9fe::1]/live",
 		"http://[2002:7f00:1::]/live",
+		"http://192.0.0.1/live",
+		"http://192.0.2.1/live",
+		"http://198.51.100.1/live",
+		"http://203.0.113.255/live",
+		"http://[64:ff9b:1::5db8:d70e]/live",
+		"http://[100::1]/live",
+		"http://[2001:0:4136:e378:8000:63bf:3fff:fdd2]/live",
+		"http://[2001:2::1]/live",
+		"http://[2001:db8::1]/live",
 		"http://internal.example/live",
 		"http://mixed.example/live",
 		"http://unresolvable.example/live",
@@ -225,6 +252,12 @@ func TestCreateURLPullIngressHost(t *testing.T) {
 			"http://223.255.255.254/live",
 			"http://[64:ff9b::5db8:d70e]/live",
 			"http://[2002:5db8:d70e::1]/live",
+			"http://192.0.1.1/live",
+			"http://192.0.3.1/live",
+			"http://198.51.99.1/live",
+			"http://203.0.112.1/live",
+			"http://203.0.114.1/live",
+			"http://[2001:4860:4860::8888]/live",
 		} {
 			svc, _ := newService(false)
 			info, err := create(svc, url)

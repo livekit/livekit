@@ -17,11 +17,8 @@ package service
 import (
 	"context"
 	"net/netip"
-	"testing"
 )
 
-func SetLookupNetIP(t *testing.T, fn func(ctx context.Context, network, host string) ([]netip.Addr, error)) {
-	prev := lookupNetIP
-	lookupNetIP = fn
-	t.Cleanup(func() { lookupNetIP = prev })
+func (s *IngressService) SetLookupNetIP(fn func(ctx context.Context, network, host string) ([]netip.Addr, error)) {
+	s.lookupNetIP = fn
 }

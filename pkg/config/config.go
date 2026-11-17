@@ -545,8 +545,11 @@ type IngressConfig struct {
 	//     no direct access to.
 	EnableUDPURLPull bool `yaml:"enable_udp_url_pull,omitempty"`
 	// Allow http, https and srt URL pull ingresses whose host is, or resolves to, a loopback,
-	// private, link-local, CGNAT, reserved, unspecified or multicast address, including one embedded
-	// in a NAT64 or 6to4 address. Disabled by default.
+	// private, link-local, CGNAT, reserved, documentation, unspecified or multicast address,
+	// including one embedded in a NAT64, 6to4 or Teredo address. Disabled by default.
+	// The host is checked once, when the ingress is created. Redirects, HLS playlist entries and
+	// DNS answers that change after creation are not checked; block those with an egress proxy or
+	// firewall on the ingress handlers.
 	AllowPrivateURLPull bool `yaml:"allow_private_url_pull,omitempty"`
 }
 
