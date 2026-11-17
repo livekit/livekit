@@ -325,8 +325,8 @@ github.com/ua-parser/uap-go v0.0.0-20261028195011-4cb30e998c4c h1:rmrcmINH926KiF
 github.com/ua-parser/uap-go v0.0.0-20261028195011-4cb30e998c4c/go.mod h1:DMOllS5Q12rlA83y42BIfm6qq2wwZVVs2mLx8k2w3F8=
 github.com/urfave/cli/v3 v3.14.0 h1:a8414NQlHJs0c/iBsulKLzlES0n/lEAskbL2LKpU4/s=
 github.com/urfave/cli/v3 v3.14.0/go.mod h1:vXn6HxPNccJSzQr2QvwVncOKrgYGIHU0HY5h8B2nQj4=
-github.com/urfave/negroni/v3 v3.1.1 h1:6MS4nG9Jk/UuCACaUlNXCbiKa0ywF9LXz5dGu09v8hw=
-github.com/urfave/negroni/v3 v3.1.1/go.mod h1:jWvnX03kcSjDBl/ShB0iHvx5uOs7mAzZXW+JvJ5XYAs=
+github.com/urfave/negroni/v3 v3.1.2 h1:pi/E2QJqdb+cEHYFxIyiBRwnYwy+/TlvTcmy2tb9m6w=
+github.com/urfave/negroni/v3 v3.1.2/go.mod h1:jWvnX03kcSjDBl/ShB0iHvx5uOs7mAzZXW+JvJ5XYAs=
 github.com/wlynxg/anet v0.0.5 h1:J3VJGi1gvo0JwZ/P1/Yc/8p63SoW98B5dHkYDmpgvvU=
 github.com/wlynxg/anet v0.0.5/go.mod h1:eay5PRQr7fIVAMbTbchTnO9gG65Hg/uYGdc7mguHxoA=
 github.com/zeebo/assert v1.3.0 h1:g7C04CbJuIDKNPFHmsk4hwZDO5O+kntRxzaUoNXj+IQ=
