@@ -439,7 +439,15 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 
 var lookupNetIP = net.DefaultResolver.LookupNetIP
 
-var cgnatPrefix = netip.MustParsePrefix("100.64.0.0/10")
+var (
+	blockedPrefixes = []netip.Prefix{
+		netip.MustParsePrefix("100.64.0.0/10"),
+		netip.MustParsePrefix("198.18.0.0/15"),
+		netip.MustParsePrefix("240.0.0.0/4"),
+	}
+	nat64Prefix     = netip.MustParsePrefix("64:ff9b::/96")
+	sixToFourPrefix = netip.MustParsePrefix("2002::/16")
+)
 
 func checkURLPullHost(ctx context.Context, host string) error {
 	host = strings.ToLower(strings.TrimSuffix(host, "."))
@@ -461,10 +469,21 @@ func checkURLPullHost(ctx context.Context, host string) error {
 
 func isPublicAddr(addr netip.Addr) bool {
 	addr = addr.Unmap()
+	if a := addr.As16(); nat64Prefix.Contains(addr) {
+		addr = netip.AddrFrom4([4]byte(a[12:16]))
+	} else if sixToFourPrefix.Contains(addr) {
+		addr = netip.AddrFrom4([4]byte(a[2:6]))
+	}
 	if addr.Is4() && addr.As4()[0] == 0 {
 		return false
 	}
-	return addr.IsGlobalUnicast() &&
-		!addr.IsPrivate() &&
-		!cgnatPrefix.Contains(addr)
+	if !addr.IsGlobalUnicast() || addr.IsPrivate() {
+		return false
+	}
+	for _, p := range blockedPrefixes {
+		if p.Contains(addr) {
+			return false
+		}
+	}
+	return true
 }
