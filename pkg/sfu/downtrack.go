@@ -283,6 +283,8 @@ type DownTrack struct {
 	fecProtection       flexfec.Protection
 	fecNotifiedOverhead atomic.Uint32
 	fecState            flexfec.EncoderState
+	// loss samples for adaptive protection, accessed only from the RTCP handler
+	fecLoss flexfec.LossAggregator
 
 	receiverLock sync.RWMutex
 	receiver     TrackReceiver
@@ -2152,7 +2154,9 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				if isRttChanged {
 					rttToReport = rtt
 				}
-				d.onFECReceiverReport(r.FractionLost, d.rtpStats.GetRtt())
+				if fractionLost, ok := d.fecLoss.Update(r.LastSequenceNumber, r.TotalLost); ok {
+					d.onFECReceiverReport(fractionLost, d.rtpStats.GetRtt())
+				}
 
 				if d.playoutDelay != nil {
 					d.playoutDelay.OnSeqAcked(uint16(r.LastSequenceNumber))
