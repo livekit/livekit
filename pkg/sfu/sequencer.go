@@ -76,6 +76,7 @@ type packetMeta struct {
 
 func (pm packetMeta) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddUint64("sourceSeqNo", pm.sourceSeqNo)
+	e.AddUint64("sourceStreamGeneration", pm.sourceStreamGeneration)
 	e.AddUint16("targetSeqNo", pm.targetSeqNo)
 	e.AddInt8("layer", pm.layer)
 	e.AddUint8("nacked", pm.nacked)
