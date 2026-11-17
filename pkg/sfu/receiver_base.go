@@ -816,13 +816,13 @@ func (r *ReceiverBase) ClearAllBuffers(reason string) {
 	r.streamTrackerManager.RemoveAllTrackers()
 }
 
-func (r *ReceiverBase) ReadRTP(buf []byte, layer uint8, esn uint64) (int, error) {
+func (r *ReceiverBase) ReadRTP(buf []byte, layer uint8, esn uint64, streamGeneration uint64) (int, error) {
 	b, _ := r.getBuffer(int32(layer))
 	if b == nil {
 		return 0, bucket.ErrPacketMismatch
 	}
 
-	return b.GetPacket(buf, esn)
+	return b.GetPacketForStream(buf, esn, streamGeneration)
 }
 
 func (r *ReceiverBase) GetTrackStats() *livekit.RTPStats {

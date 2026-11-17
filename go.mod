@@ -27,7 +27,7 @@ require (
 	github.com/magefile/mage v1.17.2
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/moby/moby/client v0.6.1
-	github.com/olekukonko/tablewriter v1.1.4
+	github.com/olekukonko/tablewriter v1.1.5
 	github.com/ory/dockertest/v4 v4.0.0
 	github.com/pion/datachannel v1.6.4
 	github.com/pion/dtls/v4 v4.0.0-rc.8
@@ -41,19 +41,19 @@ require (
 	github.com/pion/transport/v4 v4.1.3
 	github.com/pion/transport/v5 v5.1.5
 	github.com/pion/turn/v5 v5.1.3
-	github.com/pion/webrtc/v4 v4.2.23
+	github.com/pion/webrtc/v4 v4.2.26
 	github.com/pires/go-proxyproto v0.15.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.25.0
-	github.com/quic-go/quic-go v0.63.0
-	github.com/quic-go/webtransport-go v0.12.0
-	github.com/redis/go-redis/v9 v9.22.0
+	github.com/quic-go/quic-go v0.64.1
+	github.com/quic-go/webtransport-go v0.13.0
+	github.com/redis/go-redis/v9 v9.23.0
 	github.com/rs/cors v1.11.1
 	github.com/stretchr/testify v1.12.1
 	github.com/thoas/go-funk v0.9.3
 	github.com/tomnomnom/linkheader v0.0.0-20250811210735-e5fe3b51442e
 	github.com/twitchtv/twirp v8.1.3+incompatible
-	github.com/ua-parser/uap-go v0.0.0-20260529044130-17c35e68e58c
+	github.com/ua-parser/uap-go v0.0.0-20261028195011-4cb30e998c4c
 	github.com/urfave/negroni/v3 v3.1.1
 	go.uber.org/atomic v1.12.0
 	go.uber.org/multierr v1.11.0
@@ -73,7 +73,7 @@ require (
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
-	github.com/dunglas/httpsfv v1.1.0 // indirect
+	github.com/dunglas/httpsfv v1.1.1 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -149,7 +149,7 @@ require (
 	github.com/prometheus/client_model v0.6.3
 	github.com/prometheus/common v0.73.1 // indirect
 	github.com/prometheus/procfs v0.23.0 // indirect
-	github.com/urfave/cli/v3 v3.11.0
+	github.com/urfave/cli/v3 v3.14.0
 	github.com/wlynxg/anet v0.0.5 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.uber.org/zap/exp v0.3.0 // indirect
