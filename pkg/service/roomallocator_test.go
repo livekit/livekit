@@ -141,6 +141,53 @@ func SelectRoomNode(t *testing.T) {
 	})
 }
 
+func TestSelectRoomNodeLock(t *testing.T) {
+	newAllocator := func(t *testing.T) (service.RoomAllocator, *routingfakes.FakeRouter, *servicefakes.FakeObjectStore, *livekit.Node) {
+		conf, err := config.NewConfig("", true, nil, nil)
+		require.NoError(t, err)
+		node, err := routing.NewLocalNode(conf)
+		require.NoError(t, err)
+		node.SetState(livekit.NodeState_SERVING)
+
+		store := &servicefakes.FakeObjectStore{}
+		router := &routingfakes.FakeRouter{}
+		router.ListNodesReturns([]*livekit.Node{node.Clone()}, nil)
+		ra, err := service.NewRoomAllocator(conf, router, store)
+		require.NoError(t, err)
+		return ra, router, store, node.Clone()
+	}
+
+	t.Run("room on an available node is kept without the lock", func(t *testing.T) {
+		ra, router, store, node := newAllocator(t)
+		router.GetNodeForRoomReturns(node, nil)
+
+		require.NoError(t, ra.SelectRoomNode(context.Background(), "room", ""))
+		require.Zero(t, store.LockRoomCallCount())
+		require.Zero(t, router.SetNodeForRoomCallCount())
+	})
+
+	t.Run("room node is set under the lock", func(t *testing.T) {
+		ra, router, store, node := newAllocator(t)
+		router.GetNodeForRoomReturns(nil, routing.ErrNotFound)
+
+		require.NoError(t, ra.SelectRoomNode(context.Background(), "room", ""))
+		require.Equal(t, 1, store.LockRoomCallCount())
+		require.Equal(t, 1, store.UnlockRoomCallCount())
+		require.Equal(t, 1, router.SetNodeForRoomCallCount())
+		_, _, nodeID := router.SetNodeForRoomArgsForCall(0)
+		require.Equal(t, livekit.NodeID(node.Id), nodeID)
+	})
+
+	t.Run("room node is not set without the lock", func(t *testing.T) {
+		ra, router, store, _ := newAllocator(t)
+		router.GetNodeForRoomReturns(nil, routing.ErrNotFound)
+		store.LockRoomReturns("", service.ErrRoomLockFailed)
+
+		require.ErrorIs(t, ra.SelectRoomNode(context.Background(), "room", ""), service.ErrRoomLockFailed)
+		require.Zero(t, router.SetNodeForRoomCallCount())
+	})
+}
+
 func newTestRoomAllocator(t *testing.T, conf *config.Config, node *livekit.Node) (service.RoomAllocator, *config.Config) {
 	store := &servicefakes.FakeObjectStore{}
 	store.LoadRoomReturns(nil, nil, service.ErrRoomNotFound)

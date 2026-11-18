@@ -138,20 +138,22 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 }
 
 func (r *StandardRoomAllocator) SelectRoomNode(ctx context.Context, roomName livekit.RoomName, nodeID livekit.NodeID) error {
-	// check if room already assigned
-	existing, err := r.router.GetNodeForRoom(ctx, roomName)
-	if !errors.Is(err, routing.ErrNotFound) && err != nil {
+	if assigned, err := r.hasAvailableRoomNode(ctx, roomName); assigned || err != nil {
 		return err
 	}
 
-	// if already assigned and still available, keep it on that node
-	if err == nil && selector.IsAvailable(existing) {
-		// if node hosting the room is full, deny entry
-		if selector.LimitsReached(r.config.Limit, existing.Stats) {
-			return routing.ErrNodeLimitReached
-		}
+	// the room lock serializes setting the node with the room teardown on the RTC node, which
+	// deletes the mapping only when it is unset or maps the room to that node
+	token, err := r.roomStore.LockRoom(ctx, roomName, 5*time.Second)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = r.roomStore.UnlockRoom(ctx, roomName, token)
+	}()
 
-		return nil
+	if assigned, err := r.hasAvailableRoomNode(ctx, roomName); assigned || err != nil {
+		return err
 	}
 
 	// select a new node
@@ -176,6 +178,27 @@ func (r *StandardRoomAllocator) SelectRoomNode(ctx context.Context, roomName liv
 	}
 
 	return nil
+}
+
+// hasAvailableRoomNode reports whether the room is assigned to a node that is still available.
+// It returns ErrNodeLimitReached when that node is full.
+func (r *StandardRoomAllocator) hasAvailableRoomNode(ctx context.Context, roomName livekit.RoomName) (bool, error) {
+	existing, err := r.router.GetNodeForRoom(ctx, roomName)
+	if errors.Is(err, routing.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !selector.IsAvailable(existing) {
+		return false, nil
+	}
+
+	// if node hosting the room is full, deny entry
+	if selector.LimitsReached(r.config.Limit, existing.Stats) {
+		return true, routing.ErrNodeLimitReached
+	}
+	return true, nil
 }
 
 func (r *StandardRoomAllocator) ValidateCreateRoom(ctx context.Context, roomName livekit.RoomName) error {
