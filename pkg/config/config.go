@@ -566,6 +566,9 @@ type PrometheusConfig struct {
 	Port     uint32 `yaml:"port,omitempty"`
 	Username string `yaml:"username,omitempty"`
 	Password string `yaml:"password,omitempty"`
+	// RoomExcludeRegex, when set, enables livekit_room_included_total: the number of active rooms
+	// whose name does NOT match this regex (RE2 syntax, unanchored). livekit_room_total is unaffected.
+	RoomExcludeRegex string `yaml:"room_exclude_regex,omitempty"`
 }
 
 type DebugHandlerConfig struct {
