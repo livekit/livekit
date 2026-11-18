@@ -112,8 +112,10 @@ type wrappedReceptionReportsLogger struct {
 }
 
 func (w wrappedReceptionReportsLogger) MarshalLogObject(e zapcore.ObjectEncoder) error {
-	for i := 0; i < w.senderSnapshotReceiverView.processedReceptionReportsSize; i++ {
-		rr := w.senderSnapshotReceiverView.processedReceptionReports[(w.senderSnapshotReceiverView.processedReceptionReportsHead+i)%cMaxProcessedReceptionReports]
+	// head is the next slot to write, the oldest report is size slots behind it
+	oldest := w.processedReceptionReportsHead - w.processedReceptionReportsSize + cMaxProcessedReceptionReports
+	for i := 0; i < w.processedReceptionReportsSize; i++ {
+		rr := w.processedReceptionReports[(oldest+i)%cMaxProcessedReceptionReports]
 		e.AddReflected(fmt.Sprintf("%d", i), rr)
 	}
 
@@ -739,11 +741,8 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		}
 	}
 
-	r.packetsLostFromRR = uint64(rr.TotalLost)
-	lossDelta := (rr.TotalLost - r.lastRR.TotalLost) & ((1 << 24) - 1)
-	if lossDelta < (1<<23) && rr.TotalLost < r.lastRR.TotalLost {
-		r.packetsLostFromRR += (1 << 24)
-	}
+	// cumulative loss is a signed 24-bit value, a remote that counts duplicates as received reports it negative
+	r.packetsLostFromRR = uint64(max(int32(rr.TotalLost<<8)>>8, 0))
 
 	if isRttChanged {
 		r.rtt = rtt
@@ -1029,8 +1028,8 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) (*RTPDeltaInfo
 			r.logger.Warnw(
 				"too many packets expected in delta (sender)", nil,
 				"senderSnapshotID", senderSnapshotID,
-				"senderSnapshotNow", nowSenderView,
-				"senderSnapshotThen", thenSenderView,
+				"senderSnapshotNow", &nowSenderView,
+				"senderSnapshotThen", &thenSenderView,
 				"packetsExpected", packetsExpected,
 				"duration", time.Duration(endTime-startTime),
 				"rtpStats", lockedRTPStatsSenderLogEncoder{r},
@@ -1044,8 +1043,8 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) (*RTPDeltaInfo
 				r.logger.Warnw(
 					"unexpected number of packets lost", nil,
 					"senderSnapshotID", senderSnapshotID,
-					"senderSnapshotNow", nowSenderView,
-					"senderSnapshotThen", thenSenderView,
+					"senderSnapshotNow", &nowSenderView,
+					"senderSnapshotThen", &thenSenderView,
 					"packetsExpected", packetsExpected,
 					"packetsLostFeed", packetsLostFeed,
 					"duration", time.Duration(endTime-startTime),
@@ -1092,8 +1091,8 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) (*RTPDeltaInfo
 				r.logger.Warnw(
 					"too many packets expected in delta (sender - receiver view)", nil,
 					"senderSnapshotID", senderSnapshotID,
-					"senderSnapshotNow", nowReceiverView,
-					"senderSnapshotThen", thenReceiverView,
+					"senderSnapshotNow", &nowReceiverView,
+					"senderSnapshotThen", &thenReceiverView,
 					"packetsExpected", packetsExpected,
 					"duration", time.Duration(endTime-startTime),
 					"rtpStats", lockedRTPStatsSenderLogEncoder{r},
@@ -1112,8 +1111,8 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) (*RTPDeltaInfo
 					r.logger.Warnw(
 						"unexpected number of packets lost (sender - receiver view)", nil,
 						"senderSnapshotID", senderSnapshotID,
-						"senderSnapshotNow", nowReceiverView,
-						"senderSnapshotThen", thenReceiverView,
+						"senderSnapshotNow", &nowReceiverView,
+						"senderSnapshotThen", &thenReceiverView,
 						"packetsExpected", packetsExpected,
 						"packetsLost", packetsLost,
 						"packetsLostFeed", packetsLostFeed,
