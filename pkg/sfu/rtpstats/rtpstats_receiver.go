@@ -202,14 +202,16 @@ func (rulf *receiverUpdateLoggingFields) MarshalLogObject(e zapcore.ObjectEncode
 // ---------------------------------------------------------------------
 
 type RTPStatsReceiver struct {
-	*rtpStatsBase
+	rtpStatsBase
 
-	sequenceNumber *utils.WrapAround[uint16, uint64]
+	sequenceNumber utils.WrapAround[uint16, uint64]
 
 	tsRolloverThreshold int64
-	timestamp           *utils.WrapAround[uint32, uint64]
+	timestamp           utils.WrapAround[uint32, uint64]
 
-	history *protoutils.Bitmap[uint64]
+	history protoutils.Bitmap[uint64]
+
+	restartRun restartRun
 
 	propagationDelayEstimator *latency.OWDEstimator
 
@@ -221,18 +223,17 @@ type RTPStatsReceiver struct {
 	packetsDroppedOldTimestamp           int
 	packetsDroppedPreStartSequenceNumber int
 	packetsDroppedOldSequenceNumber      int
-
-	restartRun restartRun
 }
 
 func NewRTPStatsReceiver(params RTPStatsParams) *RTPStatsReceiver {
-	return &RTPStatsReceiver{
-		rtpStatsBase:              newRTPStatsBase(params),
-		sequenceNumber:            utils.NewWrapAround[uint16, uint64](utils.WrapAroundParams{IsRestartAllowed: false}),
-		timestamp:                 utils.NewWrapAround[uint32, uint64](utils.WrapAroundParams{IsRestartAllowed: false}),
-		history:                   protoutils.NewBitmap[uint64](cHistorySize),
+	r := &RTPStatsReceiver{
+		sequenceNumber:            *utils.NewWrapAround[uint16, uint64](utils.WrapAroundParams{IsRestartAllowed: false}),
+		timestamp:                 *utils.NewWrapAround[uint32, uint64](utils.WrapAroundParams{IsRestartAllowed: false}),
+		history:                   *protoutils.NewBitmap[uint64](cHistorySize),
 		propagationDelayEstimator: latency.NewOWDEstimator(latency.OWDEstimatorParamsDefault),
 	}
+	r.rtpStatsBase.init(params)
+	return r
 }
 
 func (r *RTPStatsReceiver) SetClockRate(clockRate uint32) {
@@ -294,7 +295,6 @@ func (r *RTPStatsReceiver) Update(
 	var gapSN int64
 	var resTS utils.WrapAroundUpdateResult[uint64]
 	var gapTS int64
-	var expectedTSJump int64
 	var timeSinceHighest int64
 	var tsRolloverCount int
 	var snRolloverCount int
@@ -326,6 +326,10 @@ func (r *RTPStatsReceiver) Update(
 			"rtpStats", lockedRTPStatsReceiverLogEncoder{r},
 		)
 	} else {
+		// needs a division, the packet path uses it only for a sequence number that went back
+		expectedTSJump := func() int64 {
+			return int64(r.rtpConverter.ToRTPExt(time.Duration(timeSinceHighest)))
+		}
 		loggingFields := func() *receiverUpdateLoggingFields {
 			return &receiverUpdateLoggingFields{
 				packetTime:       packetTime,
@@ -340,7 +344,7 @@ func (r *RTPStatsReceiver) Update(
 				resTS:            resTS,
 				gapTS:            gapTS,
 				snRolloverCount:  snRolloverCount,
-				expectedTSJump:   expectedTSJump,
+				expectedTSJump:   expectedTSJump(),
 				tsRolloverCount:  tsRolloverCount,
 				timeSinceHighest: timeSinceHighest,
 				rtpStats:         r,
@@ -351,7 +355,6 @@ func (r *RTPStatsReceiver) Update(
 		gapSN = int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
 
 		timeSinceHighest = packetTime - r.highestTime
-		expectedTSJump = int64(r.rtpConverter.ToRTPExt(time.Duration(timeSinceHighest)))
 		tsRolloverCount = r.getTSRolloverCount(timeSinceHighest, timestamp)
 		resTS = r.timestamp.Rollover(timestamp, tsRolloverCount)
 		gapTS = int64(resTS.ExtendedVal - resTS.PreExtendedHighest)
@@ -381,7 +384,7 @@ func (r *RTPStatsReceiver) Update(
 			//    very old packet to be transmitted from remote), causing time stamp to jump back
 			//    to before mute, but it appears like it has rolled over.
 			//  Use a threshold against expected to ignore these.
-			if gapSN < 0 && gapTS > 0 && gapTS > int64(float64(expectedTSJump)*cTSJumpTooHighFactor) {
+			if gapSN < 0 && gapTS > 0 && gapTS > int64(float64(expectedTSJump())*cTSJumpTooHighFactor) {
 				flowState.UnhandledReason = r.dropPacketLocked(
 					loggingFields(),
 					&r.packetsDroppedOldTimestamp,
@@ -694,15 +697,15 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *livekit.RTCPSenderRep
 }
 
 func (r *RTPStatsReceiver) GetRtcpSenderReportData() *livekit.RTCPSenderReportState {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	return proto.CloneOf(r.srNewest)
 }
 
 func (r *RTPStatsReceiver) LastSenderReportTime() time.Time {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	if r.srNewest != nil && r.srNewest.At != 0 {
 		// srNewest.At is a mono timestamp, convert to wall time for comparison with time.Now()
@@ -786,8 +789,8 @@ func (r *RTPStatsReceiver) MarshalLogObject(e zapcore.ObjectEncoder) error {
 		return nil
 	}
 
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	return lockedRTPStatsReceiverLogEncoder{r}.MarshalLogObject(e)
 }
@@ -797,8 +800,8 @@ func (r *RTPStatsReceiver) ToProto() *livekit.RTPStats {
 		return nil
 	}
 
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	extStartSN, extHighestSN := r.sequenceNumber.GetExtendedStart(), r.sequenceNumber.GetExtendedHighest()
 	return r.toProto(
@@ -818,24 +821,24 @@ func (r *RTPStatsReceiver) isInRange(esn uint64, ehsn uint64) bool {
 }
 
 func (r *RTPStatsReceiver) HighestTimestamp() uint32 {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	return r.timestamp.GetHighest()
 }
 
 // for testing only
 func (r *RTPStatsReceiver) HighestSequenceNumber() uint16 {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	return r.sequenceNumber.GetHighest()
 }
 
 // for testing only
 func (r *RTPStatsReceiver) ExtendedHighestSequenceNumber() uint64 {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	return r.sequenceNumber.GetExtendedHighest()
 }

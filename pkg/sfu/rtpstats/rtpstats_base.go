@@ -218,18 +218,28 @@ func RTCPSenderReportPropagationDelay(rsrs *livekit.RTCPSenderReportState) time.
 // ------------------------------------------------------------------
 
 type rtpStatsBase struct {
-	*rtpStatsBaseLite
+	rtpStatsBaseLite
 
-	rtpConverter *rtputil.RTPConverter
+	// fields that every packet updates are together
+	rtpConverter rtputil.RTPConverter
 
-	firstTime           int64
-	firstTimeAdjustment time.Duration
-	highestTime         int64
+	firstTime   int64
+	highestTime int64
 
 	lastTransit            uint64
 	lastJitterExtTimestamp uint64
 
 	headerBytes uint64
+
+	jitter    float64
+	maxJitter float64
+
+	frames uint32
+
+	nextSnapshotID uint32
+	snapshots      []snapshot
+
+	firstTimeAdjustment time.Duration
 
 	packetsDuplicate     uint64
 	bytesDuplicate       uint64
@@ -244,11 +254,6 @@ type rtpStatsBase struct {
 	fecPacketsDiscarded uint64
 	fecPacketsRecovered uint64
 
-	frames uint32
-
-	jitter    float64
-	maxJitter float64
-
 	firs    uint32
 	lastFir time.Time
 
@@ -260,17 +265,12 @@ type rtpStatsBase struct {
 
 	srFirst  *livekit.RTCPSenderReportState
 	srNewest *livekit.RTCPSenderReportState
-
-	nextSnapshotID uint32
-	snapshots      []snapshot
 }
 
-func newRTPStatsBase(params RTPStatsParams) *rtpStatsBase {
-	return &rtpStatsBase{
-		rtpStatsBaseLite: newRTPStatsBaseLite(params),
-		nextSnapshotID:   cFirstSnapshotID,
-		snapshots:        make([]snapshot, 2),
-	}
+func (r *rtpStatsBase) init(params RTPStatsParams) {
+	r.rtpStatsBaseLite.init(params)
+	r.nextSnapshotID = cFirstSnapshotID
+	r.snapshots = make([]snapshot, 2)
 }
 
 func (r *rtpStatsBase) SetClockRate(clockRate uint32) {
@@ -281,12 +281,12 @@ func (r *rtpStatsBase) SetClockRate(clockRate uint32) {
 }
 
 func (r *rtpStatsBase) setClockRateLocked(clockRate uint32) {
-	r.rtpConverter = rtputil.NewRTPConverter(int64(clockRate))
+	r.rtpConverter = *rtputil.NewRTPConverter(int64(clockRate))
 	r.rtpStatsBaseLite.setClockRateLocked(clockRate)
 }
 
 func (r *rtpStatsBase) seed(from *rtpStatsBase) bool {
-	if !r.rtpStatsBaseLite.seed(from.rtpStatsBaseLite) {
+	if !r.rtpStatsBaseLite.seed(&from.rtpStatsBaseLite) {
 		return false
 	}
 
@@ -405,8 +405,8 @@ func (r *rtpStatsBase) UpdateKeyFrame(kfCount uint32) {
 }
 
 func (r *rtpStatsBase) KeyFrame() (uint32, time.Time) {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	return r.keyFrames, r.lastKeyFrame
 }
@@ -433,8 +433,8 @@ func (r *rtpStatsBase) UpdateRtt(rtt uint32) {
 }
 
 func (r *rtpStatsBase) GetRtt() uint32 {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	return r.rtt
 }
@@ -729,7 +729,7 @@ func (r *rtpStatsBase) updateJitter(ets uint64, packetTime int64) float64 {
 	//          p1f1 -> p1f2 -> p2f1
 	//       In this case, p2f1 (packet 2, frame 1) will still be used in jitter calculation
 	//       although it is the second packet of a frame because of out-of-order receival.
-	if r.lastJitterExtTimestamp != ets && r.rtpConverter != nil {
+	if r.lastJitterExtTimestamp != ets && r.clockRate != 0 {
 		timeSinceFirst := packetTime - r.firstTime
 		packetTimeRTP := r.rtpConverter.ToRTPExt(time.Duration(timeSinceFirst))
 		transit := packetTimeRTP - ets
