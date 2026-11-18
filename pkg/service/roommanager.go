@@ -708,6 +708,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 		roomInfo := newRoom.ToProto()
 		r.telemetry.RoomEnded(ctx, roomInfo, reason.ToProto())
 		prometheus.RoomEnded(time.Unix(roomInfo.CreationTime, 0))
+		prometheus.RoomIncludedEnded(roomName)
 		if err := r.deleteRoom(ctx, roomName); err != nil {
 			newRoom.Logger().Errorw("could not delete room", err)
 		}
@@ -737,6 +738,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 
 	r.telemetry.RoomStarted(ctx, newRoom.ToProto())
 	prometheus.RoomStarted()
+	prometheus.RoomIncludedStarted(roomName)
 
 	if created && createRoom.GetEgress().GetRoom() != nil {
 		if r.egressLauncher == nil {
