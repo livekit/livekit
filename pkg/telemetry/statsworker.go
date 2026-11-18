@@ -88,7 +88,18 @@ type StatsWorker struct {
 	incomingPerTrack map[livekit.TrackID][]*livekit.AnalyticsStat
 	refCount         ReferenceCount
 	closedAt         time.Time
+	// whether the participant is in this node's participant gauge; only the node hosting
+	// the participant counts it, the node serving its signal connection does not
+	count participantCountState
 }
+
+type participantCountState int
+
+const (
+	participantNotCounted participantCountState = iota
+	participantCounted
+	participantLeft
+)
 
 func newStatsWorker(
 	ctx context.Context,
@@ -135,6 +146,47 @@ func (s *StatsWorker) SetConnected() {
 	s.lock.Lock()
 	s.isConnected = true
 	s.lock.Unlock()
+}
+
+// markCounted moves the participant to counted in this node's participant gauge, returning
+// true if the caller should add it. A closed or nil worker is never counted: nothing would
+// remove it. A participant that already left is counted again only on a new join
+// (ParticipantJoined, e.g. migrated back while the worker is held open by its signal
+// connection), not by ParticipantActive or ParticipantResumed landing after the close.
+func (s *StatsWorker) markCounted(isJoin bool) bool {
+	if s == nil {
+		return false
+	}
+
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if !s.closedAt.IsZero() {
+		return false
+	}
+	switch s.count {
+	case participantNotCounted:
+	case participantLeft:
+		if !isJoin {
+			return false
+		}
+	default:
+		return false
+	}
+	s.count = participantCounted
+	return true
+}
+
+// markLeft records that the participant left this node, returning true if the caller should
+// remove it from the participant gauge, i.e. if it was counted. Final: a call landing after
+// it (e.g. ParticipantActive overtaken by the close) does not count the participant again.
+func (s *StatsWorker) markLeft() bool {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	wasCounted := s.count == participantCounted
+	s.count = participantLeft
+	return wasCounted
 }
 
 func (s *StatsWorker) IsConnected() bool {

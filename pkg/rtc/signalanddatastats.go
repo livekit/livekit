@@ -284,14 +284,14 @@ func (s *BytesSignalStats) maybeStart() {
 	)
 	s.trackResolver.Resolve(string(s.trackID))
 
-	s.telemetry.ParticipantJoined(s.ctx, s.ri, s.pi, nil, nil, false, s.guard)
+	s.telemetry.ParticipantSignalConnected(s.ctx, s.ri, s.pi, s.guard)
 	s.stopped = make(chan struct{})
 	go s.worker()
 }
 
 func (s *BytesSignalStats) worker() {
 	s.BytesTrackStats.worker()
-	s.telemetry.ParticipantLeft(s.ctx, s.ri, s.pi, false, s.guard)
+	s.telemetry.ParticipantSignalDisconnected(s.ctx, s.ri, s.pi, s.guard)
 	close(s.stopped)
 }
 

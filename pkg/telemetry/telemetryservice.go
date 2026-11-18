@@ -39,11 +39,17 @@ type TelemetryService interface {
 
 	// ParticipantJoined - a participant establishes signal connection to a room
 	ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo, clientMeta *livekit.AnalyticsClientMeta, shouldSendEvent bool, guard *ReferenceGuard)
+	// ParticipantSignalConnected - the participant's signal connection is served by this node, which
+	// may not be the node hosting the participant. Starts the stats worker for signal bytes; does
+	// not count the participant, the hosting node does (ParticipantJoined/Active/Resumed/Left)
+	ParticipantSignalConnected(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, guard *ReferenceGuard)
+	// ParticipantSignalDisconnected - the signal connection of ParticipantSignalConnected (same guard) closed
+	ParticipantSignalDisconnected(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, guard *ReferenceGuard)
 	// ParticipantActive - a participant establishes media connection
 	ParticipantActive(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientMeta *livekit.AnalyticsClientMeta, isMigration bool, isWarp bool, guard *ReferenceGuard)
 	// ParticipantResumed - there has been an ICE restart or connection resume attempt, and we've received their signal connection
 	ParticipantResumed(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, nodeID livekit.NodeID, reason livekit.ReconnectReason)
-	// ParticipantLeft - the participant leaves the room, only sent if ParticipantActive has been called before
+	// ParticipantLeft - the participant leaves the room on the node hosting it, pairs with ParticipantJoined
 	ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, shouldSendEvent bool, guard *ReferenceGuard)
 	// TrackPublishRequested - a publication attempt has been received
 	TrackPublishRequested(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool)
@@ -110,6 +116,10 @@ func (n NullTelemetryService) RoomStarted(ctx context.Context, room *livekit.Roo
 func (n NullTelemetryService) RoomEnded(ctx context.Context, room *livekit.Room, reason livekit.RoomEndReason) {
 }
 func (n NullTelemetryService) ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo, clientMeta *livekit.AnalyticsClientMeta, shouldSendEvent bool, guard *ReferenceGuard) {
+}
+func (n NullTelemetryService) ParticipantSignalConnected(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, guard *ReferenceGuard) {
+}
+func (n NullTelemetryService) ParticipantSignalDisconnected(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, guard *ReferenceGuard) {
 }
 func (n NullTelemetryService) ParticipantActive(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientMeta *livekit.AnalyticsClientMeta, isMigration bool, isWarp bool, guard *ReferenceGuard) {
 }

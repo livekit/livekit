@@ -123,6 +123,22 @@ type FakeTelemetryService struct {
 		arg4 livekit.NodeID
 		arg5 livekit.ReconnectReason
 	}
+	ParticipantSignalConnectedStub        func(context.Context, *livekit.Room, *livekit.ParticipantInfo, *telemetry.ReferenceGuard)
+	participantSignalConnectedMutex       sync.RWMutex
+	participantSignalConnectedArgsForCall []struct {
+		arg1 context.Context
+		arg2 *livekit.Room
+		arg3 *livekit.ParticipantInfo
+		arg4 *telemetry.ReferenceGuard
+	}
+	ParticipantSignalDisconnectedStub        func(context.Context, *livekit.Room, *livekit.ParticipantInfo, *telemetry.ReferenceGuard)
+	participantSignalDisconnectedMutex       sync.RWMutex
+	participantSignalDisconnectedArgsForCall []struct {
+		arg1 context.Context
+		arg2 *livekit.Room
+		arg3 *livekit.ParticipantInfo
+		arg4 *telemetry.ReferenceGuard
+	}
 	ReportStub        func(context.Context, *livekit.ReportInfo)
 	reportMutex       sync.RWMutex
 	reportArgsForCall []struct {
@@ -850,6 +866,76 @@ func (fake *FakeTelemetryService) ParticipantResumedArgsForCall(i int) (context.
 	defer fake.participantResumedMutex.RUnlock()
 	argsForCall := fake.participantResumedArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5
+}
+
+func (fake *FakeTelemetryService) ParticipantSignalConnected(arg1 context.Context, arg2 *livekit.Room, arg3 *livekit.ParticipantInfo, arg4 *telemetry.ReferenceGuard) {
+	fake.participantSignalConnectedMutex.Lock()
+	fake.participantSignalConnectedArgsForCall = append(fake.participantSignalConnectedArgsForCall, struct {
+		arg1 context.Context
+		arg2 *livekit.Room
+		arg3 *livekit.ParticipantInfo
+		arg4 *telemetry.ReferenceGuard
+	}{arg1, arg2, arg3, arg4})
+	stub := fake.ParticipantSignalConnectedStub
+	fake.recordInvocation("ParticipantSignalConnected", []interface{}{arg1, arg2, arg3, arg4})
+	fake.participantSignalConnectedMutex.Unlock()
+	if stub != nil {
+		fake.ParticipantSignalConnectedStub(arg1, arg2, arg3, arg4)
+	}
+}
+
+func (fake *FakeTelemetryService) ParticipantSignalConnectedCallCount() int {
+	fake.participantSignalConnectedMutex.RLock()
+	defer fake.participantSignalConnectedMutex.RUnlock()
+	return len(fake.participantSignalConnectedArgsForCall)
+}
+
+func (fake *FakeTelemetryService) ParticipantSignalConnectedCalls(stub func(context.Context, *livekit.Room, *livekit.ParticipantInfo, *telemetry.ReferenceGuard)) {
+	fake.participantSignalConnectedMutex.Lock()
+	defer fake.participantSignalConnectedMutex.Unlock()
+	fake.ParticipantSignalConnectedStub = stub
+}
+
+func (fake *FakeTelemetryService) ParticipantSignalConnectedArgsForCall(i int) (context.Context, *livekit.Room, *livekit.ParticipantInfo, *telemetry.ReferenceGuard) {
+	fake.participantSignalConnectedMutex.RLock()
+	defer fake.participantSignalConnectedMutex.RUnlock()
+	argsForCall := fake.participantSignalConnectedArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
+}
+
+func (fake *FakeTelemetryService) ParticipantSignalDisconnected(arg1 context.Context, arg2 *livekit.Room, arg3 *livekit.ParticipantInfo, arg4 *telemetry.ReferenceGuard) {
+	fake.participantSignalDisconnectedMutex.Lock()
+	fake.participantSignalDisconnectedArgsForCall = append(fake.participantSignalDisconnectedArgsForCall, struct {
+		arg1 context.Context
+		arg2 *livekit.Room
+		arg3 *livekit.ParticipantInfo
+		arg4 *telemetry.ReferenceGuard
+	}{arg1, arg2, arg3, arg4})
+	stub := fake.ParticipantSignalDisconnectedStub
+	fake.recordInvocation("ParticipantSignalDisconnected", []interface{}{arg1, arg2, arg3, arg4})
+	fake.participantSignalDisconnectedMutex.Unlock()
+	if stub != nil {
+		fake.ParticipantSignalDisconnectedStub(arg1, arg2, arg3, arg4)
+	}
+}
+
+func (fake *FakeTelemetryService) ParticipantSignalDisconnectedCallCount() int {
+	fake.participantSignalDisconnectedMutex.RLock()
+	defer fake.participantSignalDisconnectedMutex.RUnlock()
+	return len(fake.participantSignalDisconnectedArgsForCall)
+}
+
+func (fake *FakeTelemetryService) ParticipantSignalDisconnectedCalls(stub func(context.Context, *livekit.Room, *livekit.ParticipantInfo, *telemetry.ReferenceGuard)) {
+	fake.participantSignalDisconnectedMutex.Lock()
+	defer fake.participantSignalDisconnectedMutex.Unlock()
+	fake.ParticipantSignalDisconnectedStub = stub
+}
+
+func (fake *FakeTelemetryService) ParticipantSignalDisconnectedArgsForCall(i int) (context.Context, *livekit.Room, *livekit.ParticipantInfo, *telemetry.ReferenceGuard) {
+	fake.participantSignalDisconnectedMutex.RLock()
+	defer fake.participantSignalDisconnectedMutex.RUnlock()
+	argsForCall := fake.participantSignalDisconnectedArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
 }
 
 func (fake *FakeTelemetryService) Report(arg1 context.Context, arg2 *livekit.ReportInfo) {

@@ -85,7 +85,7 @@ func (t *telemetryService) ParticipantJoined(
 	guard *ReferenceGuard,
 ) {
 	t.enqueue(func() {
-		_, found := t.getOrCreateWorker(
+		worker, _ := t.getOrCreateWorker(
 			ctx,
 			livekit.RoomID(room.Sid),
 			livekit.RoomName(room.Name),
@@ -93,7 +93,7 @@ func (t *telemetryService) ParticipantJoined(
 			livekit.ParticipantIdentity(participant.Identity),
 			guard,
 		)
-		if !found {
+		if worker.markCounted(true) {
 			prometheus.IncrementParticipantRtcConnected(1, clientInfo.GetSdk())
 			prometheus.AddParticipant()
 		}
@@ -103,6 +103,43 @@ func (t *telemetryService) ParticipantJoined(
 			ev.ClientInfo = clientInfo
 			ev.ClientMeta = clientMeta
 			t.SendEvent(ctx, ev)
+		}
+	})
+}
+
+func (t *telemetryService) ParticipantSignalConnected(
+	ctx context.Context,
+	room *livekit.Room,
+	participant *livekit.ParticipantInfo,
+	guard *ReferenceGuard,
+) {
+	t.enqueue(func() {
+		prometheus.AddParticipantSignal()
+
+		// the worker carries the signal channel byte stats; the participant is counted on the
+		// node hosting it, which may not be this one
+		t.getOrCreateWorker(
+			ctx,
+			livekit.RoomID(room.Sid),
+			livekit.RoomName(room.Name),
+			livekit.ParticipantID(participant.Sid),
+			livekit.ParticipantIdentity(participant.Identity),
+			guard,
+		)
+	})
+}
+
+func (t *telemetryService) ParticipantSignalDisconnected(
+	ctx context.Context,
+	room *livekit.Room,
+	participant *livekit.ParticipantInfo,
+	guard *ReferenceGuard,
+) {
+	t.enqueue(func() {
+		prometheus.SubParticipantSignal()
+
+		if worker, ok := t.getWorker(livekit.RoomID(room.Sid), livekit.ParticipantID(participant.Sid)); ok {
+			t.closeWorker(worker, room, participant, guard)
 		}
 	})
 }
@@ -126,7 +163,7 @@ func (t *telemetryService) ParticipantActive(
 			})
 		}
 
-		worker, found := t.getOrCreateWorker(
+		worker, _ := t.getOrCreateWorker(
 			ctx,
 			livekit.RoomID(room.Sid),
 			livekit.RoomName(room.Name),
@@ -134,7 +171,7 @@ func (t *telemetryService) ParticipantActive(
 			livekit.ParticipantIdentity(participant.Identity),
 			guard,
 		)
-		if !found {
+		if worker.markCounted(false) {
 			prometheus.AddParticipant()
 		}
 		worker.SetConnected()
@@ -156,14 +193,14 @@ func (t *telemetryService) ParticipantResumed(
 	t.enqueue(func() {
 		// create a worker if needed.
 		//
-		// Signalling channel stats collector and media channel stats collector could both call
-		// ParticipantJoined and ParticipantLeft.
+		// The signalling channel stats collector (ParticipantSignalConnected/Disconnected) and the
+		// participant (ParticipantJoined/Left) share the worker when on the same node.
 		//
-		// On a resume, the signalling channel collector would call `ParticipantLeft` which would close
-		// the corresponding participant's stats worker.
+		// On a resume, the signalling channel collector of the old connection would call
+		// `ParticipantSignalDisconnected` which could close the corresponding participant's stats worker.
 		//
 		// So, on a successful resume, create the worker if needed.
-		_, found := t.getOrCreateWorker(
+		worker, _ := t.getOrCreateWorker(
 			ctx,
 			livekit.RoomID(room.Sid),
 			livekit.RoomName(room.Name),
@@ -171,7 +208,7 @@ func (t *telemetryService) ParticipantResumed(
 			livekit.ParticipantIdentity(participant.Identity),
 			nil,
 		)
-		if !found {
+		if worker.markCounted(false) {
 			prometheus.AddParticipant()
 		}
 
@@ -194,19 +231,11 @@ func (t *telemetryService) ParticipantLeft(ctx context.Context,
 		isConnected := false
 		if worker, ok := t.getWorker(livekit.RoomID(room.Sid), livekit.ParticipantID(participant.Sid)); ok {
 			isConnected = worker.IsConnected()
-			if worker.Close(guard) {
+			// uncount on leaving even if the signal connection still holds the worker open
+			if worker.markLeft() {
 				prometheus.SubParticipant()
-			} else {
-				logger.Infow(
-					"stats worker active",
-					"room", room.Name,
-					"roomID", room.Sid,
-					"participant", participant.Identity,
-					"participantID", participant.Sid,
-					"worker", worker,
-					"guard", guard,
-				)
 			}
+			t.closeWorker(worker, room, participant, guard)
 		}
 
 		if shouldSendEvent {
@@ -225,6 +254,25 @@ func (t *telemetryService) ParticipantLeft(ctx context.Context,
 			t.SendEvent(ctx, newParticipantEvent(analyticsEvent, room, participant))
 		}
 	})
+}
+
+func (t *telemetryService) closeWorker(
+	worker *StatsWorker,
+	room *livekit.Room,
+	participant *livekit.ParticipantInfo,
+	guard *ReferenceGuard,
+) {
+	if !worker.Close(guard) {
+		logger.Infow(
+			"stats worker active",
+			"room", room.Name,
+			"roomID", room.Sid,
+			"participant", participant.Identity,
+			"participantID", participant.Sid,
+			"worker", worker,
+			"guard", guard,
+		)
+	}
 }
 
 func (t *telemetryService) TrackPublishRequested(
