@@ -356,10 +356,22 @@ type rttMarker struct {
 // -------------------------------------------------------------------
 
 type RTPStatsSender struct {
-	*rtpStatsBase
+	rtpStatsBase
 
-	extStartSN         uint64
-	extHighestSN       uint64
+	// fields that every packet updates are together
+	extStartSN   uint64
+	extHighestSN uint64
+
+	extStartTS   uint64
+	extHighestTS uint64
+
+	snInfos []snInfo
+
+	nextSenderSnapshotID uint32
+	senderSnapshots      []senderSnapshot
+
+	timeReversedCount int
+
 	extHighestSNFromRR uint64
 
 	rttMarker rttMarker
@@ -367,21 +379,13 @@ type RTPStatsSender struct {
 	lastRRTime int64
 	lastRR     rtcp.ReceptionReport
 
-	extStartTS   uint64
-	extHighestTS uint64
-
 	packetsLostFromRR uint64
 
 	jitterFromRR    float64
 	maxJitterFromRR float64
 
-	snInfos []snInfo
-
 	layerLockPlis    uint32
 	lastLayerLockPli time.Time
-
-	nextSenderSnapshotID uint32
-	senderSnapshots      []senderSnapshot
 
 	clockSkewCount int
 
@@ -391,23 +395,23 @@ type RTPStatsSender struct {
 	publisherClockRate         float64
 	isPublisherClockRateKnown  bool
 	publisherClockRateOffCount int
-	timeReversedCount          int
 }
 
 func NewRTPStatsSender(params RTPStatsParams, cacheSize int) *RTPStatsSender {
-	return &RTPStatsSender{
-		rtpStatsBase:         newRTPStatsBase(params),
+	r := &RTPStatsSender{
 		snInfos:              make([]snInfo, cacheSize),
 		nextSenderSnapshotID: cFirstSnapshotID,
 		senderSnapshots:      make([]senderSnapshot, 2),
 	}
+	r.rtpStatsBase.init(params)
+	return r
 }
 
 func (r *RTPStatsSender) Seed(from *RTPStatsSender) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if !r.seed(from.rtpStatsBase) {
+	if !r.seed(&from.rtpStatsBase) {
 		return
 	}
 
@@ -660,8 +664,8 @@ func (r *RTPStatsSender) UpdateLayerLockPliAndTime(pliCount uint32) {
 }
 
 func (r *RTPStatsSender) GetPacketsSeenMinusPadding() uint64 {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	return r.getPacketsSeenMinusPadding(r.extStartSN, r.extHighestSN)
 }
@@ -806,8 +810,8 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 }
 
 func (r *RTPStatsSender) LastReceiverReportTime() int64 {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	return r.lastRRTime
 }
@@ -826,8 +830,8 @@ func (r *RTPStatsSender) MaybeAdjustFirstPacketTime(publisherSRData *livekit.RTC
 }
 
 func (r *RTPStatsSender) GetExpectedRTPTimestamp(atNano int64) (expectedTSExt uint64, err error) {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	if r.firstTime == 0 || r.clockRate == 0 {
 		err = errors.New("uninitialized")
@@ -1156,15 +1160,15 @@ func (r *RTPStatsSender) MarshalLogObject(e zapcore.ObjectEncoder) error {
 		return nil
 	}
 
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	return lockedRTPStatsSenderLogEncoder{r}.MarshalLogObject(e)
 }
 
 func (r *RTPStatsSender) ToProto() *livekit.RTPStats {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	p := r.toProto(
 		getPacketsExpected(r.extStartSN, r.extHighestSN),
@@ -1379,8 +1383,8 @@ func (r *RTPStatsSender) getIntervalStats(
 }
 
 func (r *RTPStatsSender) ExtHighestSequenceNumber() uint64 {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	return r.extHighestSN
 }

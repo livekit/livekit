@@ -615,3 +615,87 @@ func Test_RTPStatsSender_PublisherClockRate(t *testing.T) {
 		require.InDelta(t, clockRate, r.publisherClockRate, 1)
 	})
 }
+
+func BenchmarkRTPStatsSender_Update(b *testing.B) {
+	r := NewRTPStatsSender(RTPStatsParams{}, 4096)
+	r.SetClockRate(90000)
+	packetTime := time.Now().UnixNano()
+	esn := uint64(1000)
+	ets := uint64(100000)
+	r.Update(packetTime, esn, ets, false, 12, 1200, 0, false)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		esn++
+		if i%5 == 0 {
+			ets += 3000
+			packetTime += 33 * int64(time.Millisecond)
+		}
+		r.Update(packetTime, esn, ets, i%5 == 4, 12, 1200, 0, false)
+	}
+}
+
+// 5 packets per frame, like video
+func BenchmarkRTPStatsReceiver_UpdateVideo(b *testing.B) {
+	r := NewRTPStatsReceiver(RTPStatsParams{})
+	r.SetClockRate(90000)
+	packetTime := time.Now().UnixNano()
+	sn := uint16(0)
+	ts := uint32(0)
+	r.Update(packetTime, sn, ts, false, 12, 1200, 0)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sn++
+		if i%5 == 0 {
+			ts += 3000
+			packetTime += 33 * int64(time.Millisecond)
+		}
+		r.Update(packetTime, sn, ts, i%5 == 4, 12, 1200, 0)
+	}
+}
+
+// many streams round robin, the state of a stream is not in cache when its packet comes
+func BenchmarkRTPStatsReceiver_UpdateManyStreams(b *testing.B) {
+	const n = 20000
+	rs := make([]*RTPStatsReceiver, n)
+	packetTime := time.Now().UnixNano()
+	for i := range rs {
+		rs[i] = NewRTPStatsReceiver(RTPStatsParams{})
+		rs[i].SetClockRate(90000)
+		rs[i].Update(packetTime, 0, 0, false, 12, 1200, 0)
+	}
+	sn := uint16(0)
+	ts := uint32(0)
+	rand.New(rand.NewSource(1)).Shuffle(n, func(i, j int) { rs[i], rs[j] = rs[j], rs[i] })
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if i%n == 0 {
+			sn++
+			ts += 3000
+			packetTime += 33 * int64(time.Millisecond)
+		}
+		rs[i%n].Update(packetTime, sn, ts, true, 12, 1200, 0)
+	}
+}
+
+func BenchmarkRTPStatsSender_UpdateManyStreams(b *testing.B) {
+	const n = 20000
+	rs := make([]*RTPStatsSender, n)
+	packetTime := time.Now().UnixNano()
+	for i := range rs {
+		rs[i] = NewRTPStatsSender(RTPStatsParams{}, 4096)
+		rs[i].SetClockRate(90000)
+		rs[i].Update(packetTime, 1000, 100000, false, 12, 1200, 0, false)
+	}
+	esn := uint64(1000)
+	ets := uint64(100000)
+	rand.New(rand.NewSource(1)).Shuffle(n, func(i, j int) { rs[i], rs[j] = rs[j], rs[i] })
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if i%n == 0 {
+			esn++
+			ets += 3000
+			packetTime += 33 * int64(time.Millisecond)
+		}
+		rs[i%n].Update(packetTime, esn, ets, true, 12, 1200, 0, false)
+	}
+}
