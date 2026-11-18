@@ -782,9 +782,9 @@ func (s *RTCService) startConnection(
 	return cr, initialResponse, nil
 }
 
-// stampJoinRequestTime sets when the server received a new user's join request.
+// stampJoinRequestTime sets when the server received a new participant's join request.
 func stampJoinRequestTime(pi *routing.ParticipantInit, at time.Time) {
-	if pi.Reconnect || pi.Grants.GetParticipantKind() != livekit.ParticipantInfo_STANDARD {
+	if pi.Reconnect {
 		return
 	}
 	if pi.Grants.Attributes == nil {
