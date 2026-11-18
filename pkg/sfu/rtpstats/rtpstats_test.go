@@ -15,6 +15,7 @@
 package rtpstats
 
 import (
+	"fmt"
 	"math/rand"
 	"slices"
 	"testing"
@@ -23,6 +24,7 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
@@ -697,5 +699,67 @@ func BenchmarkRTPStatsSender_UpdateManyStreams(b *testing.B) {
 			packetTime += 33 * int64(time.Millisecond)
 		}
 		rs[i%n].Update(packetTime, esn, ets, true, 12, 1200, 0, false)
+	}
+}
+
+func Test_RTPStatsSender_ReceiverReportTotalLost(t *testing.T) {
+	r := NewRTPStatsSender(RTPStatsParams{}, 1024)
+	r.SetClockRate(90000)
+	t.Cleanup(r.Stop)
+	snapshotID := r.NewSenderSnapshotId()
+
+	esn := uint64(1000)
+	at := time.Now().UnixNano()
+	send := func(numPackets int) {
+		for i := 0; i < numPackets; i++ {
+			esn++
+			r.Update(at, esn, esn*3000, true, 12, 1000, 0, false)
+			at += int64(time.Millisecond)
+		}
+	}
+	report := func(totalLost uint32) *RTPDeltaInfo {
+		r.UpdateFromReceiverReport(rtcp.ReceptionReport{LastSequenceNumber: uint32(esn), TotalLost: totalLost})
+		_, receiverView := r.DeltaInfoSender(snapshotID)
+		return receiverView
+	}
+
+	send(100)
+	require.EqualValues(t, 3, report(3).PacketsLost)
+
+	send(100)
+	require.EqualValues(t, 7, report(10).PacketsLost)
+
+	// a remote that received duplicates reports the cumulative loss as -1, that is not a loss
+	send(100)
+	require.EqualValues(t, 0, report(0xFF_FFFF).PacketsLost)
+	require.Zero(t, r.packetsLostFromRR)
+
+	send(100)
+	require.EqualValues(t, 4, report(4).PacketsLost)
+}
+
+func Test_RTPStatsSender_ProcessedReceptionReportsLog(t *testing.T) {
+	for _, numReports := range []int{3, cMaxProcessedReceptionReports + 6} {
+		r := NewRTPStatsSender(RTPStatsParams{}, 1024)
+		r.SetClockRate(90000)
+		snapshotID := r.NewSenderSnapshotId()
+
+		at := time.Now().UnixNano()
+		for i := 1; i <= numReports; i++ {
+			r.Update(at, uint64(1000+i), uint64(i*3000), true, 12, 1000, 0, false)
+			r.UpdateFromReceiverReport(rtcp.ReceptionReport{LastSequenceNumber: uint32(1000 + i), TotalLost: uint32(i)})
+		}
+
+		// reports are logged oldest first
+		enc := zapcore.NewMapObjectEncoder()
+		view := &r.senderSnapshots[snapshotID-cFirstSnapshotID].receiverView
+		require.NoError(t, wrappedReceptionReportsLogger{view}.MarshalLogObject(enc))
+		numLogged := min(numReports, cMaxProcessedReceptionReports)
+		require.Len(t, enc.Fields, numLogged)
+		for i := 0; i < numLogged; i++ {
+			rr := enc.Fields[fmt.Sprintf("%d", i)].(rtcp.ReceptionReport)
+			require.EqualValues(t, numReports-numLogged+i+1, rr.TotalLost)
+		}
+		r.Stop()
 	}
 }
