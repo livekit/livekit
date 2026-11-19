@@ -307,6 +307,7 @@ func AugmentClientInfo(ci *livekit.ClientInfo, req *http.Request) {
 
 	// attempt to parse types for SDKs that support browser as a platform
 	if ci.Sdk == livekit.ClientInfo_JS ||
+		ci.Sdk == livekit.ClientInfo_UNITY_WEB ||
 		ci.Sdk == livekit.ClientInfo_REACT_NATIVE ||
 		ci.Sdk == livekit.ClientInfo_FLUTTER ||
 		ci.Sdk == livekit.ClientInfo_UNITY ||
@@ -477,6 +478,9 @@ func CheckConnectLimits(limitConfig config.LimitConfig, identity string, roomNam
 	}
 	if !limitConfig.CheckAttributesSize(grants.Attributes) {
 		return fmt.Errorf("%w: max size %d", ErrAttributeExceedsLimits, limitConfig.MaxAttributesSize)
+	}
+	if !limitConfig.CheckLKAttributesSize(grants.Attributes) {
+		return fmt.Errorf("%w: lk. attributes max size %d", ErrAttributeExceedsLimits, limitConfig.MaxLKAttributesSize)
 	}
 	return nil
 }

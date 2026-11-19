@@ -186,8 +186,8 @@ func (r *RedPrimaryReceiver) Close() {
 	closeTrackSenders(r.downTrackSpreader.CloseAndGetDownTracks())
 }
 
-func (r *RedPrimaryReceiver) ReadRTP(buf []byte, layer uint8, esn uint64) (int, error) {
-	n, err := r.TrackReceiver.ReadRTP(buf, layer, esn)
+func (r *RedPrimaryReceiver) ReadRTP(buf []byte, layer uint8, esn uint64, streamGeneration uint64) (int, error) {
+	n, err := r.TrackReceiver.ReadRTP(buf, layer, esn, streamGeneration)
 	if err != nil {
 		return n, err
 	}

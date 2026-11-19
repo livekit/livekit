@@ -74,22 +74,22 @@ func (r *RTPStatsSenderLite) MarshalLogObject(e zapcore.ObjectEncoder) error {
 		return nil
 	}
 
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	return lockedRTPStatsSenderLiteLogEncoder{r}.MarshalLogObject(e)
 }
 
 func (r *RTPStatsSenderLite) ToProto() *livekit.RTPStats {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	return r.rtpStatsBaseLite.toProto(r.extStartSN, r.extHighestSN, r.packetsLost)
 }
 
 func (r *RTPStatsSenderLite) ExtHighestSequenceNumber() uint64 {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	return r.extHighestSN
 }

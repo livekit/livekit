@@ -212,6 +212,9 @@ rtc:
 # when enabled, LiveKit will expose prometheus metrics on :6789/metrics
 # prometheus:
 #   port: 6789
+#   # optional: also export livekit_room_included_total, counting only rooms whose name
+#   # does not match this regex (RE2, unanchored).
+#   room_exclude_regex: "^(loadtest|healthcheck)-"
 
 # expose /debug/pprof (and /debug/goroutine, /debug/rooms) on a dedicated port,
 # separate from the public signalling port. only enabled when port is set.
@@ -440,8 +443,11 @@ keys:
 #   subscription_limit_audio: 0
 #   # limit size of room and participant's metadata, 0 for no limit
 #   max_metadata_size: 0
-#   # limit size of participant attributes, 0 for no limit
+#   # limit size of participant attributes without the lk. prefix, 0 for no limit
 #   max_attributes_size: 0
+#   # limit size of participant attributes with the lk. prefix, which LiveKit services set.
+#   # defaults to 2 KiB, 0 for no limit
+#   max_lk_attributes_size: 2048
 #   # limit length of room names
 #   max_room_name_length: 0
 #   # limit length of participant identity
