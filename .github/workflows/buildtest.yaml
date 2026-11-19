@@ -72,10 +72,11 @@ jobs:
       - name: Test
         run: |
           set -euo pipefail
-          MallocNanoZone=0 go test -race -json -v ./... 2>&1 | tee /tmp/gotest.log | go tool gotestfmt
+          # stderr stays out of the pipe: tparse rejects the whole stream if a
+          # non-JSON line follows the first JSON event.
+          MallocNanoZone=0 go test -race -json ./... | tee /tmp/gotest.log | go tool tparse -progress
 
-      # gotestfmt folds every test into a collapsed group, which hides a failure in a long log.
-      # List the failed tests in the log and on the run summary page.
+      # List the failed tests on the run summary page.
       - name: Failed tests
         if: failure()
         run: |
