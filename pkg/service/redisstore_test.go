@@ -68,6 +68,19 @@ func TestRoomInternal(t *testing.T) {
 	require.NoError(t, rs.DeleteRoom(ctx, "test_room"))
 }
 
+func TestDeleteRoomWithoutRecord(t *testing.T) {
+	ctx := context.Background()
+	rs := redisStore(t)
+	roomName := livekit.RoomName("room_without_record")
+
+	require.NoError(t, rs.StoreParticipant(ctx, roomName, &livekit.ParticipantInfo{Sid: "PA_1", Identity: "p1"}))
+	require.NoError(t, rs.DeleteRoom(ctx, roomName))
+
+	participants, err := rs.ListParticipants(ctx, roomName)
+	require.NoError(t, err)
+	require.Empty(t, participants)
+}
+
 func TestParticipantPersistence(t *testing.T) {
 	ctx := context.Background()
 	rs := redisStore(t)
