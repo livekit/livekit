@@ -2930,10 +2930,6 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, p
 		t.clearLocalDescriptionSent()
 	}
 
-	// a restart offer is applied even while ICE is gathering, the ICE agent cancels the
-	// gather in progress on restart. Holding the offer until gathering completes would leave
-	// the remote waiting for an answer for as long as gathering runs (STUN timeouts for example)
-	// and drop the remote candidates of the new generation that are trickled in the meantime.
 	if offerRestartICE && t.resetShortConnOnICERestart.CompareAndSwap(true, false) {
 		t.resetShortConn()
 	}
