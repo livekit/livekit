@@ -21,6 +21,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	stdatomic "sync/atomic"
 	"time"
 
 	"github.com/gammazero/deque"
@@ -205,7 +206,7 @@ type BufferBase struct {
 	enableStreamRestartDetection bool
 
 	pliThrottle int64
-	lastPliAt   atomic.Int64
+	lastPliAt   stdatomic.Int64
 
 	rtpStats             *rtpstats.RTPStatsReceiver
 	ppsSnapshotId        uint32
