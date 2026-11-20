@@ -16,6 +16,7 @@ package test
 
 import (
 	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
@@ -243,4 +244,72 @@ func agentToken() string {
 		panic(err)
 	}
 	return t
+}
+
+func TestAgentCreateDispatch(t *testing.T) {
+	for _, testRTCServicePath := range testRTCServicePaths {
+		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
+			_, finish := setupSingleNodeTest("TestAgentCreateDispatch")
+			defer finish()
+
+			acRoom, err := newAgentClient(agentToken(), defaultServerPort)
+			require.NoError(t, err)
+			acPublisher, err := newAgentClient(agentToken(), defaultServerPort)
+			require.NoError(t, err)
+			acParticipant, err := newAgentClient(agentToken(), defaultServerPort)
+			require.NoError(t, err)
+			defer acRoom.close()
+			defer acPublisher.close()
+			defer acParticipant.close()
+			acRoom.Run(livekit.JobType_JT_ROOM, "default")
+			acPublisher.Run(livekit.JobType_JT_PUBLISHER, "default")
+			acParticipant.Run(livekit.JobType_JT_PARTICIPANT, "default")
+
+			testutils.WithTimeout(t, func() string {
+				if acRoom.registered.Load() != 1 || acPublisher.registered.Load() != 1 || acParticipant.registered.Load() != 1 {
+					return "worker not registered"
+				}
+				return ""
+			}, RegisterTimeout)
+
+			c1 := createRTCClient("c1", defaultServerPort, testRTCServicePath, nil)
+			c2 := createRTCClient("c2", defaultServerPort, testRTCServicePath, nil)
+			waitUntilConnected(t, c1, c2)
+
+			// only c1 publishes
+			t1, err := c1.AddStaticTrack("audio/opus", "audio", "micro")
+			require.NoError(t, err)
+			defer t1.Stop()
+
+			// the room's default dispatch: 1 room job, 1 publisher job (c1), 2 participant jobs
+			testutils.WithTimeout(t, func() string {
+				if acRoom.roomJobs.Load() != 1 || acPublisher.publisherJobs.Load() != 1 || acParticipant.participantJobs.Load() != 2 {
+					return fmt.Sprintf("default dispatch jobs, room: %d, publisher: %d, participant: %d",
+						acRoom.roomJobs.Load(), acPublisher.publisherJobs.Load(), acParticipant.participantJobs.Load())
+				}
+				return ""
+			}, AssignJobTimeout)
+
+			dispatchClient := livekit.NewAgentDispatchServiceJSONClient(fmt.Sprintf("http://localhost:%d", defaultServerPort), &http.Client{})
+			_, err = dispatchClient.CreateDispatch(contextWithToken(adminRoomToken(testRoom)), &livekit.CreateAgentDispatchRequest{
+				Room: testRoom,
+			})
+			require.NoError(t, err)
+
+			// the added dispatch launches the same set once more: c2 has not published, so no publisher job for it
+			testutils.WithTimeout(t, func() string {
+				if acRoom.roomJobs.Load() != 2 || acPublisher.publisherJobs.Load() != 2 || acParticipant.participantJobs.Load() != 4 {
+					return fmt.Sprintf("added dispatch jobs, room: %d, publisher: %d, participant: %d",
+						acRoom.roomJobs.Load(), acPublisher.publisherJobs.Load(), acParticipant.participantJobs.Load())
+				}
+				return ""
+			}, AssignJobTimeout)
+
+			// and no more than that
+			time.Sleep(500 * time.Millisecond)
+			require.EqualValues(t, 2, acRoom.roomJobs.Load())
+			require.EqualValues(t, 2, acPublisher.publisherJobs.Load())
+			require.EqualValues(t, 4, acParticipant.participantJobs.Load())
+		})
+	}
 }
