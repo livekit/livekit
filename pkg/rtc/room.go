@@ -1886,6 +1886,9 @@ func (r *Room) createAgentDispatchFromRoomDispatch(rad *livekit.RoomAgentDispatc
 	if err := protoagent.ValidateDeployment(rad.GetDeployment()); err != nil {
 		return nil, err
 	}
+	if err := protoagent.ValidateThreadID(rad.GetThreadId()); err != nil {
+		return nil, err
+	}
 	return r.createAgentDispatch(&livekit.AgentDispatch{
 		Id:            guid.New(guid.AgentDispatchPrefix),
 		AgentName:     rad.GetAgentName(),
