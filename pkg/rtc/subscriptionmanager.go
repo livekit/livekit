@@ -627,6 +627,8 @@ func (m *SubscriptionManager) reconcileSubscription(s *mediaTrackSubscription) {
 	m.lock.Lock()
 	if m.subscriptions[s.trackID] == s && s.needsCleanup() {
 		s.logger.Debugw("cleanup removing subscription")
+		s.setChangedNotifier(nil)
+		s.setRemovedNotifier(nil)
 		delete(m.subscriptions, s.trackID)
 	}
 	m.lock.Unlock()
@@ -715,6 +717,8 @@ func (m *SubscriptionManager) reconcileDataTrackSubscription(s *dataTrackSubscri
 	cleanedUp := m.dataTrackSubscriptions[s.trackID] == s && s.needsCleanup()
 	if cleanedUp {
 		s.logger.Debugw("cleanup removing data track subscription")
+		s.setChangedNotifier(nil)
+		s.setRemovedNotifier(nil)
 		delete(m.dataTrackSubscriptions, s.trackID)
 	}
 	m.lock.Unlock()
@@ -1055,9 +1059,9 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *mediaTrackSubscripti
 	if subTrack == nil {
 		return
 	}
-	s.setSubscribedTrack(nil)
 	s.setChangedNotifier(nil)
 	s.setRemovedNotifier(nil)
+	s.setSubscribedTrack(nil)
 
 	var relieveFromLimits bool
 	switch subTrack.MediaTrack().Kind() {
@@ -1236,9 +1240,9 @@ func (m *SubscriptionManager) handleDataDownTrackClose(s *dataTrackSubscription)
 	if s.getDataDownTrack() == nil {
 		return
 	}
-	s.setDataDownTrack(nil)
 	s.setChangedNotifier(nil)
 	s.setRemovedNotifier(nil)
+	s.setDataDownTrack(nil)
 
 	m.unmarkSubscribedTo(s.getPublisherID(), s.trackID)
 	m.notifyDataTrackSubscriberHandles()
@@ -1415,13 +1419,10 @@ func (s *trackSubscription) setDesired(desired bool) bool {
 	}
 	s.desired = desired
 
-	// when no longer desired, we no longer care about change notifications
+	// Keep observers until teardown: an unsubscribe may be canceled before reconciliation.
 	if desired {
 		// reset attempts
 		s.numAttempts.Store(0)
-	} else {
-		s.setChangedNotifierLocked(nil)
-		s.setRemovedNotifierLocked(nil)
 	}
 	return true
 }
@@ -1484,7 +1485,7 @@ func (s *trackSubscription) setChangedNotifierLocked(notifier types.ChangeNotifi
 	s.changedNotifier = notifier
 
 	if existing != nil {
-		go existing.RemoveObserver(string(s.subscriberID))
+		existing.RemoveObserver(string(s.subscriberID))
 	}
 	return true
 }
@@ -1504,7 +1505,7 @@ func (s *trackSubscription) setRemovedNotifierLocked(notifier types.ChangeNotifi
 	s.removedNotifier = notifier
 
 	if existing != nil {
-		go existing.RemoveObserver(string(s.subscriberID))
+		existing.RemoveObserver(string(s.subscriberID))
 	}
 	return true
 }
