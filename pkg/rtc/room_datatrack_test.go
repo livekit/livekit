@@ -96,6 +96,7 @@ func TestDataTrackCloseBeforePublisherMark(t *testing.T) {
 		if calls.Add(1) == 2 {
 			// Keep the permitted snapshot, but close the real downtrack before the
 			// subscription manager consumes it and marks the publisher.
+			assert.True(t, res.DataTrack.IsSubscriber(sub.ID()))
 			assert.NoError(t, pub.HandleUpdateSubscriptionPermission(&livekit.SubscriptionPermission{}))
 		}
 		return res
