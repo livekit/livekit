@@ -207,9 +207,14 @@ func (m *SubscriptionManager) SubscribeToTrack(trackID livekit.TrackID, isSync b
 		m.subscriptions[trackID] = sub
 	}
 	desireChanged := sub.setDesired(true)
+	alreadyBound := sub.getSubscribedTrack() != nil
 	m.lock.Unlock()
 	if desireChanged {
 		sub.logger.Debugw("subscribing to track")
+	}
+	// FastStart already attached — ACTIVE re-subscribe must not re-reconcile/negotiate.
+	if !desireChanged && alreadyBound {
+		return
 	}
 
 	// always reconcile, since SubscribeToTrack could be called when the track is ready
