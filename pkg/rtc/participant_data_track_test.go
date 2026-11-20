@@ -16,12 +16,15 @@ package rtc
 
 import (
 	"fmt"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/protocol/livekit"
 )
 
@@ -91,6 +94,53 @@ func TestDataTrackValidHandles(t *testing.T) {
 			require.Empty(t, p.UpDataTrackManager.GetPublishedDataTracks())
 			require.Equal(t, 2, sink.WriteMessageCallCount())
 			require.NotNil(t, sink.WriteMessageArgsForCall(1).(*livekit.SignalResponse).GetUnpublishDataTrackResponse())
+		})
+	}
+}
+
+func TestDataTrackRemovedFromRoomWhenPublisherCloses(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		close func(rm *Room, p *ParticipantImpl)
+	}{
+		{
+			name: "room removes participant",
+			close: func(rm *Room, p *ParticipantImpl) {
+				rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonServiceRequestRemoveParticipant)
+			},
+		},
+		{
+			// as on a peer connection disconnect timeout or a full reconnect, the room removes
+			// the participant after it is closed
+			name: "participant closes itself",
+			close: func(rm *Room, p *ParticipantImpl) {
+				_ = p.Close(true, types.ParticipantCloseReasonPeerConnectionDisconnected, false)
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rm := newRoomWithParticipants(t, testRoomOpts{num: 0})
+			p := newParticipantForTest("pub")
+			p.params.EnableDataTracks = true
+			p.setListener(rm.LocalParticipantListener())
+			require.NoError(t, rm.Join(p, nil, &ParticipantOptions{}, iceServersForRoom))
+
+			p.HandlePublishDataTrackRequest(&livekit.PublishDataTrackRequest{PubHandle: 1, Name: "test-track"})
+			dt := p.UpDataTrackManager.GetPublishedDataTrack(1)
+			require.NotNil(t, dt)
+			require.NotNil(t, rm.trackManager.GetDataTrackInfo(dt.ID()))
+
+			// subscribers learn of the removal through this notifier
+			var removed atomic.Bool
+			rm.trackManager.GetOrCreateTrackRemoveNotifier(dt.ID()).AddObserver("sub", func() {
+				removed.Store(true)
+			})
+
+			test.close(rm, p)
+
+			require.Eventually(t, func() bool { return rm.GetParticipant("pub") == nil }, 2*time.Second, 10*time.Millisecond)
+			require.Nil(t, rm.trackManager.GetDataTrackInfo(dt.ID()), "data track left in the room")
+			require.Eventually(t, removed.Load, 2*time.Second, 10*time.Millisecond, "subscribers not notified of the removal")
 		})
 	}
 }
