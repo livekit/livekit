@@ -1,0 +1,47 @@
+###########
+# livekit-server carrying the ICE nomination patch.
+#
+# pion's controlling selector holds a valid candidate pair unnominated for a per-type
+# minimum wait (prflx 1s, relay 2s). Behind a forced TURN relay there is only one viable
+# path, so that wait is dead time on the subscriber PeerConnection — the one the SFU
+# offers and therefore controls. See pkg/rtc/transport.go.
+#
+#   docker build -f Dockerfile.fk \
+#     -t jfrog.fkinternal.com/n200m-icap/livekit-server:1.9.12-fk-1 .
+#
+# Kept separate from the upstream Dockerfile so rebases onto livekit/livekit stay clean.
+FROM --platform=linux/amd64 jfrog.fkinternal.com/fk-base-images/golang:1.26.0-debian13.3 AS builder
+
+ENV GOPROXY=https://artifactory.artifactory-prod.fkcloud.in/artifactory/api/go/go_virtual \
+    GOSUMDB=off \
+    GOTOOLCHAIN=local
+
+WORKDIR /workspace
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY cmd/ cmd/
+COPY pkg/ pkg/
+COPY test/ test/
+COPY version/ version/
+
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+    -ldflags "-s -w" \
+    -o bin/livekit-server ./cmd/server
+
+###########
+# Runtime is the stock v1.9.12 image with only the binary swapped, so the container
+# stays byte-identical to what the chart already expects: a shell at /bin/sh (the
+# deployment wraps startup in `sh -c` to sed the Redis password into the config) and
+# the binary at /livekit-server. Distroless has no shell and fails to start here.
+FROM --platform=linux/amd64 jfrog.fkinternal.com/docker-external/livekit/livekit-server:v1.9.12
+
+COPY --from=builder /workspace/bin/livekit-server /livekit-server
+
+EXPOSE 7880/tcp
+EXPOSE 7881/tcp
+EXPOSE 6789/tcp
+EXPOSE 50000-60000/udp
+
+ENTRYPOINT ["/livekit-server"]
