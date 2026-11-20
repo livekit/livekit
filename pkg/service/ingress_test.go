@@ -16,7 +16,11 @@ package service_test
 
 import (
 	"context"
+	"errors"
+	"net/netip"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -47,6 +51,9 @@ func TestCreateURLPullIngressScheme(t *testing.T) {
 			nil,
 			launcher,
 		)
+		svc.SetLookupNetIP(func(context.Context, string, string) ([]netip.Addr, error) {
+			return []netip.Addr{netip.MustParseAddr("93.184.215.14")}, nil
+		})
 		return svc, launcher
 	}
 
@@ -94,6 +101,188 @@ func TestCreateURLPullIngressScheme(t *testing.T) {
 		_, err := svc.CreateIngress(adminCtx(), createReq("rtsp://1.2.3.4/live"))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid url scheme rtsp")
+	})
+}
+
+func TestCreateURLPullIngressHost(t *testing.T) {
+	stubLookup := func(_ context.Context, _, host string) ([]netip.Addr, error) {
+		switch strings.ToLower(host) {
+		case "public.example", "localhost", "localhost.", "foo.localhost":
+			return []netip.Addr{netip.MustParseAddr("93.184.215.14")}, nil
+		case "internal.example":
+			return []netip.Addr{netip.MustParseAddr("10.1.2.3")}, nil
+		case "mixed.example":
+			return []netip.Addr{netip.MustParseAddr("93.184.215.14"), netip.MustParseAddr("169.254.169.254")}, nil
+		}
+		if addr, err := netip.ParseAddr(host); err == nil {
+			return []netip.Addr{addr}, nil
+		}
+		return nil, errors.New("no such host")
+	}
+
+	newServiceWithLookup := func(allowPrivate bool) (*service.IngressService, *servicefakes.FakeIngressLauncher) {
+		launcher := &servicefakes.FakeIngressLauncher{}
+		launcher.LaunchPullIngressCalls(func(_ context.Context, info *livekit.IngressInfo) (*livekit.IngressInfo, error) {
+			return info, nil
+		})
+
+		svc := service.NewIngressServiceWithIngressLauncher(
+			&config.IngressConfig{AllowPrivateURLPull: allowPrivate},
+			"nodeID",
+			nil,
+			nil,
+			&servicefakes.FakeIngressStore{},
+			nil,
+			nil,
+			launcher,
+		)
+		return svc, launcher
+	}
+	newService := func(allowPrivate bool) (*service.IngressService, *servicefakes.FakeIngressLauncher) {
+		svc, launcher := newServiceWithLookup(allowPrivate)
+		svc.SetLookupNetIP(stubLookup)
+		return svc, launcher
+	}
+
+	ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{Video: &auth.VideoGrant{IngressAdmin: true}}, "")
+
+	create := func(svc *service.IngressService, url string) (*livekit.IngressInfo, error) {
+		return svc.CreateIngress(ctx, &livekit.CreateIngressRequest{
+			InputType:           livekit.IngressInput_URL_INPUT,
+			Url:                 url,
+			RoomName:            "testroom",
+			ParticipantIdentity: "ingress",
+		})
+	}
+
+	t.Run("resolved internal addresses rejected", func(t *testing.T) {
+		svc, launcher := newServiceWithLookup(false)
+		for _, url := range []string{
+			"http://localhost/live",
+			"http://127.0.0.1/live",
+			"http://[::1]/live",
+			"http://169.254.169.254/latest/meta-data/",
+			"http://100.64.0.1/live",
+			"http://0.1.2.3/live",
+		} {
+			_, err := create(svc, url)
+			require.Error(t, err, url)
+		}
+		require.Zero(t, launcher.LaunchPullIngressCallCount())
+	})
+
+	t.Run("lookup has a deadline", func(t *testing.T) {
+		svc, launcher := newServiceWithLookup(false)
+		svc.SetLookupNetIP(func(ctx context.Context, _, _ string) ([]netip.Addr, error) {
+			deadline, ok := ctx.Deadline()
+			require.True(t, ok, "lookup context has no deadline")
+			require.WithinDuration(t, time.Now().Add(5*time.Second), deadline, time.Second)
+			return []netip.Addr{netip.MustParseAddr("93.184.215.14")}, nil
+		})
+		_, err := create(svc, "http://public.example/live")
+		require.NoError(t, err)
+		require.Equal(t, 1, launcher.LaunchPullIngressCallCount())
+	})
+
+	rejected := []string{
+		"http://127.0.0.1/live",
+		"http://127.1.2.3:8080/live",
+		"http://[::1]/live",
+		"http://localhost/live",
+		"http://LOCALHOST./live",
+		"http://foo.localhost/live",
+		"http://10.0.0.1/live",
+		"http://172.16.5.4/live",
+		"https://192.168.1.1/live",
+		"http://[fd00::1]/live",
+		"http://169.254.169.254/latest/meta-data/",
+		"http://[fe80::1]/live",
+		"http://100.64.0.1/live",
+		"http://0.0.0.0/live",
+		"http://0.1.2.3/live",
+		"http://[::]/live",
+		"http://224.0.0.1/live",
+		"http://255.255.255.255/live",
+		"http://[::ffff:127.0.0.1]/live",
+		"http://[::ffff:10.0.0.1]/live",
+		"http://[::ffff:100.64.0.1]/live",
+		"http://[::ffff:0.1.2.3]/live",
+		"http://198.18.0.1/live",
+		"http://198.19.255.254/live",
+		"http://240.0.0.1/live",
+		"http://[64:ff9b::a9fe:a9fe]/live",
+		"http://[64:ff9b::7f00:1]/live",
+		"http://[64:ff9b::a00:1]/live",
+		"http://[2002:a9fe:a9fe::1]/live",
+		"http://[2002:7f00:1::]/live",
+		"http://192.0.0.1/live",
+		"http://192.0.2.1/live",
+		"http://198.51.100.1/live",
+		"http://203.0.113.255/live",
+		"http://[64:ff9b:1::5db8:d70e]/live",
+		"http://[100::1]/live",
+		"http://[2001:0:4136:e378:8000:63bf:3fff:fdd2]/live",
+		"http://[2001:2::1]/live",
+		"http://[2001:db8::1]/live",
+		"http://[3fff::1]/live",
+		"http://[5f00::1]/live",
+		"http://[100:0:0:1::1]/live",
+		"http://[::7f00:1]/live",
+		"http://[::a9fe:a9fe]/live",
+		"http://[1fff:ffff::1]/live",
+		"http://[4000::1]/live",
+		"http://[2001:db8::1%25eth0]/live",
+		"http://[2002:7f00:1::%25eth0]/live",
+		"http://[64:ff9b::7f00:1%25eth0]/live",
+		"http://internal.example/live",
+		"http://mixed.example/live",
+		"http://unresolvable.example/live",
+		"srt://127.0.0.1:9000",
+		"srt://10.0.0.1:9000?mode=caller",
+		"srt://:9000?mode=listener",
+	}
+
+	t.Run("internal hosts rejected", func(t *testing.T) {
+		svc, launcher := newService(false)
+		for _, url := range rejected {
+			_, err := create(svc, url)
+			require.Error(t, err, url)
+		}
+		require.Zero(t, launcher.LaunchPullIngressCallCount())
+	})
+
+	t.Run("public hosts accepted", func(t *testing.T) {
+		for _, url := range []string{
+			"http://93.184.215.14/live",
+			"https://public.example/live.m3u8",
+			"http://[2606:2800:21f:cb07:6820:80da:af6b:8b2c]/live",
+			"srt://public.example:9000",
+			"http://100.128.0.1/live",
+			"http://198.20.0.1/live",
+			"http://223.255.255.254/live",
+			"http://[64:ff9b::5db8:d70e]/live",
+			"http://[2002:5db8:d70e::1]/live",
+			"http://192.0.1.1/live",
+			"http://192.0.3.1/live",
+			"http://198.51.99.1/live",
+			"http://203.0.112.1/live",
+			"http://203.0.114.1/live",
+			"http://[2001:4860:4860::8888]/live",
+			"http://[3fff:1000::1]/live",
+		} {
+			svc, _ := newService(false)
+			info, err := create(svc, url)
+			require.NoError(t, err, url)
+			require.Equal(t, url, info.Url)
+		}
+	})
+
+	t.Run("internal hosts accepted when allowed", func(t *testing.T) {
+		for _, url := range rejected {
+			svc, _ := newService(true)
+			_, err := create(svc, url)
+			require.NoError(t, err, url)
+		}
 	})
 }
 

@@ -17,7 +17,11 @@ package service
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/netip"
 	"net/url"
+	"strings"
+	"time"
 
 	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
@@ -45,6 +49,7 @@ type IngressService struct {
 	io          IOClient
 	telemetry   telemetry.TelemetryService
 	launcher    IngressLauncher
+	lookupNetIP func(ctx context.Context, network, host string) ([]netip.Addr, error)
 }
 
 func NewIngressServiceWithIngressLauncher(
@@ -67,6 +72,7 @@ func NewIngressServiceWithIngressLauncher(
 		io:          io,
 		telemetry:   ts,
 		launcher:    launcher,
+		lookupNetIP: net.DefaultResolver.LookupNetIP,
 	}
 }
 
@@ -137,6 +143,11 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 		}
 		switch urlObj.Scheme {
 		case "http", "https", "srt":
+			if !s.conf.AllowPrivateURLPull {
+				if err := s.checkURLPullHost(ctx, urlObj.Hostname()); err != nil {
+					return nil, err
+				}
+			}
 		case "udp":
 			if !s.conf.EnableUDPURLPull {
 				return nil, ingress.ErrInvalidIngress("udp url pull is not enabled")
@@ -429,4 +440,69 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 	s.telemetry.IngressDeleted(ctx, info)
 
 	return info, nil
+}
+
+const urlPullLookupTimeout = 5 * time.Second
+
+var (
+	blockedPrefixes = []netip.Prefix{
+		netip.MustParsePrefix("100.64.0.0/10"),
+		netip.MustParsePrefix("192.0.0.0/24"),
+		netip.MustParsePrefix("192.0.2.0/24"),
+		netip.MustParsePrefix("198.18.0.0/15"),
+		netip.MustParsePrefix("198.51.100.0/24"),
+		netip.MustParsePrefix("203.0.113.0/24"),
+		netip.MustParsePrefix("240.0.0.0/4"),
+		netip.MustParsePrefix("2001::/32"),
+		netip.MustParsePrefix("2001:2::/48"),
+		netip.MustParsePrefix("2001:db8::/32"),
+		netip.MustParsePrefix("3fff::/20"),
+	}
+	globalUnicastV6 = netip.MustParsePrefix("2000::/3")
+	nat64Prefix     = netip.MustParsePrefix("64:ff9b::/96")
+	sixToFourPrefix = netip.MustParsePrefix("2002::/16")
+)
+
+func (s *IngressService) checkURLPullHost(ctx context.Context, host string) error {
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return ingress.ErrInvalidIngress("url host is not allowed")
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, urlPullLookupTimeout)
+	defer cancel()
+	addrs, err := s.lookupNetIP(ctx, "ip", host)
+	if err != nil || len(addrs) == 0 {
+		return ingress.ErrInvalidIngress(fmt.Sprintf("cannot resolve url host %s", host))
+	}
+	for _, addr := range addrs {
+		if !isPublicAddr(addr) {
+			return ingress.ErrInvalidIngress("url host is not allowed")
+		}
+	}
+	return nil
+}
+
+func isPublicAddr(addr netip.Addr) bool {
+	addr = addr.Unmap()
+	if a := addr.As16(); nat64Prefix.Contains(addr) {
+		addr = netip.AddrFrom4([4]byte(a[12:16]))
+	} else if sixToFourPrefix.Contains(addr) {
+		addr = netip.AddrFrom4([4]byte(a[2:6]))
+	}
+	if addr.Is6() && !globalUnicastV6.Contains(addr) {
+		return false
+	}
+	if addr.Is4() && addr.As4()[0] == 0 {
+		return false
+	}
+	if !addr.IsGlobalUnicast() || addr.IsPrivate() {
+		return false
+	}
+	for _, p := range blockedPrefixes {
+		if p.Contains(addr) {
+			return false
+		}
+	}
+	return true
 }
