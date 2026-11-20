@@ -15,13 +15,18 @@
 package test
 
 import (
+	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
 
+	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/testutils"
 )
 
@@ -34,6 +39,98 @@ func TestMultiNodeRoomList(t *testing.T) {
 	defer finish()
 
 	roomServiceListRoom(t)
+}
+
+// a node killed without shutting down leaves its rooms assigned to it
+func TestMultiNodeDeleteRoomOfNodeThatLeft(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	for name, leaveCluster := range map[string]func(t *testing.T, nodeID string){
+		"node unregistered": func(t *testing.T, nodeID string) {},
+		"node stopped updating": func(t *testing.T, nodeID string) {
+			data, err := proto.Marshal(&livekit.Node{
+				Id:    nodeID,
+				State: livekit.NodeState_SERVING,
+				Stats: &livekit.NodeStats{UpdatedAt: time.Now().Add(-time.Hour).Unix()},
+			})
+			require.NoError(t, err)
+			require.NoError(t, redisClient().HSet(context.Background(), routing.NodesKey, nodeID, data).Err())
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, _, finish := setupMultiNodeTest("TestMultiNodeDeleteRoomOfNodeThatLeft")
+			defer finish()
+
+			// the room as an unclean shutdown leaves it: stored and assigned to a node that is gone
+			now := time.Now()
+			require.NoError(t, service.NewRedisStore(redisClient()).StoreRoom(context.Background(), &livekit.Room{
+				Sid:            "RM_orphaned",
+				Name:           "orphanedRoom",
+				CreationTime:   now.Unix(),
+				CreationTimeMs: now.UnixMilli(),
+				EmptyTimeout:   300,
+			}, nil))
+			leaveCluster(t, "ND_gone")
+			require.NoError(t, redisClient().HSet(context.Background(), routing.NodeRoomKey, "orphanedRoom", "ND_gone").Err())
+
+			_, err := roomClient.DeleteRoom(contextWithToken(createRoomToken()), &livekit.DeleteRoomRequest{
+				Room: "orphanedRoom",
+			})
+			require.NoError(t, err)
+
+			testutils.WithTimeout(t, func() string {
+				res, err := roomClient.ListRooms(contextWithToken(listRoomToken()), &livekit.ListRoomsRequest{})
+				if err != nil {
+					return err.Error()
+				}
+				if len(res.Rooms) != 0 {
+					return fmt.Sprintf("expected no rooms, got %d", len(res.Rooms))
+				}
+				return ""
+			})
+		})
+	}
+}
+
+// a node that is serving but whose stats look stale, e.g. while its keepalive is delayed, keeps its room
+func TestMultiNodeDeleteRoomOnNodeWithStaleStats(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, s2, finish := setupMultiNodeTest("TestMultiNodeDeleteRoomOnNodeWithStaleStats")
+	defer finish()
+
+	_, err := roomClient.CreateRoom(contextWithToken(createRoomToken()), &livekit.CreateRoomRequest{
+		Name:   testRoom,
+		NodeId: s2.Node().Id,
+	})
+	require.NoError(t, err)
+	c1 := createRTCClient("c1", defaultServerPort, testRTCServicePaths[0], nil)
+	waitUntilConnected(t, c1)
+	defer stopClients(c1)
+
+	node := s2.Node()
+	node.Stats.UpdatedAt = time.Now().Add(-time.Minute).Unix()
+	data, err := proto.Marshal(node)
+	require.NoError(t, err)
+	require.NoError(t, redisClient().HSet(context.Background(), routing.NodesKey, node.Id, data).Err())
+
+	_, err = roomClient.DeleteRoom(contextWithToken(createRoomToken()), &livekit.DeleteRoomRequest{
+		Room: testRoom,
+	})
+	require.NoError(t, err)
+
+	testutils.WithTimeout(t, func() string {
+		if s2.RoomManager().GetRoom(context.Background(), testRoom) != nil {
+			return "room still open on its node"
+		}
+		return ""
+	})
 }
 
 // update room metadata when it's empty
