@@ -75,6 +75,9 @@ func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit
 	if !ag.limitConf.CheckAttributesSize(req.Attributes) {
 		return nil, ErrAttributeExceedsLimits
 	}
+	if !ag.limitConf.CheckLKAttributesSize(req.Attributes) {
+		return nil, fmt.Errorf("%w: lk. attributes max size %d", ErrAttributeExceedsLimits, ag.limitConf.MaxLKAttributesSize)
+	}
 	if err := agent.ValidateThreadID(req.GetThreadId()); err != nil {
 		return nil, twirp.InvalidArgumentError("thread_id", err.Error())
 	}

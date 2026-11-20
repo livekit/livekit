@@ -332,12 +332,13 @@ func (s *SIPService) UpdateSIPOutboundTrunk(ctx context.Context, req *livekit.Up
 	}
 	switch a := req.Action.(type) {
 	default:
-		return nil, errors.New("missing or unsupported action")
+		return nil, twirp.NewError(twirp.InvalidArgument, "missing or unsupported action")
 	case livekit.UpdateSIPOutboundTrunkRequestAction:
 		var result livekit.ValidationResult
 		info, result = a.ApplyResult(info)
+		// The updated trunk failed validation (for example, the update removed its last number).
 		if err := result.LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
-			return nil, err
+			return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 		}
 	}
 	// No additional validation needed for outbound.

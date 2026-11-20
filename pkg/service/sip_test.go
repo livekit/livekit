@@ -385,3 +385,29 @@ func TestUpdateSIPDispatchRuleKeepsUnchangedTrunks(t *testing.T) {
 	require.Equal(t, []string{"ST_1", "ST_2"}, got.TrunkIds)
 	require.Equal(t, 1, store.StoreSIPDispatchRuleCallCount())
 }
+
+func TestSIPOutboundTrunkUpdateValidation(t *testing.T) {
+	ctx, s, rs := newTestSIPService(t)
+
+	created, err := s.CreateSIPOutboundTrunk(ctx, &livekit.CreateSIPOutboundTrunkRequest{
+		Trunk: &livekit.SIPOutboundTrunkInfo{
+			Name:    "outbound",
+			Address: "sip.example.com",
+			Numbers: []string{"+15550001001"},
+		},
+	})
+	require.NoError(t, err)
+
+	// Removing the last number leaves an invalid trunk: a client error, not a server error.
+	_, err = s.UpdateSIPOutboundTrunk(ctx, &livekit.UpdateSIPOutboundTrunkRequest{
+		SipTrunkId: created.SipTrunkId,
+		Action: &livekit.UpdateSIPOutboundTrunkRequest_Update{Update: &livekit.SIPOutboundTrunkUpdate{
+			Numbers: &livekit.ListUpdate{Remove: []string{"+15550001001"}},
+		}},
+	})
+	requireInvalidArgument(t, err)
+
+	stored, err := rs.LoadSIPOutboundTrunk(ctx, created.SipTrunkId)
+	require.NoError(t, err)
+	require.Equal(t, []string{"+15550001001"}, stored.Numbers)
+}

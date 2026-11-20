@@ -52,6 +52,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/rtc/signalling"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -707,6 +708,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 		roomInfo := newRoom.ToProto()
 		r.telemetry.RoomEnded(ctx, roomInfo, reason.ToProto())
 		prometheus.RoomEnded(time.Unix(roomInfo.CreationTime, 0))
+		prometheus.RoomIncludedEnded(roomName)
 		if err := r.deleteRoom(ctx, roomName); err != nil {
 			newRoom.Logger().Errorw("could not delete room", err)
 		}
@@ -736,6 +738,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 
 	r.telemetry.RoomStarted(ctx, newRoom.ToProto())
 	prometheus.RoomStarted()
+	prometheus.RoomIncludedStarted(roomName)
 
 	if created && createRoom.GetEgress().GetRoom() != nil {
 		if r.egressLauncher == nil {
@@ -897,6 +900,10 @@ func (r *RoomManager) UpdateParticipant(ctx context.Context, req *livekit.Update
 		Metadata:   req.Metadata,
 		Attributes: req.Attributes,
 	}, true); err != nil {
+		if errors.Is(err, signalling.ErrAttributesExceedsLimits) {
+			// the request passed the patch check, but the merged attributes exceed a limit
+			return nil, psrpc.NewError(psrpc.InvalidArgument, err)
+		}
 		return nil, err
 	}
 

@@ -956,6 +956,15 @@ func (m *SubscriptionManager) addSubscriber(sub *mediaTrackSubscription, track t
 			return ErrNoSubscribePermission
 		}
 
+		// same for the publisher revoking this track's permission, which only removes
+		// subscribers already recorded on the track
+		if !isSync {
+			if res := m.params.TrackResolver(m.params.Participant, trackID); res.Track == track && !res.HasPermission {
+				track.RemoveSubscriber(m.params.Participant.ID(), false)
+				return ErrNoTrackPermission
+			}
+		}
+
 		if !isSync && subTrack.NeedsNegotiation() {
 			m.params.Participant.Negotiate(false)
 		}
@@ -1187,6 +1196,12 @@ func (m *SubscriptionManager) subscribeDataTrack(sub *dataTrackSubscription) err
 		if !m.params.Participant.CanSubscribe() {
 			dataTrack.RemoveSubscriber(m.params.Participant.ID())
 			return ErrNoSubscribePermission
+		}
+		// same for the publisher revoking this track's permission, which only removes
+		// subscribers already recorded on the track
+		if res := m.params.DataTrackResolver(m.params.Participant, trackID); res.DataTrack == dataTrack && !res.HasPermission {
+			dataTrack.RemoveSubscriber(m.params.Participant.ID())
+			return ErrNoTrackPermission
 		}
 		sub.logger.Debugw("subscribed to data track")
 	}

@@ -125,9 +125,15 @@ func TestStampJoinRequestTime(t *testing.T) {
 		require.Empty(t, stamped(routing.ParticipantInit{Reconnect: true, Grants: &auth.ClaimGrants{}}))
 	})
 
-	t.Run("agent", func(t *testing.T) {
-		grants := &auth.ClaimGrants{}
-		grants.SetParticipantKind(livekit.ParticipantInfo_AGENT)
-		require.Empty(t, stamped(routing.ParticipantInit{Grants: grants}))
+	t.Run("every participant kind", func(t *testing.T) {
+		for _, kind := range []livekit.ParticipantInfo_Kind{
+			livekit.ParticipantInfo_SIP,
+			livekit.ParticipantInfo_AGENT,
+			livekit.ParticipantInfo_EGRESS,
+		} {
+			grants := &auth.ClaimGrants{}
+			grants.SetParticipantKind(kind)
+			require.Equal(t, map[string]string{livekit.AttrRTCJoinRequestTime: "1700000000123"}, stamped(routing.ParticipantInit{Grants: grants}), kind.String())
+		}
 	})
 }

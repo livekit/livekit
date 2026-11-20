@@ -3140,3 +3140,114 @@ func TestForwarderSkipReferenceTSRestartNoOffset(t *testing.T) {
 	require.GreaterOrEqual(t, advance, int64(0))
 	require.Less(t, advance, int64(90000), "timestamp jumped %d ticks (%.1f s) on the switch after restart", advance, float64(advance)/90000)
 }
+
+// A bandwidth downgrade keeps the subscriber on the higher spatial layer until a lower-layer
+// keyframe is close enough in time. These tests keep the higher layer flowing, with sender
+// reports, and ask whether a lower layer that trails by a fixed amount is ever forwarded.
+// Trails are LayerSwitchBehindThresholdSeconds plus or minus 10ms.
+const downgradeTrailClockRate = 90000
+
+func downgradeSwitchThreshold() time.Duration {
+	return time.Duration(LayerSwitchBehindThresholdSeconds * float64(time.Second))
+}
+
+func downgradeTrailBitrates() Bitrates {
+	var brs Bitrates
+	brs[0][0] = 100_000
+	brs[2][0] = 2_000_000
+	return brs
+}
+
+// startDowngradeTrailForwarder forwards layer 2, then allocates only layer 0 because that is
+// all the channel can hold. The subscriber is deficient: target is 0, current stays 2.
+func startDowngradeTrailForwarder(t *testing.T) *Forwarder {
+	t.Helper()
+
+	f := newWrapTestForwarder(t, false)
+	const highBase = uint32(1_000_000)
+	const lowBase = uint32(100_000)
+
+	alloc := f.AllocateOptimal([]int32{2}, downgradeTrailBitrates(), true, false)
+	require.Equal(t, int32(2), alloc.TargetLayer.Spatial)
+
+	tp, err := f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCHigh, 1000, highBase, 0, 2), 2)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	require.Equal(t, int32(2), f.CurrentLayer().Spatial)
+
+	// one more in-order frame so the following drops are not the first packet
+	tp, err = f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCHigh, 1001, highBase+wrapTestFrame, 0, 2), 2)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+
+	now := time.Now()
+	f.SetRefSenderReport(2, wrapTestSenderReport(now, highBase))
+	f.SetRefSenderReport(0, wrapTestSenderReport(now, lowBase))
+
+	f.ProvisionalAllocatePrepare([]int32{0, 2}, downgradeTrailBitrates())
+	fitted, _ := f.ProvisionalAllocate(downgradeTrailBitrates()[0][0], buffer.VideoLayer{Spatial: 0, Temporal: 0}, true, false)
+	require.True(t, fitted)
+	alloc = f.ProvisionalAllocateCommit()
+	require.True(t, alloc.IsDeficient)
+	require.Equal(t, int32(0), alloc.TargetLayer.Spatial)
+	require.Equal(t, int32(2), f.CurrentLayer().Spatial)
+	return f
+}
+
+// offerDowngradeTrail feeds one higher-layer frame, then a lower-layer keyframe whose
+// sender-report-aligned time is trailBehind earlier than that higher-layer frame.
+func offerDowngradeTrail(t *testing.T, f *Forwarder, highSN, lowSN uint16, frameIndex int, trailBehind time.Duration) (highDropped, lowDropped bool) {
+	t.Helper()
+
+	const highBase = uint32(1_000_000)
+	const lowBase = uint32(100_000)
+	// frames 0 and 1 were forwarded before the downgrade
+	highTS := highBase + uint32(frameIndex)*wrapTestFrame
+	trailTicks := uint32(trailBehind.Seconds() * downgradeTrailClockRate)
+	lowTS := lowBase + uint32(frameIndex)*wrapTestFrame - trailTicks
+
+	before := f.rtpMunger.GetExtLastTimestamp()
+	tp, err := f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCHigh, highSN, highTS, 0, 2), 2)
+	require.NoError(t, err)
+	highDropped = tp.shouldDrop
+	if highDropped {
+		require.Equal(t, before, f.rtpMunger.GetExtLastTimestamp(), "dropped higher-layer frame advanced the outgoing timestamp")
+	}
+
+	tp, err = f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCLow, lowSN, lowTS, 0, 0), 0)
+	require.NoError(t, err)
+	lowDropped = tp.shouldDrop
+	if !lowDropped {
+		advance := int64(tp.rtp.extTimestamp - before)
+		require.GreaterOrEqual(t, advance, int64(0), "switch moved the timestamp backwards")
+		require.Less(t, advance, int64(downgradeTrailClockRate), "switch jumped the timestamp by %d ticks", advance)
+	}
+	return highDropped, lowDropped
+}
+
+func TestForwarderDowngradeWhenLowerLayerTrails(t *testing.T) {
+	t.Run("less than the layer switch threshold", func(t *testing.T) {
+		f := startDowngradeTrailForwarder(t)
+		highDropped, lowDropped := offerDowngradeTrail(t, f, 1002, 2000, 2, downgradeSwitchThreshold()-10*time.Millisecond)
+		require.True(t, highDropped, "higher layer should be held back while deficient")
+		require.False(t, lowDropped, "a trail under the layer switch threshold should switch")
+		require.Equal(t, int32(0), f.CurrentLayer().Spatial)
+	})
+
+	t.Run("more than the layer switch threshold", func(t *testing.T) {
+		f := startDowngradeTrailForwarder(t)
+		highDropped, lowDropped := offerDowngradeTrail(t, f, 1002, 2000, 2, downgradeSwitchThreshold()+10*time.Millisecond)
+		require.True(t, highDropped, "higher layer should be held back while deficient")
+		require.False(t, lowDropped, "a trail over the layer switch threshold should switch")
+		require.Equal(t, int32(0), f.CurrentLayer().Spatial)
+	})
+}
+
+func TestForwarderDowngradePadsGap(t *testing.T) {
+	f := startDowngradeTrailForwarder(t)
+	// 1002 is lost, 1003 arrives after the gap
+	tp, err := f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCHigh, 1003, 1_000_000+2*wrapTestFrame, 0, 2), 2)
+	require.NoError(t, err)
+	require.True(t, tp.shouldDrop)
+	require.True(t, tp.padDroppedSlot, "a dropped packet after a gap should pad its slot")
+}
