@@ -1073,6 +1073,7 @@ func (r *Room) onTrackPublished(participant types.Participant, track types.Media
 
 	r.lock.RLock()
 	// subscribe all existing participants to this MediaTrack
+	subscribers := make([]types.LocalParticipant, 0, len(r.participants))
 	for _, existingParticipant := range r.participants {
 		if existingParticipant == participant {
 			// skip publishing participant
@@ -1085,7 +1086,14 @@ func (r *Room) onTrackPublished(participant types.Participant, track types.Media
 		if !r.autoSubscribe(existingParticipant) {
 			continue
 		}
+		subscribers = append(subscribers, existingParticipant)
+	}
+	onParticipantChanged := r.onParticipantChanged
+	r.lock.RUnlock()
 
+	// subscribe outside the room lock, a one-shot signalling participant (WHIP)
+	// subscribes synchronously and the track resolver takes the room lock
+	for _, existingParticipant := range subscribers {
 		existingParticipant.GetLogger().Debugw(
 			"subscribing to new track",
 			"publisher", participant.Identity(),
@@ -1094,8 +1102,6 @@ func (r *Room) onTrackPublished(participant types.Participant, track types.Media
 		)
 		existingParticipant.SubscribeToTrack(track.ID(), false)
 	}
-	onParticipantChanged := r.onParticipantChanged
-	r.lock.RUnlock()
 
 	if onParticipantChanged != nil {
 		onParticipantChanged(participant)
