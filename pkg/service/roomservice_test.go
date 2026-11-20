@@ -364,3 +364,121 @@ type TestRoomService struct {
 	store             *servicefakes.FakeServiceStore
 	participantClient *rpcfakes.FakeTypedParticipantClient
 }
+
+func TestForwardParticipantValidation(t *testing.T) {
+	destRoomCtx := func(src, dst string) context.Context {
+		grant := &auth.ClaimGrants{
+			Video: &auth.VideoGrant{RoomAdmin: true, Room: src, DestinationRoom: dst},
+		}
+		return service.WithGrants(context.Background(), grant, "")
+	}
+
+	tests := []struct {
+		name    string
+		ctx     context.Context
+		req     *livekit.ForwardParticipantRequest
+		wantErr bool
+		wantMsg string
+	}{
+		{
+			name:    "missing identity",
+			ctx:     destRoomCtx("room-a", "room-b"),
+			req:     &livekit.ForwardParticipantRequest{Room: "room-a", Identity: "", DestinationRoom: "room-b"},
+			wantErr: true,
+			wantMsg: "identity cannot be empty",
+		},
+		{
+			name:    "missing destination room",
+			ctx:     destRoomCtx("room-a", ""),
+			req:     &livekit.ForwardParticipantRequest{Room: "room-a", Identity: "alice", DestinationRoom: ""},
+			wantErr: true,
+			wantMsg: "destination room is required",
+		},
+		{
+			name:    "destination same as source",
+			ctx:     destRoomCtx("room-a", "room-a"),
+			req:     &livekit.ForwardParticipantRequest{Room: "room-a", Identity: "alice", DestinationRoom: "room-a"},
+			wantErr: true,
+			wantMsg: "destination room cannot be the same as source room",
+		},
+		{
+			name:    "valid request forwards to participantClient",
+			ctx:     destRoomCtx("room-a", "room-b"),
+			req:     &livekit.ForwardParticipantRequest{Room: "room-a", Identity: "alice", DestinationRoom: "room-b"},
+			wantErr: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := newTestRoomService(config.LimitConfig{})
+			_, err := svc.ForwardParticipant(tc.ctx, tc.req)
+			if tc.wantErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.wantMsg)
+				require.Zero(t, svc.participantClient.ForwardParticipantCallCount())
+			} else {
+				require.Equal(t, 1, svc.participantClient.ForwardParticipantCallCount())
+			}
+		})
+	}
+}
+
+func TestMoveParticipantValidation(t *testing.T) {
+	destRoomCtx := func(src, dst string) context.Context {
+		grant := &auth.ClaimGrants{
+			Video: &auth.VideoGrant{RoomAdmin: true, Room: src, DestinationRoom: dst},
+		}
+		return service.WithGrants(context.Background(), grant, "")
+	}
+
+	tests := []struct {
+		name    string
+		ctx     context.Context
+		req     *livekit.MoveParticipantRequest
+		wantErr bool
+		wantMsg string
+	}{
+		{
+			name:    "missing identity",
+			ctx:     destRoomCtx("room-a", "room-b"),
+			req:     &livekit.MoveParticipantRequest{Room: "room-a", Identity: "", DestinationRoom: "room-b"},
+			wantErr: true,
+			wantMsg: "identity cannot be empty",
+		},
+		{
+			name:    "missing destination room",
+			ctx:     destRoomCtx("room-a", ""),
+			req:     &livekit.MoveParticipantRequest{Room: "room-a", Identity: "alice", DestinationRoom: ""},
+			wantErr: true,
+			wantMsg: "destination room is required",
+		},
+		{
+			name:    "destination same as source",
+			ctx:     destRoomCtx("room-a", "room-a"),
+			req:     &livekit.MoveParticipantRequest{Room: "room-a", Identity: "alice", DestinationRoom: "room-a"},
+			wantErr: true,
+			wantMsg: "destination room cannot be the same as source room",
+		},
+		{
+			name:    "valid request forwards to participantClient",
+			ctx:     destRoomCtx("room-a", "room-b"),
+			req:     &livekit.MoveParticipantRequest{Room: "room-a", Identity: "alice", DestinationRoom: "room-b"},
+			wantErr: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := newTestRoomService(config.LimitConfig{})
+			_, err := svc.MoveParticipant(tc.ctx, tc.req)
+			if tc.wantErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.wantMsg)
+				require.Zero(t, svc.participantClient.MoveParticipantCallCount())
+			} else {
+				require.Equal(t, 1, svc.participantClient.MoveParticipantCallCount())
+			}
+		})
+	}
+}
