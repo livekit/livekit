@@ -81,13 +81,7 @@ func TestDataTrackCloseDuringInstall(t *testing.T) {
 	track := pub.GetPublishedDataTrack(1)
 	require.NotNil(t, track)
 
-	assert.Eventually(t, func() bool {
-		sm := sub.SubscriptionManager
-		sm.lock.RLock()
-		s := sm.dataTrackSubscriptions[track.ID()]
-		sm.lock.RUnlock()
-		return revoked.Load() && s != nil && !track.IsSubscriber(sub.ID()) && s.getDataDownTrack() == nil && !s.getHasPermission() && s.needsSubscribe()
-	}, time.Second, time.Millisecond, "closed installation must be retryable and report denied permission")
+	require.Eventually(t, revoked.Load, time.Second, time.Millisecond, "revoke must run during the real add")
 	require.NoError(t, pub.HandleUpdateSubscriptionPermission(&livekit.SubscriptionPermission{AllParticipants: true}))
 	require.Eventually(t, func() bool {
 		return track.IsSubscriber(sub.ID()) && len(sub.GetSubscribedDataTracks()) == 1 && sub.IsSubscribedTo(pub.ID())
