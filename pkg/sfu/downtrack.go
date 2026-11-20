@@ -2729,7 +2729,13 @@ func (d *DownTrack) GetDeltaStatsSender() map[uint32]*buffer.StreamStatsWithLaye
 }
 
 func (d *DownTrack) GetPrimaryStreamLastReceiverReportTime() time.Time {
-	return time.Unix(0, d.rtpStats.LastReceiverReportTime())
+	at := d.rtpStats.LastReceiverReportTime()
+	if at == 0 {
+		return time.Time{}
+	}
+
+	// at is a mono timestamp, convert to wall time for comparison with time.Now()
+	return time.Now().Add(-time.Duration(mono.UnixNano() - at))
 }
 
 func (d *DownTrack) GetPrimaryStreamPacketsSent() uint64 {
