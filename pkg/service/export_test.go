@@ -16,10 +16,10 @@ package service
 
 import "time"
 
-// SetStopEgressRetry shortens StopEgress retries for a test, and returns a func
-// that restores them.
-func SetStopEgressRetry(timeout, interval time.Duration) func() {
-	prevTimeout, prevInterval := stopEgressRetryTimeout, stopEgressRetryInterval
-	stopEgressRetryTimeout, stopEgressRetryInterval = timeout, interval
-	return func() { stopEgressRetryTimeout, stopEgressRetryInterval = prevTimeout, prevInterval }
+// SetNoSubscriberRetry shortens the egress and ingress no-subscriber retries for
+// a test, and returns a func that restores them.
+func SetNoSubscriberRetry(timeout, interval time.Duration) func() {
+	prevTimeout, prevInterval := noSubscriberRetryTimeout, noSubscriberRetryInterval
+	noSubscriberRetryTimeout, noSubscriberRetryInterval = timeout, interval
+	return func() { noSubscriberRetryTimeout, noSubscriberRetryInterval = prevTimeout, prevInterval }
 }

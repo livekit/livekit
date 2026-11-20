@@ -16,8 +16,10 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
+	"time"
 
 	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
@@ -348,10 +350,11 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 			return nil, err
 		}
 
-		// Do not store the returned state as the ingress service will do it.
-		// The error is only logged, so there is nothing to gain by waiting for an
-		// ingress whose stored state is stale.
-		if _, err = s.psrpcClient.UpdateIngress(middleware.WithoutNoSubscriberRetry(ctx), req.IngressId, req); err != nil {
+		// Do not store the returned state as the ingress service will do it
+		if err = s.callActiveIngress(ctx, req.IngressId, func(ctx context.Context) error {
+			_, err := s.psrpcClient.UpdateIngress(ctx, req.IngressId, req)
+			return err
+		}); err != nil {
 			logger.Warnw("could not update active ingress", err)
 		}
 	}
@@ -416,8 +419,10 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 	switch info.State.Status {
 	case livekit.IngressState_ENDPOINT_BUFFERING,
 		livekit.IngressState_ENDPOINT_PUBLISHING:
-		// The error is only logged, so do not wait for an ingress whose stored state is stale.
-		if _, err = s.psrpcClient.DeleteIngress(middleware.WithoutNoSubscriberRetry(ctx), req.IngressId, req); err != nil {
+		if err = s.callActiveIngress(ctx, req.IngressId, func(ctx context.Context) error {
+			_, err := s.psrpcClient.DeleteIngress(ctx, req.IngressId, req)
+			return err
+		}); err != nil {
 			logger.Warnw("could not stop active ingress", err)
 		}
 	}
@@ -433,4 +438,36 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 	s.telemetry.IngressDeleted(ctx, info)
 
 	return info, nil
+}
+
+// callActiveIngress makes an RPC to an ingress whose stored state says it is
+// active. A stale state has no server to receive the RPC. Rather than let psrpc
+// retry that, reload the ingress, and retry only while it is still active.
+func (s *IngressService) callActiveIngress(ctx context.Context, ingressID string, call func(context.Context) error) error {
+	callCtx := middleware.WithoutNoSubscriberRetry(ctx)
+	deadline := time.Now().Add(noSubscriberRetryTimeout)
+	for {
+		err := call(callCtx)
+		var nse *psrpc.NoSubscriberError
+		if !errors.As(err, &nse) || time.Now().After(deadline) {
+			return err
+		}
+
+		info, loadErr := s.store.LoadIngress(ctx, ingressID)
+		if loadErr != nil {
+			return err
+		}
+		switch info.GetState().GetStatus() {
+		case livekit.IngressState_ENDPOINT_BUFFERING,
+			livekit.IngressState_ENDPOINT_PUBLISHING:
+		default:
+			return err
+		}
+
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(noSubscriberRetryInterval):
+		}
+	}
 }

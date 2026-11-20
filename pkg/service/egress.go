@@ -36,11 +36,12 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc"
 )
 
-// How long and how often StopEgress retries a live egress that nothing is subscribed
-// for, such as one that is starting or whose end is not recorded yet.
+// How long and how often an RPC to a live egress or ingress is retried while
+// nothing is subscribed for it, such as one that is starting or whose end is not
+// recorded yet.
 var (
-	stopEgressRetryTimeout  = 3 * time.Second
-	stopEgressRetryInterval = time.Second
+	noSubscriberRetryTimeout  = 3 * time.Second
+	noSubscriberRetryInterval = time.Second
 )
 
 type EgressService struct {
@@ -393,7 +394,7 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 	// An egress that already ended has no server to receive the stop. Rather than
 	// let psrpc retry that, check the egress, and retry only while it is still live.
 	stopCtx := middleware.WithoutNoSubscriberRetry(ctx)
-	deadline := time.Now().Add(stopEgressRetryTimeout)
+	deadline := time.Now().Add(noSubscriberRetryTimeout)
 	for {
 		info, err = s.launcher.StopEgress(stopCtx, req)
 		if err == nil {
@@ -421,7 +422,7 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 		select {
 		case <-ctx.Done():
 			return nil, err
-		case <-time.After(stopEgressRetryInterval):
+		case <-time.After(noSubscriberRetryInterval):
 		}
 	}
 }

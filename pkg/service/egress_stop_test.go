@@ -53,7 +53,7 @@ func (l *stopLauncher) StopEgress(_ context.Context, req *livekit.StopEgressRequ
 
 func TestStopEgressNoSubscriber(t *testing.T) {
 	const retryTimeout = 200 * time.Millisecond
-	t.Cleanup(service.SetStopEgressRetry(retryTimeout, 10*time.Millisecond))
+	t.Cleanup(service.SetNoSubscriberRetry(retryTimeout, 10*time.Millisecond))
 
 	ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{Video: &auth.VideoGrant{RoomRecord: true}}, "")
 	req := &livekit.StopEgressRequest{EgressId: "EG_test"}
