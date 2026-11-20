@@ -60,13 +60,17 @@ func newRoomDataTrackParticipants(t *testing.T) (*Room, *ParticipantImpl, *Parti
 func TestDataTrackCloseDuringInstall(t *testing.T) {
 	room, pub, sub := newRoomDataTrackParticipants(t)
 	var once, wrapOnce sync.Once
+	var revoked atomic.Bool
 	var wrapped *closeDuringDataTrackAdd
 	sub.params.ParticipantHelper.(*typesfakes.FakeLocalParticipantHelper).ResolveDataTrackCalls(func(p types.LocalParticipant, id livekit.TrackID) types.DataResolverResult {
 		res := room.ResolveDataTrackForSubscriber(p, id)
 		if res.DataTrack != nil {
 			wrapOnce.Do(func() {
 				wrapped = &closeDuringDataTrackAdd{DataTrack: res.DataTrack, afterAdd: func() {
-					once.Do(func() { assert.NoError(t, pub.HandleUpdateSubscriptionPermission(&livekit.SubscriptionPermission{})) })
+					once.Do(func() {
+						assert.NoError(t, pub.HandleUpdateSubscriptionPermission(&livekit.SubscriptionPermission{}))
+						revoked.Store(true)
+					})
 				}}
 			})
 			res.DataTrack = wrapped
@@ -82,7 +86,7 @@ func TestDataTrackCloseDuringInstall(t *testing.T) {
 		sm.lock.RLock()
 		s := sm.dataTrackSubscriptions[track.ID()]
 		sm.lock.RUnlock()
-		return s != nil && !track.IsSubscriber(sub.ID()) && s.getDataDownTrack() == nil && !s.getHasPermission() && s.needsSubscribe()
+		return revoked.Load() && s != nil && !track.IsSubscriber(sub.ID()) && s.getDataDownTrack() == nil && !s.getHasPermission() && s.needsSubscribe()
 	}, time.Second, time.Millisecond, "closed installation must be retryable and report denied permission")
 	require.NoError(t, pub.HandleUpdateSubscriptionPermission(&livekit.SubscriptionPermission{AllParticipants: true}))
 	require.Eventually(t, func() bool {
