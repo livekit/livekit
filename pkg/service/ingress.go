@@ -26,6 +26,7 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/psrpc"
+	"github.com/livekit/psrpc/pkg/middleware"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -347,8 +348,10 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 			return nil, err
 		}
 
-		// Do not store the returned state as the ingress service will do it
-		if _, err = s.psrpcClient.UpdateIngress(ctx, req.IngressId, req); err != nil {
+		// Do not store the returned state as the ingress service will do it.
+		// The error is only logged, so there is nothing to gain by waiting for an
+		// ingress whose stored state is stale.
+		if _, err = s.psrpcClient.UpdateIngress(middleware.WithoutNoSubscriberRetry(ctx), req.IngressId, req); err != nil {
 			logger.Warnw("could not update active ingress", err)
 		}
 	}
@@ -413,7 +416,8 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 	switch info.State.Status {
 	case livekit.IngressState_ENDPOINT_BUFFERING,
 		livekit.IngressState_ENDPOINT_PUBLISHING:
-		if _, err = s.psrpcClient.DeleteIngress(ctx, req.IngressId, req); err != nil {
+		// The error is only logged, so do not wait for an ingress whose stored state is stale.
+		if _, err = s.psrpcClient.DeleteIngress(middleware.WithoutNoSubscriberRetry(ctx), req.IngressId, req); err != nil {
 			logger.Warnw("could not stop active ingress", err)
 		}
 	}
