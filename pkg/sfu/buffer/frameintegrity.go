@@ -88,7 +88,7 @@ func (ph *PacketHistory) AddPacket(extSeq uint64) {
 		return
 	}
 
-	if extSeq <= ph.base {
+	if extSeq < ph.base {
 		// too old
 		return
 	}
@@ -131,40 +131,26 @@ func (ph *PacketHistory) set(seq uint64, received bool) {
 }
 
 func (ph *PacketHistory) PacketsConsecutive(start, end uint64) bool {
-	if start > end {
+	if !ph.inited || start > end || start < ph.base || end > ph.last {
 		return false
 	}
 
-	if end-start >= uint64(ph.packetCount) {
+	if ph.last-start >= uint64(ph.packetCount) {
 		return false
 	}
 
-	startIndex, startOffset := ph.getPos(start)
-	endIndex, endOffset := ph.getPos(end)
-
-	if startIndex == endIndex && end-start <= 64 {
-		testBits := uint64((1<<(endOffset-startOffset+1))-1) << startOffset
-		return ph.bits[startIndex]&testBits == testBits
-	}
-
-	if (ph.bits[startIndex]>>(startOffset))+1 != 1<<(64-startOffset) {
-		return false
-	}
-
-	for i := startIndex + 1; i != endIndex; i++ {
-		if i == len(ph.bits) {
-			i = 0
-			if i == endIndex {
-				break
-			}
-		}
-		if ph.bits[i]+1 != 0 {
+	index, offset := ph.getPos(start)
+	for remaining := end - start + 1; remaining > 0; {
+		count := min(remaining, uint64(64-offset))
+		mask := (^uint64(0) >> (64 - count)) << offset
+		if ph.bits[index]&mask != mask {
 			return false
 		}
+		remaining -= count
+		index = (index + 1) % len(ph.bits)
+		offset = 0
 	}
-
-	testBits := uint64((1 << (endOffset + 1)) - 1)
-	return ph.bits[endIndex]&testBits == testBits
+	return true
 }
 
 // ------------------------------

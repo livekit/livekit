@@ -94,6 +94,85 @@ func countSetBits(ph *PacketHistory) int {
 	return n
 }
 
+func TestPacketHistoryBounds(t *testing.T) {
+	t.Run("empty history has no received packets", func(t *testing.T) {
+		ph := NewPacketHistory(64)
+		require.False(t, ph.PacketsConsecutive(0, 0))
+	})
+
+	t.Run("late packet at the base is accepted", func(t *testing.T) {
+		ph := NewPacketHistory(64)
+		ph.AddPacket(1)
+		ph.AddPacket(0)
+		require.True(t, ph.PacketsConsecutive(0, 1))
+	})
+
+	t.Run("future packets do not alias received packets", func(t *testing.T) {
+		ph := NewPacketHistory(64)
+		ph.AddPacket(1)
+		require.False(t, ph.PacketsConsecutive(65, 65))
+	})
+
+	t.Run("expired packets do not alias received packets", func(t *testing.T) {
+		ph := NewPacketHistory(128)
+		ph.AddPacket(1)
+		ph.AddPacket(129)
+		require.False(t, ph.PacketsConsecutive(1, 1))
+		require.True(t, ph.PacketsConsecutive(129, 129))
+	})
+
+	t.Run("packets before the base are unavailable", func(t *testing.T) {
+		ph := NewPacketHistory(64)
+		ph.AddPacket(1000)
+		require.False(t, ph.PacketsConsecutive(872, 872))
+	})
+
+	t.Run("a range can wrap within a single word", func(t *testing.T) {
+		ph := NewPacketHistory(64)
+		for seq := uint64(1); seq <= 64; seq++ {
+			ph.AddPacket(seq)
+		}
+		require.True(t, ph.PacketsConsecutive(1, 64))
+		require.True(t, ph.PacketsConsecutive(63, 64))
+	})
+}
+
+func TestFrameIntegrityCheckerExpiredPackets(t *testing.T) {
+	fc := NewFrameIntegrityChecker(100, 128)
+	fc.AddPacket(1000, 1, &dd.DependencyDescriptor{FirstPacketInFrame: true})
+	fc.AddPacket(1128, 2, &dd.DependencyDescriptor{FirstPacketInFrame: true, LastPacketInFrame: true})
+	// The new frame has overwritten the first packet's history slot. Receiving
+	// the old frame's last packet cannot establish that the whole frame arrived.
+	fc.AddPacket(1001, 1, &dd.DependencyDescriptor{LastPacketInFrame: true})
+	require.False(t, fc.FrameIntegrity(1))
+	require.True(t, fc.FrameIntegrity(2))
+}
+
+func TestPacketHistoryAgainstReceivedPackets(t *testing.T) {
+	for _, capacity := range []int{64, 128, 192} {
+		ph := NewPacketHistory(capacity)
+		received := make(map[uint64]bool)
+		for seq := uint64(1); seq <= uint64(capacity*3); seq++ {
+			if seq%7 == 0 {
+				continue
+			}
+			ph.AddPacket(seq)
+			received[seq] = true
+			for length := uint64(1); length <= uint64(capacity+1); length++ {
+				if length > seq {
+					break
+				}
+				start := seq - length + 1
+				want := length <= uint64(capacity)
+				for n := start; want && n <= seq; n++ {
+					want = received[n]
+				}
+				require.Equal(t, want, ph.PacketsConsecutive(start, seq), "capacity=%d range=%d..%d", capacity, start, seq)
+			}
+		}
+	}
+}
+
 // A forward sequence-number jump much larger than the ring must clear the whole ring,
 // leaving only the newly received sequence number set.
 func TestPacketHistoryLargeForwardJump(t *testing.T) {
