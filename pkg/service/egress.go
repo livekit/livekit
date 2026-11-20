@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/twitchtv/twirp"
 
@@ -30,8 +31,17 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/psrpc"
+	"github.com/livekit/psrpc/pkg/middleware"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
+)
+
+// How long and how often an RPC to a live egress or ingress is retried while
+// nothing is subscribed for it, such as one that is starting or whose end is not
+// recorded yet.
+var (
+	noSubscriberRetryTimeout  = 3 * time.Second
+	noSubscriberRetryInterval = time.Second
 )
 
 type EgressService struct {
@@ -381,8 +391,16 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 		return nil, twirpAuthError(err)
 	}
 
-	info, err = s.launcher.StopEgress(ctx, req)
-	if err != nil {
+	// An egress that already ended has no server to receive the stop. Rather than
+	// let psrpc retry that, check the egress, and retry only while it is still live.
+	stopCtx := middleware.WithoutNoSubscriberRetry(ctx)
+	deadline := time.Now().Add(noSubscriberRetryTimeout)
+	for {
+		info, err = s.launcher.StopEgress(stopCtx, req)
+		if err == nil {
+			return info, nil
+		}
+
 		var loadErr error
 		info, loadErr = s.io.GetEgress(ctx, &rpc.GetEgressRequest{EgressId: req.EgressId})
 		if loadErr != nil {
@@ -392,14 +410,21 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 		switch info.Status {
 		case livekit.EgressStatus_EGRESS_STARTING,
 			livekit.EgressStatus_EGRESS_ACTIVE:
-			return nil, err
+			var nse *psrpc.NoSubscriberError
+			if !errors.As(err, &nse) || time.Now().After(deadline) {
+				return nil, err
+			}
 		default:
 			return nil, twirp.NewError(twirp.FailedPrecondition,
 				fmt.Sprintf("egress with status %s cannot be stopped", info.Status.String()))
 		}
-	}
 
-	return info, nil
+		select {
+		case <-ctx.Done():
+			return nil, err
+		case <-time.After(noSubscriberRetryInterval):
+		}
+	}
 }
 
 func (s *egressLauncher) StopEgress(ctx context.Context, req *livekit.StopEgressRequest) (*livekit.EgressInfo, error) {
