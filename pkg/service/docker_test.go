@@ -19,7 +19,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net"
 	"os"
 	"testing"
 	"time"
@@ -28,6 +27,7 @@ import (
 
 	mobyclient "github.com/moby/moby/client"
 	"github.com/ory/dockertest/v4"
+	"github.com/redis/go-redis/v9"
 )
 
 var Docker dockertest.ClosablePool
@@ -69,15 +69,19 @@ func requireDocker(t testing.TB) {
 	}
 }
 
-func waitTCPPort(t testing.TB, addr string) {
+func waitRedis(t testing.TB, addr string) {
+	client := redis.NewClient(&redis.Options{
+		Addr:         addr,
+		MaxRetries:   -1,
+		DialTimeout:  time.Second,
+		ReadTimeout:  time.Second,
+		WriteTimeout: time.Second,
+	})
+	defer func() { _ = client.Close() }()
+
+	// Docker's port proxy can accept a connection before Redis is ready.
 	if err := Docker.Retry(t.Context(), 30*time.Second, func() error {
-		conn, err := net.Dial("tcp", addr)
-		if err != nil {
-			t.Log(err)
-			return err
-		}
-		_ = conn.Close()
-		return nil
+		return client.Ping(t.Context()).Err()
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +106,7 @@ func runRedis(t testing.TB) string {
 		_ = c.Close(context.Background())
 	})
 	addr := c.GetHostPort("6379/tcp")
-	waitTCPPort(t, addr)
+	waitRedis(t, addr)
 
 	t.Log("Redis running on", addr)
 	return addr

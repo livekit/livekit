@@ -42,8 +42,8 @@ func TestDataStats(t *testing.T) {
 	require.EqualValues(t, 100, r.Bytes)
 	require.NotZero(t, r.Bitrate)
 
-	// wait for window duration
-	time.Sleep(time.Second)
+	// Expire the window without depending on wall-clock progress during Sleep.
+	stats.windowStart -= (2 * time.Second).Nanoseconds()
 	r = stats.ToProtoActive()
 	require.True(t, proto.Equal(r, &livekit.RTPStats{}))
 	stats.Stop()
