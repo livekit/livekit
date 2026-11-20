@@ -418,16 +418,13 @@ func (b *Buffer) writeRTX(rtxPkt *rtp.Packet, arrivalTime int64) {
 
 	b.ingestLocked(b.rtxPktBuf[:n], &repairedPkt, arrivalTime, false, true)
 
-	var fecDelta fecRecoveryDelta
-	var onFECRecovery cbFECRecovery
-	if b.fecDecoder != nil {
-		fecDelta, onFECRecovery = b.feedFECLocked(&repairedPkt, arrivalTime)
-	}
+	// the repaired packet is not the media FlexFEC protected, see markRTXRepairedLocked
+	b.markRTXRepairedLocked(repairedPkt.SequenceNumber)
 
 	rtcpPackets := b.getRTCPPackets(arrivalTime)
 	b.Unlock()
 
-	b.packetPostProcess(rtcpPackets, fecDelta, onFECRecovery)
+	b.packetPostProcess(rtcpPackets, fecRecoveryDelta{}, nil)
 }
 
 func (b *Buffer) SetPrimaryBufferForFEC(primaryBuffer *Buffer) {
@@ -515,13 +512,11 @@ func (b *Buffer) getFECMediaPacketLocked(sequenceNumber uint16, dst []byte) (int
 	// removes padding-only packets from the downstream space, so resolve the
 	// original extended sequence number and apply the same adjustment used
 	// when the packet was inserted into the bucket.
-	highestSequenceNumber := b.rtpStats.ExtendedHighestSequenceNumber()
-	extendedSequenceNumber := int64(highestSequenceNumber) + int64(int16(sequenceNumber-uint16(highestSequenceNumber)))
-	if extendedSequenceNumber < 0 {
+	extendedSN, ok := b.publisherExtSequenceNumberLocked(sequenceNumber)
+	if !ok || b.isRTXRepairedLocked(extendedSN) {
 		return 0, errFECMediaPacketNotFound
 	}
 
-	extendedSN := uint64(extendedSequenceNumber)
 	sequenceNumberAdjustment, err := b.snRangeMap.GetValue(extendedSN)
 	if err != nil || sequenceNumberAdjustment > extendedSN {
 		return 0, errFECMediaPacketNotFound
