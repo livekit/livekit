@@ -250,8 +250,8 @@ func (p *packetGroup) IsFinalized() bool {
 	return p.isFinalized
 }
 
-func (p *packetGroup) Traffic() *trafficStats {
-	return &trafficStats{
+func (p *packetGroup) Traffic() trafficStats {
+	return trafficStats{
 		minSendTime:  p.minSendTime,
 		maxSendTime:  p.maxSendTime,
 		sendDelta:    p.aggregateSendDelta,
