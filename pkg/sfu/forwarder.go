@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"slices"
 	"sync"
 	"time"
 
@@ -979,8 +980,11 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 	acquireGraceApplied := false
 	opportunisticAlloc := func() {
 		// opportunistically latch on to anything
+		// Overshoot only when the requested layer is not being published: starting on a higher
+		// layer than requested sends its (larger) key frame first, which a slow link may never
+		// complete, so a subscriber asking for a low layer would wait on a high one.
 		maxSpatial := maxLayer.Spatial
-		if allowOvershoot && f.vls.IsOvershootOkay() && maxSeenLayer.Spatial > maxSpatial {
+		if allowOvershoot && f.vls.IsOvershootOkay() && maxSeenLayer.Spatial > maxSpatial && !slices.Contains(availableLayers, maxSpatial) {
 			maxSpatial = maxSeenLayer.Spatial
 		}
 
