@@ -86,7 +86,6 @@ func newTestRoomManager(t *testing.T, conf *config.Config, egressLauncher rtc.Eg
 		router,
 		ra,
 		&telemetryfakes.FakeTelemetryService{},
-		store,
 		nil,
 		store,
 		egressLauncher,

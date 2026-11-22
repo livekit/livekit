@@ -20,9 +20,11 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/protocol/livekit"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	testclient "github.com/livekit/livekit-server/test/client"
 )
 
@@ -32,7 +34,9 @@ func TestSingleNodeTokenRevocation(t *testing.T) {
 		return
 	}
 
-	_, finish := setupSingleNodeTest("TestSingleNodeTokenRevocation")
+	_, finish := setupSingleNodeTestWithConfig("TestSingleNodeTokenRevocation", func(conf *config.Config) {
+		conf.TokenRevocation.Enabled = true
+	})
 	defer finish()
 
 	for _, testRTCServicePath := range testRTCServicePaths {
@@ -53,21 +57,7 @@ func TestSingleNodeTokenRevocation(t *testing.T) {
 				waitUntilConnected(t, c)
 			}
 
-			// Review: "Failed removals leave revocations behind".
-			t.Run("failed removal keeps tokens valid", func(t *testing.T) {
-				identity := "absent_" + suffix
-				token := joinToken(testRoom, identity, nil)
-
-				_, err := roomClient.RemoveParticipant(ctx, &livekit.RoomParticipantIdentity{
-					Room:     testRoom,
-					Identity: identity,
-				})
-				require.Error(t, err)
-
-				connect(t, token)
-			})
-
-			t.Run("default revocation includes the leeway", func(t *testing.T) {
+			t.Run("default cutoff keeps recent tokens valid", func(t *testing.T) {
 				identity := "removed_" + suffix
 				token := joinToken(testRoom, identity, nil)
 				connect(t, token)
@@ -78,29 +68,58 @@ func TestSingleNodeTokenRevocation(t *testing.T) {
 				})
 				require.NoError(t, err)
 
-				requireRejected(t, token)
-				// a token issued within the leeway after the removal is revoked too
-				requireRejected(t, joinToken(testRoom, identity, nil))
+				// the token was issued within the one minute leeway of the removal
+				connect(t, token)
 			})
 
-			t.Run("explicit revoke_token_ts", func(t *testing.T) {
+			t.Run("revoke_token_ts", func(t *testing.T) {
 				identity := "removed_explicit_" + suffix
 				token := joinToken(testRoom, identity, nil)
 				connect(t, token)
 
-				revokeTokenTs := time.Now().Add(time.Second).Unix()
 				_, err := roomClient.RemoveParticipant(ctx, &livekit.RoomParticipantIdentity{
 					Room:          testRoom,
 					Identity:      identity,
-					RevokeTokenTs: revokeTokenTs,
+					RevokeTokenTs: time.Now().Add(time.Minute).Unix(),
 				})
 				require.NoError(t, err)
 
 				requireRejected(t, token)
+			})
 
-				// a token issued from revoke_token_ts on is accepted
-				time.Sleep(time.Until(time.Unix(revokeTokenTs, 0)) + 100*time.Millisecond)
+			t.Run("absent participant", func(t *testing.T) {
+				identity := "absent_" + suffix
+				token := joinToken(testRoom, identity, nil)
+
+				// not found is kept without revoke_token_ts
+				_, err := roomClient.RemoveParticipant(ctx, &livekit.RoomParticipantIdentity{
+					Room:     testRoom,
+					Identity: identity,
+				})
+				require.Error(t, err)
+
+				_, err = roomClient.RemoveParticipant(ctx, &livekit.RoomParticipantIdentity{
+					Room:          testRoom,
+					Identity:      identity,
+					RevokeTokenTs: time.Now().Add(time.Minute).Unix(),
+				})
+				require.NoError(t, err)
+
+				requireRejected(t, token)
+			})
+
+			t.Run("revoke_token_ts out of range", func(t *testing.T) {
+				identity := "out_of_range_" + suffix
 				connect(t, joinToken(testRoom, identity, nil))
+
+				_, err := roomClient.RemoveParticipant(ctx, &livekit.RoomParticipantIdentity{
+					Room:          testRoom,
+					Identity:      identity,
+					RevokeTokenTs: time.Now().Add(time.Hour).Unix(),
+				})
+				var twErr twirp.Error
+				require.ErrorAs(t, err, &twErr)
+				require.Equal(t, twirp.InvalidArgument, twErr.Code())
 			})
 		})
 	}

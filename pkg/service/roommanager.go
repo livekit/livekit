@@ -61,10 +61,6 @@ import (
 const (
 	tokenRefreshInterval = 5 * time.Minute
 	tokenDefaultTTL      = 10 * time.Minute
-
-	// matches the leeway applied when validating tokens, to cover clock drift between the token issuer and the server
-	tokenRevocationLeeway     = time.Minute
-	tokenRevocationDefaultTTL = tokenDefaultTTL + time.Minute
 )
 
 type iceConfigCacheKey struct {
@@ -77,24 +73,23 @@ type iceConfigCacheKey struct {
 type RoomManager struct {
 	lock sync.RWMutex
 
-	config               *config.Config
-	rtcConfig            *rtc.WebRTCConfig
-	serverInfo           *livekit.ServerInfo
-	currentNode          routing.LocalNode
-	router               routing.Router
-	roomAllocator        RoomAllocator
-	roomManagerServer    rpc.TypedRoomManagerServer
-	whipServer           rpc.WHIPServer[livekit.NodeID]
-	roomStore            ObjectStore
-	telemetry            telemetry.TelemetryService
-	tokenRevocationStore TokenRevocationStore
-	clientConfManager    clientconfiguration.ClientConfigurationManager
-	agentClient          agent.Client
-	agentStore           AgentStore
-	egressLauncher       rtc.EgressLauncher
-	versionGenerator     utils.TimedVersionGenerator
-	turnAuthHandler      *TURNAuthHandler
-	bus                  psrpc.MessageBus
+	config            *config.Config
+	rtcConfig         *rtc.WebRTCConfig
+	serverInfo        *livekit.ServerInfo
+	currentNode       routing.LocalNode
+	router            routing.Router
+	roomAllocator     RoomAllocator
+	roomManagerServer rpc.TypedRoomManagerServer
+	whipServer        rpc.WHIPServer[livekit.NodeID]
+	roomStore         ObjectStore
+	telemetry         telemetry.TelemetryService
+	clientConfManager clientconfiguration.ClientConfigurationManager
+	agentClient       agent.Client
+	agentStore        AgentStore
+	egressLauncher    rtc.EgressLauncher
+	versionGenerator  utils.TimedVersionGenerator
+	turnAuthHandler   *TURNAuthHandler
+	bus               psrpc.MessageBus
 
 	rooms map[livekit.RoomName]*rtc.Room
 
@@ -120,7 +115,6 @@ func NewLocalRoomManager(
 	router routing.Router,
 	roomAllocator RoomAllocator,
 	telemetry telemetry.TelemetryService,
-	tokenRevocationStore TokenRevocationStore,
 	agentClient agent.Client,
 	agentStore AgentStore,
 	egressLauncher rtc.EgressLauncher,
@@ -135,22 +129,21 @@ func NewLocalRoomManager(
 	}
 
 	r := &RoomManager{
-		config:               conf,
-		rtcConfig:            rtcConf,
-		currentNode:          currentNode,
-		router:               router,
-		roomAllocator:        roomAllocator,
-		roomStore:            roomStore,
-		telemetry:            telemetry,
-		clientConfManager:    clientconfiguration.NewStaticClientConfigurationManager(clientconfiguration.StaticConfigurations),
-		egressLauncher:       egressLauncher,
-		agentClient:          agentClient,
-		agentStore:           agentStore,
-		versionGenerator:     versionGenerator,
-		turnAuthHandler:      turnAuthHandler,
-		bus:                  bus,
-		forwardStats:         forwardStats,
-		tokenRevocationStore: tokenRevocationStore,
+		config:            conf,
+		rtcConfig:         rtcConf,
+		currentNode:       currentNode,
+		router:            router,
+		roomAllocator:     roomAllocator,
+		roomStore:         roomStore,
+		telemetry:         telemetry,
+		clientConfManager: clientconfiguration.NewStaticClientConfigurationManager(clientconfiguration.StaticConfigurations),
+		egressLauncher:    egressLauncher,
+		agentClient:       agentClient,
+		agentStore:        agentStore,
+		versionGenerator:  versionGenerator,
+		turnAuthHandler:   turnAuthHandler,
+		bus:               bus,
+		forwardStats:      forwardStats,
 
 		rooms: make(map[livekit.RoomName]*rtc.Room),
 
@@ -866,36 +859,9 @@ func (r *RoomManager) RemoveParticipant(ctx context.Context, req *livekit.RoomPa
 		return nil, err
 	}
 
-	// revoke access tokens before removing, so that a failed revocation leaves the participant in place
-	if err := r.revokeParticipantTokens(ctx, req); err != nil {
-		participant.GetLogger().Warnw("could not revoke access tokens", err)
-		return nil, err
-	}
-
 	participant.GetLogger().Infow("removing participant")
 	room.RemoveParticipant(livekit.ParticipantIdentity(req.Identity), "", types.ParticipantCloseReasonServiceRequestRemoveParticipant)
 	return &livekit.RemoveParticipantResponse{}, nil
-}
-
-func (r *RoomManager) revokeParticipantTokens(ctx context.Context, req *livekit.RoomParticipantIdentity) error {
-	if r.tokenRevocationStore == nil {
-		return nil
-	}
-
-	revocation := &livekit.RoomParticipantIdentity{
-		Room:          req.Room,
-		Identity:      req.Identity,
-		RevokeTokenTs: req.RevokeTokenTs,
-	}
-	if revocation.RevokeTokenTs == 0 {
-		revocation.RevokeTokenTs = time.Now().Add(tokenRevocationLeeway).Unix()
-	}
-
-	ttl := r.config.API.TokenRevocationTTL
-	if ttl <= 0 {
-		ttl = tokenRevocationDefaultTTL
-	}
-	return r.tokenRevocationStore.RevokeRoomParticipant(ctx, revocation, ttl)
 }
 
 func (r *RoomManager) MutePublishedTrack(ctx context.Context, req *livekit.MuteRoomTrackRequest) (*livekit.MuteRoomTrackResponse, error) {
@@ -938,6 +904,14 @@ func (r *RoomManager) UpdateParticipant(ctx context.Context, req *livekit.Update
 		)
 
 		participant.SetPermission(req.Permission)
+
+		// the API revokes older tokens on every permission update, but the participant
+		// only refreshes its token when the permission actually changed
+		if r.config.TokenRevocation.Enabled {
+			if err := r.refreshToken(participant); err != nil {
+				participant.GetLogger().Errorw("could not refresh token", err)
+			}
+		}
 	}
 
 	return participant.ToProto(), nil

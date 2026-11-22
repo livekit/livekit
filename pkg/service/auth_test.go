@@ -25,7 +25,6 @@ import (
 	"github.com/livekit/protocol/auth/authfakes"
 
 	"github.com/livekit/livekit-server/pkg/service"
-	"github.com/livekit/livekit-server/pkg/service/servicefakes"
 )
 
 func TestAuthMiddleware(t *testing.T) {
@@ -33,9 +32,8 @@ func TestAuthMiddleware(t *testing.T) {
 	secret := "somesecretencodedinbase62extendto32bytes"
 	provider := &authfakes.FakeKeyProvider{}
 	provider.GetSecretReturns(secret)
-	store := &servicefakes.FakeServiceStore{}
 
-	m := service.NewAPIKeyAuthMiddleware(provider, store)
+	m := service.NewAPIKeyAuthMiddleware(provider, nil)
 	var grants *auth.ClaimGrants
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		grants = service.GetGrants(r.Context())

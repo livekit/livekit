@@ -107,9 +107,8 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 			expiresAt = claims.ExpiresAt.Time
 		}
 
-		// set grants in context
 		ctx := r.Context()
-		if m.tokenRevocationStore != nil && r.URL != nil && len(grants.Identity) > 0 && grants.Video != nil && len(grants.Video.Room) > 0 {
+		if m.tokenRevocationStore != nil && len(grants.Identity) > 0 && grants.Video != nil && len(grants.Video.Room) > 0 {
 			revoked, revokedAt, err := m.tokenRevocationStore.IsRoomParticipantRevoked(ctx, livekit.ParticipantIdentity(grants.Identity), livekit.RoomName(grants.Video.Room))
 			if err != nil {
 				HandleError(w, r, http.StatusServiceUnavailable, fmt.Errorf("could not check token revocation: %w", err))
@@ -132,9 +131,12 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 	next.ServeHTTP(w, r)
 }
 
-// isTokenRevoked reports whether a token was issued before revokedAt. Without nbf, iat is used.
-// A token without either cannot be placed in time and counts as revoked.
-func isTokenRevoked(claims *jwt.RegisteredClaims, revokedAt time.Time) bool {
+// matches the leeway applied when validating tokens, to cover clock drift between the token issuer and the server
+const tokenRevocationLeeway = time.Minute
+
+// isTokenRevoked reports whether a token's nbf is earlier than the revocation cutoff, allowing for the leeway.
+// Without nbf, iat is used. A token without either cannot be placed in time and counts as revoked.
+func isTokenRevoked(claims *jwt.RegisteredClaims, notBefore time.Time) bool {
 	if claims == nil {
 		return true
 	}
@@ -145,7 +147,7 @@ func isTokenRevoked(claims *jwt.RegisteredClaims, revokedAt time.Time) bool {
 	if issuedAt == nil {
 		return true
 	}
-	return issuedAt.Unix() < revokedAt.Unix()
+	return notBefore.Unix() > issuedAt.Add(tokenRevocationLeeway).Unix()
 }
 
 func WithAPIKey(ctx context.Context, grants *auth.ClaimGrants, apiKey string) context.Context {

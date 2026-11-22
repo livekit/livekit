@@ -328,14 +328,24 @@ func (s *LocalStore) DeleteAgentJob(ctx context.Context, job *livekit.Job) error
 	return nil
 }
 
-func (s *LocalStore) RevokeRoomParticipant(ctx context.Context, identity *livekit.RoomParticipantIdentity, ttl time.Duration) error {
+func (s *LocalStore) RevokeRoomParticipant(ctx context.Context, room livekit.RoomName, identity livekit.ParticipantIdentity, notBefore time.Time, ttl time.Duration) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	s.tokenRevocationMap[GenRoomParticipantRevocationIdentifier(livekit.ParticipantIdentity(identity.Identity), livekit.RoomName(identity.Room))] = roomParticipantRevocationMapEntry{
+	id := GenRoomParticipantRevocationIdentifier(identity, room)
+	entry := roomParticipantRevocationMapEntry{
 		expiresAt:      time.Now().Add(ttl),
-		revocationTime: time.Unix(identity.RevokeTokenTs, 0),
+		revocationTime: time.Unix(notBefore.Unix(), 0),
 	}
+	if prev, ok := s.tokenRevocationMap[id]; ok && time.Now().Before(prev.expiresAt) {
+		if prev.expiresAt.After(entry.expiresAt) {
+			entry.expiresAt = prev.expiresAt
+		}
+		if prev.revocationTime.After(entry.revocationTime) {
+			entry.revocationTime = prev.revocationTime
+		}
+	}
+	s.tokenRevocationMap[id] = entry
 
 	return nil
 }

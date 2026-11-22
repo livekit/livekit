@@ -943,9 +943,25 @@ func (s *RedisStore) DeleteAgentJob(_ context.Context, job *livekit.Job) error {
 	return s.rc.HDel(s.ctx, key, job.Id).Err()
 }
 
-func (s *RedisStore) RevokeRoomParticipant(ctx context.Context, identity *livekit.RoomParticipantIdentity, ttl time.Duration) error {
-	key := GenRoomParticipantRevocationIdentifier(livekit.ParticipantIdentity(identity.Identity), livekit.RoomName(identity.Room))
-	return s.rc.SetEx(s.ctx, key, identity.RevokeTokenTs, ttl).Err()
+// keeps the later notBefore and expiry of an existing revocation
+var revokeRoomParticipantScript = redis.NewScript(`
+local notBefore = tonumber(ARGV[1])
+local ttl = tonumber(ARGV[2])
+local current = tonumber(redis.call("GET", KEYS[1]))
+if current ~= nil and current > notBefore then
+	notBefore = current
+end
+local currentTTL = redis.call("PTTL", KEYS[1])
+if currentTTL > ttl then
+	ttl = currentTTL
+end
+redis.call("SET", KEYS[1], notBefore, "PX", ttl)
+return 1
+`)
+
+func (s *RedisStore) RevokeRoomParticipant(ctx context.Context, room livekit.RoomName, identity livekit.ParticipantIdentity, notBefore time.Time, ttl time.Duration) error {
+	key := GenRoomParticipantRevocationIdentifier(identity, room)
+	return revokeRoomParticipantScript.Run(s.ctx, s.rc, []string{key}, notBefore.Unix(), ttl.Milliseconds()).Err()
 }
 
 func (s *RedisStore) IsRoomParticipantRevoked(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) (bool, *time.Time, error) {

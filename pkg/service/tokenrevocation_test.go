@@ -51,7 +51,7 @@ type stubTokenRevocationStore struct {
 	checkErr error
 }
 
-func (s *stubTokenRevocationStore) RevokeRoomParticipant(context.Context, *livekit.RoomParticipantIdentity, time.Duration) error {
+func (s *stubTokenRevocationStore) RevokeRoomParticipant(context.Context, livekit.RoomName, livekit.ParticipantIdentity, time.Time, time.Duration) error {
 	return nil
 }
 
@@ -61,12 +61,9 @@ func (s *stubTokenRevocationStore) IsRoomParticipantRevoked(context.Context, liv
 
 func (s *stubTokenRevocationStore) CleanupRevokedTokens() {}
 
-func revokeForTest(t *testing.T, store service.TokenRevocationStore, room string, identity string, revokedAt time.Time) {
-	require.NoError(t, store.RevokeRoomParticipant(context.Background(), &livekit.RoomParticipantIdentity{
-		Room:          room,
-		Identity:      identity,
-		RevokeTokenTs: revokedAt.Unix(),
-	}, revocationTestTTL))
+// tokens whose nbf is earlier than notBefore minus the one minute leeway are revoked
+func revokeForTest(t *testing.T, store service.TokenRevocationStore, room string, identity string, notBefore time.Time) {
+	require.NoError(t, store.RevokeRoomParticipant(context.Background(), livekit.RoomName(room), livekit.ParticipantIdentity(identity), notBefore, revocationTestTTL))
 }
 
 func newRevocationTestToken(t *testing.T, identity string, grant *auth.VideoGrant) string {
@@ -144,6 +141,14 @@ func testTokenRevocationStore(t *testing.T, store service.TokenRevocationStore) 
 	require.True(t, revoked)
 	require.Equal(t, revokedAt.Add(30*time.Second).Unix(), storedRevokedAt.Unix())
 
+	// but never back
+	revokeForTest(t, store, string(room), string(identity), revokedAt)
+
+	revoked, storedRevokedAt, err = store.IsRoomParticipantRevoked(ctx, identity, room)
+	require.NoError(t, err)
+	require.True(t, revoked)
+	require.Equal(t, revokedAt.Add(30*time.Second).Unix(), storedRevokedAt.Unix())
+
 	// entries within their TTL survive cleanup
 	store.CleanupRevokedTokens()
 	revoked, _, err = store.IsRoomParticipantRevoked(ctx, identity, room)
@@ -155,7 +160,6 @@ func TestLocalStoreTokenRevocation(t *testing.T) {
 	testTokenRevocationStore(t, service.NewLocalStore())
 }
 
-// Review: "Concurrent removals crash local servers".
 func TestLocalStoreTokenRevocationConcurrent(t *testing.T) {
 	ctx := context.Background()
 	store := service.NewLocalStore()
@@ -167,11 +171,7 @@ func TestLocalStoreTokenRevocationConcurrent(t *testing.T) {
 			defer wg.Done()
 			identity := fmt.Sprintf("identity_%d", i)
 			for j := 0; j < 100; j++ {
-				_ = store.RevokeRoomParticipant(ctx, &livekit.RoomParticipantIdentity{
-					Room:          "room",
-					Identity:      identity,
-					RevokeTokenTs: time.Now().Unix(),
-				}, revocationTestTTL)
+				_ = store.RevokeRoomParticipant(ctx, "room", livekit.ParticipantIdentity(identity), time.Now(), revocationTestTTL)
 				_, _, _ = store.IsRoomParticipantRevoked(ctx, livekit.ParticipantIdentity(identity), "room")
 				store.CleanupRevokedTokens()
 			}
@@ -186,24 +186,23 @@ func TestLocalStoreTokenRevocationConcurrent(t *testing.T) {
 	}
 }
 
-// Review: "Absent Redis revocations appear present".
 func TestRedisStoreTokenRevocation(t *testing.T) {
 	testTokenRevocationStore(t, redisStore(t))
 }
 
-// Review: "Removed participants rejoin after eleven minutes".
 // The revocation TTL can be raised above the validity of the tokens handed out to participants.
 func TestTokenRevocationTTLConfig(t *testing.T) {
 	conf, err := config.NewConfig("", true, nil, nil)
 	require.NoError(t, err)
-	require.Zero(t, conf.API.TokenRevocationTTL, "unset, the room manager falls back to its default")
+	require.False(t, conf.TokenRevocation.Enabled)
+	require.Zero(t, conf.TokenRevocation.TTL, "unset, the room service falls back to its default")
 
-	conf, err = config.NewConfig("api:\n  token_revocation_ttl: 48h\n", true, nil, nil)
+	conf, err = config.NewConfig("token_revocation:\n  enabled: true\n  ttl: 48h\n", true, nil, nil)
 	require.NoError(t, err)
-	require.Equal(t, 48*time.Hour, conf.API.TokenRevocationTTL)
+	require.True(t, conf.TokenRevocation.Enabled)
+	require.Equal(t, 48*time.Hour, conf.TokenRevocation.TTL)
 }
 
-// Review: "Removed participants rejoin after eleven minutes".
 func TestRedisStoreTokenRevocationTTL(t *testing.T) {
 	ctx := context.Background()
 	cli := redisClient(t)
@@ -218,7 +217,6 @@ func TestRedisStoreTokenRevocationTTL(t *testing.T) {
 	require.InDelta(t, revocationTestTTL.Seconds(), ttl.Seconds(), 5)
 }
 
-// Review: "Redis failures allow revoked participants to rejoin".
 func TestRedisStoreTokenRevocationReportsErrors(t *testing.T) {
 	cli := redis.NewClient(&redis.Options{
 		Addr:        "127.0.0.1:1",
@@ -231,11 +229,7 @@ func TestRedisStoreTokenRevocationReportsErrors(t *testing.T) {
 	_, _, err := store.IsRoomParticipantRevoked(context.Background(), "identity", "room")
 	require.Error(t, err)
 
-	err = store.RevokeRoomParticipant(context.Background(), &livekit.RoomParticipantIdentity{
-		Room:          "room",
-		Identity:      "identity",
-		RevokeTokenTs: time.Now().Unix(),
-	}, revocationTestTTL)
+	err = store.RevokeRoomParticipant(context.Background(), "room", "identity", time.Now(), revocationTestTTL)
 	require.Error(t, err)
 }
 
@@ -252,16 +246,16 @@ func TestAuthMiddlewareTokenRevocation(t *testing.T) {
 	t.Run("token issued before revocation is rejected", func(t *testing.T) {
 		store := service.NewLocalStore()
 		token := newRevocationTestToken(t, "alice", grant)
-		revokeForTest(t, store, revocationTestRoom, "alice", time.Now().Add(time.Minute))
+		revokeForTest(t, store, revocationTestRoom, "alice", time.Now().Add(2*time.Minute))
 
 		code, grants := serveWithRevocationStore(t, store, "/rtc", token, nil)
 		require.Equal(t, http.StatusUnauthorized, code)
 		require.Nil(t, grants)
 	})
 
-	t.Run("token issued after revocation is accepted", func(t *testing.T) {
+	t.Run("token issued within the leeway of the revocation is accepted", func(t *testing.T) {
 		store := service.NewLocalStore()
-		revokeForTest(t, store, revocationTestRoom, "alice", time.Now().Add(-time.Minute))
+		revokeForTest(t, store, revocationTestRoom, "alice", time.Now())
 
 		code, grants := serveWithRevocationStore(t, store, "/rtc", newRevocationTestToken(t, "alice", grant), nil)
 		require.Equal(t, http.StatusOK, code)
@@ -270,7 +264,7 @@ func TestAuthMiddlewareTokenRevocation(t *testing.T) {
 
 	t.Run("other participants are not affected", func(t *testing.T) {
 		store := service.NewLocalStore()
-		revokeForTest(t, store, revocationTestRoom, "alice", time.Now().Add(time.Minute))
+		revokeForTest(t, store, revocationTestRoom, "alice", time.Now().Add(2*time.Minute))
 
 		code, grants := serveWithRevocationStore(t, store, "/rtc", newRevocationTestToken(t, "bob", grant), nil)
 		require.Equal(t, http.StatusOK, code)
@@ -278,7 +272,6 @@ func TestAuthMiddlewareTokenRevocation(t *testing.T) {
 	})
 }
 
-// Review: "Redis failures allow revoked participants to rejoin".
 // When the revocation state cannot be read, the token must not be accepted.
 func TestAuthMiddlewareTokenRevocationStoreFailure(t *testing.T) {
 	store := &stubTokenRevocationStore{checkErr: errors.New("store unavailable")}
@@ -289,9 +282,7 @@ func TestAuthMiddlewareTokenRevocationStoreFailure(t *testing.T) {
 	require.Nil(t, grants)
 }
 
-// Review: "Same-second tokens bypass removal".
-// revoke_token_ts invalidates tokens whose nbf is before it. A removal without revoke_token_ts
-// adds a leeway (see TestRoomManagerRevokeParticipantTokens), so tokens from the same second are covered.
+// The stored cutoff is revoke_token_ts plus the leeway, so tokens whose nbf is before revoke_token_ts are revoked.
 func TestAuthMiddlewareTokenRevocationBoundary(t *testing.T) {
 	token := newRevocationTestToken(t, "alice", &auth.VideoGrant{Room: revocationTestRoom, RoomJoin: true})
 
@@ -304,7 +295,7 @@ func TestAuthMiddlewareTokenRevocationBoundary(t *testing.T) {
 
 	t.Run("nbf before revoke_token_ts is rejected", func(t *testing.T) {
 		store := service.NewLocalStore()
-		revokeForTest(t, store, revocationTestRoom, "alice", nbf.Add(time.Second))
+		revokeForTest(t, store, revocationTestRoom, "alice", nbf.Add(time.Minute+time.Second))
 
 		code, grants := serveWithRevocationStore(t, store, "/rtc", token, nil)
 		require.Equal(t, http.StatusUnauthorized, code)
@@ -313,7 +304,7 @@ func TestAuthMiddlewareTokenRevocationBoundary(t *testing.T) {
 
 	t.Run("nbf at revoke_token_ts is accepted", func(t *testing.T) {
 		store := service.NewLocalStore()
-		revokeForTest(t, store, revocationTestRoom, "alice", nbf)
+		revokeForTest(t, store, revocationTestRoom, "alice", nbf.Add(time.Minute))
 
 		code, grants := serveWithRevocationStore(t, store, "/rtc", token, nil)
 		require.Equal(t, http.StatusOK, code)
@@ -321,7 +312,6 @@ func TestAuthMiddlewareTokenRevocationBoundary(t *testing.T) {
 	})
 }
 
-// Review: "Tokens without nbf bypass revocation".
 func TestAuthMiddlewareTokenRevocationWithoutNotBefore(t *testing.T) {
 	now := time.Now()
 	newToken := func(t *testing.T, issuedAt *jwt.NumericDate) string {
@@ -376,14 +366,13 @@ func TestAuthMiddlewareTokenRevocationWithoutNotBefore(t *testing.T) {
 	}
 }
 
-// Review: "Roomless tokens bypass participant revocation".
 // A token without a room must not get a revoked identity into the room it was removed from.
 func TestRTCValidateRoomlessTokenAfterRevocation(t *testing.T) {
 	conf, err := config.NewConfig("", true, nil, nil)
 	require.NoError(t, err)
 
 	store := service.NewLocalStore()
-	revokeForTest(t, store, revocationTestRoom, "alice", time.Now().Add(time.Minute))
+	revokeForTest(t, store, revocationTestRoom, "alice", time.Now().Add(2*time.Minute))
 
 	rtcService := service.NewRTCService(conf, &servicefakes.FakeRoomAllocator{}, &routingfakes.FakeRouter{}, &telemetryfakes.FakeTelemetryService{})
 	mux := http.NewServeMux()

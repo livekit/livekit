@@ -22,9 +22,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/protocol/rpc/rpcfakes"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
 )
 
 func addExpiredRevocation(s *LocalStore, identity livekit.ParticipantIdentity, room livekit.RoomName) string {
@@ -49,11 +53,7 @@ func TestLocalStoreExpiredRevocation(t *testing.T) {
 	s := NewLocalStore()
 	expired := addExpiredRevocation(s, "expired", "room")
 
-	require.NoError(t, s.RevokeRoomParticipant(context.Background(), &livekit.RoomParticipantIdentity{
-		Room:          "room",
-		Identity:      "fresh",
-		RevokeTokenTs: time.Now().Unix(),
-	}, time.Hour))
+	require.NoError(t, s.RevokeRoomParticipant(context.Background(), "room", "fresh", time.Now(), time.Hour))
 	fresh := GenRoomParticipantRevocationIdentifier("fresh", "room")
 
 	revoked, _, err := s.IsRoomParticipantRevoked(context.Background(), "expired", "room")
@@ -65,49 +65,41 @@ func TestLocalStoreExpiredRevocation(t *testing.T) {
 	require.True(t, hasRevocationEntry(s, fresh))
 }
 
-// Review: "Expired revocations accumulate in memory".
-// Expired entries have to be removed without another lookup of the same identity.
-func TestLocalStoreCleansUpExpiredRevocationsPeriodically(t *testing.T) {
-	if testing.Short() {
-		t.Skip("waits for the periodic cleanup")
-	}
-
-	s := NewLocalStore()
-	id := addExpiredRevocation(s, "identity", "room")
-
-	require.Eventually(t, func() bool {
-		return !hasRevocationEntry(s, id)
-	}, tokenRevocationCleanupInterval+15*time.Second, time.Second)
-}
-
-// Review: "Removed participants rejoin after eleven minutes".
 func TestLocalStoreRevocationTTL(t *testing.T) {
 	s := NewLocalStore()
-	require.NoError(t, s.RevokeRoomParticipant(context.Background(), &livekit.RoomParticipantIdentity{
-		Room:          "room",
-		Identity:      "identity",
-		RevokeTokenTs: time.Now().Unix(),
-	}, 24*time.Hour))
+	require.NoError(t, s.RevokeRoomParticipant(context.Background(), "room", "identity", time.Now(), 24*time.Hour))
 
 	s.lock.RLock()
 	entry, ok := s.tokenRevocationMap[GenRoomParticipantRevocationIdentifier("identity", "room")]
 	s.lock.RUnlock()
 	require.True(t, ok)
 	require.WithinDuration(t, time.Now().Add(24*time.Hour), entry.expiresAt, 5*time.Second)
+
+	// a shorter revocation does not cut the existing one short
+	require.NoError(t, s.RevokeRoomParticipant(context.Background(), "room", "identity", time.Now(), time.Minute))
+	s.lock.RLock()
+	entry = s.tokenRevocationMap[GenRoomParticipantRevocationIdentifier("identity", "room")]
+	s.lock.RUnlock()
+	require.WithinDuration(t, time.Now().Add(24*time.Hour), entry.expiresAt, 5*time.Second)
+}
+
+type revocationCall struct {
+	room      livekit.RoomName
+	identity  livekit.ParticipantIdentity
+	notBefore time.Time
+	ttl       time.Duration
 }
 
 type recordingRevocationStore struct {
-	err     error
-	revoked []*livekit.RoomParticipantIdentity
-	ttls    []time.Duration
+	err   error
+	calls []revocationCall
 }
 
-func (s *recordingRevocationStore) RevokeRoomParticipant(_ context.Context, identity *livekit.RoomParticipantIdentity, ttl time.Duration) error {
+func (s *recordingRevocationStore) RevokeRoomParticipant(_ context.Context, room livekit.RoomName, identity livekit.ParticipantIdentity, notBefore time.Time, ttl time.Duration) error {
 	if s.err != nil {
 		return s.err
 	}
-	s.revoked = append(s.revoked, identity)
-	s.ttls = append(s.ttls, ttl)
+	s.calls = append(s.calls, revocationCall{room, identity, notBefore, ttl})
 	return nil
 }
 
@@ -117,72 +109,218 @@ func (s *recordingRevocationStore) IsRoomParticipantRevoked(context.Context, liv
 
 func (s *recordingRevocationStore) CleanupRevokedTokens() {}
 
-func TestRoomManagerRevokeParticipantTokens(t *testing.T) {
-	newRoomManager := func(t *testing.T, apiConf config.APIConfig, store TokenRevocationStore) *RoomManager {
-		conf, err := config.NewConfig("", true, nil, nil)
+type revocationRoomServiceTest struct {
+	svc               *RoomService
+	roomStore         *LocalStore
+	revocations       *recordingRevocationStore
+	participantClient *rpcfakes.FakeTypedParticipantClient
+}
+
+func newRevocationRoomServiceTest(t *testing.T, ttl time.Duration, enabled bool) *revocationRoomServiceTest {
+	tt := &revocationRoomServiceTest{
+		roomStore:         NewLocalStore(),
+		revocations:       &recordingRevocationStore{},
+		participantClient: &rpcfakes.FakeTypedParticipantClient{},
+	}
+	var revokeTokenClient RevokeTokenClient = NilRevokeTokenClient{}
+	if enabled {
+		revokeTokenClient = newStoreRevokeTokenClient(tt.revocations, ttl)
+	}
+	limitConf := config.LimitConfig{MaxRoomNameLength: 16, MaxParticipantIdentityLength: 16}
+	svc, err := NewRoomService(
+		limitConf,
+		config.DefaultAPIConfig(),
+		&routingfakes.FakeRouter{},
+		nil,
+		tt.roomStore,
+		nil,
+		rpc.NewTopicFormatter(),
+		&rpcfakes.FakeTypedRoomClient{},
+		tt.participantClient,
+		revokeTokenClient,
+	)
+	require.NoError(t, err)
+	tt.svc = svc
+	return tt
+}
+
+func (tt *revocationRoomServiceTest) addParticipant(t *testing.T, identity string) {
+	require.NoError(t, tt.roomStore.StoreParticipant(context.Background(), "room", &livekit.ParticipantInfo{Identity: identity}))
+}
+
+func revocationAdminContext() context.Context {
+	return WithAPIKey(context.Background(), &auth.ClaimGrants{
+		Video: &auth.VideoGrant{Room: "room", RoomAdmin: true},
+	}, "")
+}
+
+func TestRoomServiceRemoveParticipantTokenRevocation(t *testing.T) {
+	ctx := revocationAdminContext()
+	req := func(identity string, revokeTokenTs int64) *livekit.RoomParticipantIdentity {
+		return &livekit.RoomParticipantIdentity{Room: "room", Identity: identity, RevokeTokenTs: revokeTokenTs}
+	}
+
+	t.Run("disabled", func(t *testing.T) {
+		tt := newRevocationRoomServiceTest(t, 0, false)
+
+		// revoke_token_ts is still validated, but nothing is revoked and not found is kept
+		_, err := tt.svc.RemoveParticipant(ctx, req("absent", 1))
+		require.ErrorIs(t, err, ErrInvalidRevokeTokenTs)
+		_, err = tt.svc.RemoveParticipant(ctx, req("absent", time.Now().Unix()))
+		require.ErrorIs(t, err, ErrParticipantNotFound)
+		_, err = tt.svc.RemoveParticipant(ctx, req("identity_exceeding_limit", 0))
+		require.ErrorIs(t, err, ErrParticipantIdentityExceedsLimits)
+		require.Empty(t, tt.revocations.calls)
+	})
+
+	t.Run("cutoff defaults to now", func(t *testing.T) {
+		tt := newRevocationRoomServiceTest(t, 0, true)
+		tt.addParticipant(t, "alice")
+
+		res, err := tt.svc.RemoveParticipant(ctx, req("alice", 0))
 		require.NoError(t, err)
-		conf.API = apiConf
-		return &RoomManager{config: conf, tokenRevocationStore: store}
-	}
-	req := func() *livekit.RoomParticipantIdentity {
-		return &livekit.RoomParticipantIdentity{Room: "room", Identity: "identity"}
-	}
-
-	// Review: "Same-second tokens bypass removal".
-	t.Run("without revoke_token_ts the leeway is added", func(t *testing.T) {
-		store := &recordingRevocationStore{}
-		rm := newRoomManager(t, config.DefaultAPIConfig(), store)
-
-		before := time.Now().Add(tokenRevocationLeeway).Unix()
-		require.NoError(t, rm.revokeParticipantTokens(context.Background(), req()))
-		after := time.Now().Add(tokenRevocationLeeway).Unix()
-
-		require.Len(t, store.revoked, 1)
-		require.Equal(t, "room", store.revoked[0].Room)
-		require.Equal(t, "identity", store.revoked[0].Identity)
-		require.GreaterOrEqual(t, store.revoked[0].RevokeTokenTs, before)
-		require.LessOrEqual(t, store.revoked[0].RevokeTokenTs, after)
+		require.NotNil(t, res)
+		require.Equal(t, 1, tt.participantClient.RemoveParticipantCallCount())
+		require.Len(t, tt.revocations.calls, 1)
+		call := tt.revocations.calls[0]
+		require.Equal(t, livekit.RoomName("room"), call.room)
+		require.Equal(t, livekit.ParticipantIdentity("alice"), call.identity)
+		require.WithinDuration(t, time.Now(), call.notBefore, 2*time.Second)
+		require.Equal(t, tokenRevocationDefaultTTL, call.ttl)
 	})
 
-	t.Run("revoke_token_ts is used as given", func(t *testing.T) {
-		store := &recordingRevocationStore{}
-		rm := newRoomManager(t, config.DefaultAPIConfig(), store)
+	t.Run("revoke_token_ts adds the leeway", func(t *testing.T) {
+		tt := newRevocationRoomServiceTest(t, 0, true)
+		tt.addParticipant(t, "alice")
 
-		r := req()
-		r.RevokeTokenTs = 1234
-		require.NoError(t, rm.revokeParticipantTokens(context.Background(), r))
-
-		require.Len(t, store.revoked, 1)
-		require.Equal(t, int64(1234), store.revoked[0].RevokeTokenTs)
+		ts := time.Now().Unix()
+		_, err := tt.svc.RemoveParticipant(ctx, req("alice", ts))
+		require.NoError(t, err)
+		require.Len(t, tt.revocations.calls, 1)
+		require.Equal(t, ts+60, tt.revocations.calls[0].notBefore.Unix())
 	})
 
-	t.Run("default ttl", func(t *testing.T) {
-		store := &recordingRevocationStore{}
-		rm := newRoomManager(t, config.DefaultAPIConfig(), store)
+	t.Run("revoke_token_ts out of range", func(t *testing.T) {
+		tt := newRevocationRoomServiceTest(t, 0, true)
+		tt.addParticipant(t, "alice")
 
-		require.NoError(t, rm.revokeParticipantTokens(context.Background(), req()))
-		require.Equal(t, tokenDefaultTTL+time.Minute, store.ttls[0])
+		for _, ts := range []int64{time.Now().Unix() - 120, time.Now().Unix() + 120} {
+			_, err := tt.svc.RemoveParticipant(ctx, req("alice", ts))
+			require.ErrorIs(t, err, ErrInvalidRevokeTokenTs)
+		}
+		require.Zero(t, tt.participantClient.RemoveParticipantCallCount())
+		require.Empty(t, tt.revocations.calls)
 	})
 
-	// Review: "Removed participants rejoin after eleven minutes".
-	t.Run("configured ttl", func(t *testing.T) {
-		store := &recordingRevocationStore{}
-		rm := newRoomManager(t, config.APIConfig{TokenRevocationTTL: 48 * time.Hour}, store)
+	t.Run("absent participant is revoked and not found is returned", func(t *testing.T) {
+		tt := newRevocationRoomServiceTest(t, 0, true)
 
-		require.NoError(t, rm.revokeParticipantTokens(context.Background(), req()))
-		require.Equal(t, 48*time.Hour, store.ttls[0])
+		_, err := tt.svc.RemoveParticipant(ctx, req("absent", 0))
+		require.ErrorIs(t, err, ErrParticipantNotFound)
+		require.Len(t, tt.revocations.calls, 1)
 	})
 
-	// Review: "Store failures leave removed tokens valid".
-	t.Run("store failure is returned", func(t *testing.T) {
+	t.Run("absent participant with revoke_token_ts succeeds", func(t *testing.T) {
+		tt := newRevocationRoomServiceTest(t, 0, true)
+
+		res, err := tt.svc.RemoveParticipant(ctx, req("absent", time.Now().Unix()))
+		require.NoError(t, err)
+		require.NotNil(t, res)
+		require.Len(t, tt.revocations.calls, 1)
+	})
+
+	t.Run("not found from the participant node is revoked", func(t *testing.T) {
+		tt := newRevocationRoomServiceTest(t, 0, true)
+		tt.addParticipant(t, "alice")
+		tt.participantClient.RemoveParticipantReturns(nil, errors.New(ErrParticipantNotFound.Error()))
+
+		_, err := tt.svc.RemoveParticipant(ctx, req("alice", 0))
+		require.Error(t, err)
+		require.Len(t, tt.revocations.calls, 1)
+	})
+
+	t.Run("other removal errors do not revoke", func(t *testing.T) {
+		tt := newRevocationRoomServiceTest(t, 0, true)
+		tt.addParticipant(t, "alice")
+		tt.participantClient.RemoveParticipantReturns(nil, errors.New("timeout"))
+
+		_, err := tt.svc.RemoveParticipant(ctx, req("alice", 0))
+		require.Error(t, err)
+		require.Empty(t, tt.revocations.calls)
+	})
+
+	t.Run("store failure is returned only with revoke_token_ts", func(t *testing.T) {
+		tt := newRevocationRoomServiceTest(t, 0, true)
+		tt.addParticipant(t, "alice")
 		storeErr := errors.New("store unavailable")
-		rm := newRoomManager(t, config.DefaultAPIConfig(), &recordingRevocationStore{err: storeErr})
+		tt.revocations.err = storeErr
 
-		require.ErrorIs(t, rm.revokeParticipantTokens(context.Background(), req()), storeErr)
+		_, err := tt.svc.RemoveParticipant(ctx, req("alice", 0))
+		require.NoError(t, err)
+
+		_, err = tt.svc.RemoveParticipant(ctx, req("alice", time.Now().Unix()))
+		require.ErrorIs(t, err, storeErr)
 	})
 
-	t.Run("without a store", func(t *testing.T) {
-		rm := newRoomManager(t, config.DefaultAPIConfig(), nil)
-		require.NoError(t, rm.revokeParticipantTokens(context.Background(), req()))
+	t.Run("configured ttl", func(t *testing.T) {
+		tt := newRevocationRoomServiceTest(t, 48*time.Hour, true)
+		tt.addParticipant(t, "alice")
+
+		_, err := tt.svc.RemoveParticipant(ctx, req("alice", 0))
+		require.NoError(t, err)
+		require.Equal(t, 48*time.Hour, tt.revocations.calls[0].ttl)
 	})
+
+	t.Run("length limits", func(t *testing.T) {
+		tt := newRevocationRoomServiceTest(t, 0, true)
+
+		_, err := tt.svc.RemoveParticipant(ctx, req("identity_exceeding_limit", 0))
+		require.ErrorIs(t, err, ErrParticipantIdentityExceedsLimits)
+		require.Empty(t, tt.revocations.calls)
+	})
+}
+
+func TestRoomServiceUpdateParticipantTokenRevocation(t *testing.T) {
+	ctx := revocationAdminContext()
+
+	t.Run("permission update revokes", func(t *testing.T) {
+		tt := newRevocationRoomServiceTest(t, 0, true)
+		tt.addParticipant(t, "alice")
+
+		_, err := tt.svc.UpdateParticipant(ctx, &livekit.UpdateParticipantRequest{
+			Room:       "room",
+			Identity:   "alice",
+			Permission: &livekit.ParticipantPermission{CanSubscribe: true},
+		})
+		require.NoError(t, err)
+		require.Len(t, tt.revocations.calls, 1)
+		require.WithinDuration(t, time.Now(), tt.revocations.calls[0].notBefore, 2*time.Second)
+	})
+
+	t.Run("metadata update does not revoke", func(t *testing.T) {
+		tt := newRevocationRoomServiceTest(t, 0, true)
+		tt.addParticipant(t, "alice")
+
+		_, err := tt.svc.UpdateParticipant(ctx, &livekit.UpdateParticipantRequest{
+			Room:     "room",
+			Identity: "alice",
+			Metadata: "metadata",
+		})
+		require.NoError(t, err)
+		require.Empty(t, tt.revocations.calls)
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		tt := newRevocationRoomServiceTest(t, 0, false)
+		tt.addParticipant(t, "alice")
+
+		_, err := tt.svc.UpdateParticipant(ctx, &livekit.UpdateParticipantRequest{
+			Room:       "room",
+			Identity:   "alice",
+			Permission: &livekit.ParticipantPermission{CanSubscribe: true},
+		})
+		require.NoError(t, err)
+		require.Empty(t, tt.revocations.calls)
+	})
+
 }

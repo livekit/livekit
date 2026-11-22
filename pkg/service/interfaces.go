@@ -116,10 +116,13 @@ type AgentStore interface {
 	DeleteAgentJob(ctx context.Context, job *livekit.Job) error
 }
 
-const participantRevocationPrefix = "token_revocation"
+type RevokeTokenClient interface {
+	IsRevokeTokenEnabled(ctx context.Context, room livekit.RoomName) bool
+	RevokeToken(ctx context.Context, room livekit.RoomName, identity livekit.ParticipantIdentity, notBefore time.Time) error
+}
 
 type TokenRevocationStore interface {
-	RevokeRoomParticipant(ctx context.Context, identity *livekit.RoomParticipantIdentity, ttl time.Duration) error
+	RevokeRoomParticipant(ctx context.Context, room livekit.RoomName, identity livekit.ParticipantIdentity, notBefore time.Time, ttl time.Duration) error
 	IsRoomParticipantRevoked(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) (bool, *time.Time, error)
 	CleanupRevokedTokens()
 }

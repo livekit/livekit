@@ -16,8 +16,11 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/twitchtv/twirp"
 
@@ -40,6 +43,7 @@ type RoomService struct {
 	topicFormatter    rpc.TopicFormatter
 	roomClient        rpc.TypedRoomClient
 	participantClient rpc.TypedParticipantClient
+	revokeTokenClient RevokeTokenClient
 
 	rpc.UnimplementedRoomServer
 	rpc.UnimplementedParticipantServer
@@ -55,6 +59,7 @@ func NewRoomService(
 	topicFormatter rpc.TopicFormatter,
 	roomClient rpc.TypedRoomClient,
 	participantClient rpc.TypedParticipantClient,
+	revokeTokenClient RevokeTokenClient,
 ) (svc *RoomService, err error) {
 	svc = &RoomService{
 		limitConf:         limitConf,
@@ -66,6 +71,7 @@ func NewRoomService(
 		topicFormatter:    topicFormatter,
 		roomClient:        roomClient,
 		participantClient: participantClient,
+		revokeTokenClient: revokeTokenClient,
 	}
 	return
 }
@@ -230,6 +236,40 @@ func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomPa
 		return nil, twirpAuthError(err)
 	}
 
+	// the revocation below is stored even when the participant does not exist
+	if !s.limitConf.CheckRoomNameLength(req.Room) {
+		return nil, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, s.limitConf.MaxRoomNameLength)
+	}
+	if !s.limitConf.CheckParticipantIdentityLength(req.Identity) {
+		return nil, fmt.Errorf("%w: max length %d", ErrParticipantIdentityExceedsLimits, s.limitConf.MaxParticipantIdentityLength)
+	}
+
+	notBefore := time.Now()
+	if req.RevokeTokenTs != 0 {
+		now := notBefore.Unix()
+		if req.RevokeTokenTs < now-60 || req.RevokeTokenTs > now+60 {
+			return nil, ErrInvalidRevokeTokenTs
+		}
+		// revoke_token_ts has no leeway, add it here as the check subtracts it
+		notBefore = time.Unix(req.RevokeTokenTs, 0).Add(tokenRevocationLeeway)
+	}
+
+	res, err := s.removeParticipant(ctx, req)
+	if (err == nil || isParticipantNotFound(err)) && s.revokeTokenClient.IsRevokeTokenEnabled(ctx, livekit.RoomName(req.Room)) {
+		revokeErr := s.revokeTokenClient.RevokeToken(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), notBefore)
+		// callers may rely on not found to learn whether the participant exists, keep it unless revoke_token_ts is given
+		if req.RevokeTokenTs != 0 {
+			err = revokeErr
+		}
+		if err == nil && res == nil {
+			res = &livekit.RemoveParticipantResponse{}
+		}
+	}
+	RecordResponse(ctx, res)
+	return res, err
+}
+
+func (s *RoomService) removeParticipant(ctx context.Context, req *livekit.RoomParticipantIdentity) (*livekit.RemoveParticipantResponse, error) {
 	if os, ok := s.roomStore.(OSSServiceStore); ok {
 		found, err := os.HasParticipant(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity))
 		if err != nil {
@@ -239,9 +279,12 @@ func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomPa
 		}
 	}
 
-	res, err := s.participantClient.RemoveParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
-	RecordResponse(ctx, res)
-	return res, err
+	return s.participantClient.RemoveParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
+}
+
+// the error may have crossed psrpc, which keeps only its message
+func isParticipantNotFound(err error) bool {
+	return errors.Is(err, ErrParticipantNotFound) || strings.Contains(err.Error(), ErrParticipantNotFound.Error())
 }
 
 func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteRoomTrackRequest) (*livekit.MuteRoomTrackResponse, error) {
@@ -288,6 +331,10 @@ func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.Update
 	}
 
 	res, err := s.participantClient.UpdateParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
+	if err == nil && req.Permission != nil && s.revokeTokenClient.IsRevokeTokenEnabled(ctx, livekit.RoomName(req.Room)) {
+		// the participant was sent a refreshed token, older ones are revoked
+		_ = s.revokeTokenClient.RevokeToken(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), time.Now())
+	}
 	RecordResponse(ctx, res)
 	return res, err
 }

@@ -95,7 +95,9 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(limitConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, v2, v3)
+	tokenRevocationStore := getTokenRevocationStore(conf, objectStore)
+	revokeTokenClient := getRevokeTokenClient(conf, tokenRevocationStore)
+	roomService, err := NewRoomService(limitConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, v2, v3, revokeTokenClient)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +132,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	tokenRevocationStore := getTokenRevocationStore(objectStore)
 	agentConfig := getAgentConfig(conf)
 	client, err := agent.NewAgentClient(v, agentConfig)
 	if err != nil {
@@ -140,7 +141,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	timedVersionGenerator := utils.NewDefaultTimedVersionGenerator()
 	turnAuthHandler := NewTURNAuthHandler(keyProvider)
 	forwardStats := createForwardStats(conf)
-	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, roomAllocator, telemetryService, tokenRevocationStore, client, agentStore, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler, v, forwardStats)
+	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, roomAllocator, telemetryService, client, agentStore, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler, v, forwardStats)
 	if err != nil {
 		return nil, err
 	}
@@ -293,7 +294,10 @@ func getAgentStore(s ObjectStore) AgentStore {
 	}
 }
 
-func getTokenRevocationStore(s ObjectStore) TokenRevocationStore {
+func getTokenRevocationStore(conf *config.Config, s ObjectStore) TokenRevocationStore {
+	if !conf.TokenRevocation.Enabled {
+		return nil
+	}
 	switch store := s.(type) {
 	case *RedisStore:
 		return store
@@ -302,6 +306,13 @@ func getTokenRevocationStore(s ObjectStore) TokenRevocationStore {
 	default:
 		return nil
 	}
+}
+
+func getRevokeTokenClient(conf *config.Config, store TokenRevocationStore) RevokeTokenClient {
+	if store == nil {
+		return NilRevokeTokenClient{}
+	}
+	return newStoreRevokeTokenClient(store, conf.TokenRevocation.TTL)
 }
 
 func getIngressConfig(conf *config.Config) *config.IngressConfig {
