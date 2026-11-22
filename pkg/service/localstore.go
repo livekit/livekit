@@ -15,6 +15,7 @@
 package service
 
 import (
+	"container/list"
 	"context"
 	"sync"
 	"time"
@@ -28,6 +29,15 @@ import (
 
 var _ OSSServiceStore = (*LocalStore)(nil)
 
+const tokenRevocationCleanupInterval = time.Minute
+
+type tokenRevocation struct {
+	id        string
+	notBefore time.Time
+	expiresAt time.Time
+	expireEle *list.Element
+}
+
 // encapsulates CRUD operations for room settings
 type LocalStore struct {
 	// map of roomName => room
@@ -39,18 +49,27 @@ type LocalStore struct {
 	agentDispatches map[livekit.RoomName]map[string]*livekit.AgentDispatch
 	agentJobs       map[livekit.RoomName]map[string]*livekit.Job
 
+	revocationLock   sync.RWMutex
+	tokenRevocations map[string]*tokenRevocation
+	// ordered by expiresAt
+	tokenRevocationQueue  list.List
+	lastRevocationCleanup time.Time
+
 	lock       sync.RWMutex
 	globalLock sync.Mutex
 }
 
 func NewLocalStore() *LocalStore {
 	return &LocalStore{
-		rooms:           make(map[livekit.RoomName]*livekit.Room),
-		roomInternal:    make(map[livekit.RoomName]*livekit.RoomInternal),
-		participants:    make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
-		agentDispatches: make(map[livekit.RoomName]map[string]*livekit.AgentDispatch),
-		agentJobs:       make(map[livekit.RoomName]map[string]*livekit.Job),
-		lock:            sync.RWMutex{},
+		rooms:                 make(map[livekit.RoomName]*livekit.Room),
+		roomInternal:          make(map[livekit.RoomName]*livekit.RoomInternal),
+		participants:          make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
+		agentDispatches:       make(map[livekit.RoomName]map[string]*livekit.AgentDispatch),
+		agentJobs:             make(map[livekit.RoomName]map[string]*livekit.Job),
+		tokenRevocations:      make(map[string]*tokenRevocation),
+		lastRevocationCleanup: time.Now(),
+
+		lock: sync.RWMutex{},
 	}
 }
 
@@ -296,4 +315,86 @@ func (s *LocalStore) DeleteAgentJob(ctx context.Context, job *livekit.Job) error
 	}
 
 	return nil
+}
+
+func (s *LocalStore) RevokeRoomParticipant(ctx context.Context, room livekit.RoomName, identity livekit.ParticipantIdentity, notBefore time.Time, ttl time.Duration) error {
+	now := time.Now()
+	notBefore = time.Unix(notBefore.Unix(), 0)
+	expiresAt := now.Add(ttl)
+
+	s.revocationLock.Lock()
+	defer s.revocationLock.Unlock()
+
+	s.cleanupRevokedTokensLocked(now)
+
+	id := GenRoomParticipantRevocationIdentifier(identity, room)
+	r, ok := s.tokenRevocations[id]
+	if !ok {
+		r = &tokenRevocation{id: id, notBefore: notBefore, expiresAt: expiresAt}
+		s.tokenRevocations[id] = r
+		s.queueTokenRevocationLocked(r)
+		return nil
+	}
+
+	// an expired revocation that was not cleaned up yet is replaced
+	if !now.Before(r.expiresAt) || notBefore.After(r.notBefore) {
+		r.notBefore = notBefore
+	}
+	if expiresAt.After(r.expiresAt) {
+		r.expiresAt = expiresAt
+		s.tokenRevocationQueue.Remove(r.expireEle)
+		s.queueTokenRevocationLocked(r)
+	}
+	return nil
+}
+
+func (s *LocalStore) IsRoomParticipantRevoked(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) (bool, *time.Time, error) {
+	now := time.Now()
+
+	s.revocationLock.RLock()
+	var notBefore *time.Time
+	if r, ok := s.tokenRevocations[GenRoomParticipantRevocationIdentifier(identity, room)]; ok && now.Before(r.expiresAt) {
+		nb := r.notBefore
+		notBefore = &nb
+	}
+	cleanupDue := s.isRevokedTokensCleanupDueLocked(now)
+	s.revocationLock.RUnlock()
+
+	if cleanupDue {
+		s.revocationLock.Lock()
+		s.cleanupRevokedTokensLocked(now)
+		s.revocationLock.Unlock()
+	}
+
+	return notBefore != nil, notBefore, nil
+}
+
+func (s *LocalStore) queueTokenRevocationLocked(r *tokenRevocation) {
+	for e := s.tokenRevocationQueue.Back(); e != nil; e = e.Prev() {
+		if !e.Value.(*tokenRevocation).expiresAt.After(r.expiresAt) {
+			r.expireEle = s.tokenRevocationQueue.InsertAfter(r, e)
+			return
+		}
+	}
+	r.expireEle = s.tokenRevocationQueue.PushFront(r)
+}
+
+func (s *LocalStore) isRevokedTokensCleanupDueLocked(now time.Time) bool {
+	return s.tokenRevocationQueue.Len() > 0 && now.Sub(s.lastRevocationCleanup) >= tokenRevocationCleanupInterval
+}
+
+func (s *LocalStore) cleanupRevokedTokensLocked(now time.Time) {
+	if !s.isRevokedTokensCleanupDueLocked(now) {
+		return
+	}
+	s.lastRevocationCleanup = now
+
+	for e := s.tokenRevocationQueue.Front(); e != nil; e = s.tokenRevocationQueue.Front() {
+		r := e.Value.(*tokenRevocation)
+		if now.Before(r.expiresAt) {
+			break
+		}
+		s.tokenRevocationQueue.Remove(e)
+		delete(s.tokenRevocations, r.id)
+	}
 }

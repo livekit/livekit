@@ -115,3 +115,13 @@ type AgentStore interface {
 	StoreAgentJob(ctx context.Context, job *livekit.Job) error
 	DeleteAgentJob(ctx context.Context, job *livekit.Job) error
 }
+
+type RevokeTokenClient interface {
+	IsRevokeTokenEnabled(ctx context.Context, room livekit.RoomName) bool
+	RevokeToken(ctx context.Context, room livekit.RoomName, identity livekit.ParticipantIdentity, notBefore time.Time) error
+}
+
+type TokenRevocationStore interface {
+	RevokeRoomParticipant(ctx context.Context, room livekit.RoomName, identity livekit.ParticipantIdentity, notBefore time.Time, ttl time.Duration) error
+	IsRoomParticipantRevoked(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) (bool, *time.Time, error)
+}

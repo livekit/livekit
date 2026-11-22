@@ -30,7 +30,7 @@ import (
 func TestWebTransportStopBeforeFirstConnection(t *testing.T) {
 	for range 20 {
 		wt := service.NewWebTransportServer(selfSignedTLS(t))
-		wt.H3.Handler = service.NewWebTransportHandler(nil, wt, http.NewServeMux())
+		wt.H3.Handler = service.NewWebTransportHandler(nil, nil, wt, http.NewServeMux())
 		_, err := wt.Listen([]string{"127.0.0.1"}, 0)
 		require.NoError(t, err)
 		require.NoError(t, wt.Shutdown(context.Background()))

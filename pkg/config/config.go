@@ -124,6 +124,8 @@ type Config struct {
 	EnableParticipantDataBlob bool `yaml:"enable_participant_data_blob,omitempty"`
 
 	API APIConfig `yaml:"api,omitempty"`
+
+	TokenRevocation TokenRevocationConfig `yaml:"token_revocation,omitempty"`
 }
 
 // WebTransportConfig is the node's HTTP/3 listener. QUIC has no plaintext mode,
@@ -560,6 +562,15 @@ type APIConfig struct {
 
 	// Backwards compatibility for room service api calls, will enable by default and remove in a future release
 	EnablePsrpcForGetListParticpants bool `yaml:"enable_psrpc_for_get_list_participants,omitempty"`
+}
+
+type TokenRevocationConfig struct {
+	// revoke the existing tokens of a participant on RemoveParticipant and on permission updates, default false
+	Enabled bool `yaml:"enabled,omitempty"`
+
+	// how long a revocation is kept, default 11m10s.
+	// Set it above the validity of the tokens handed out to participants to keep removed participants out for good.
+	TTL time.Duration `yaml:"ttl,omitempty"`
 }
 
 type PrometheusConfig struct {

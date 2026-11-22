@@ -914,6 +914,14 @@ func (r *RoomManager) UpdateParticipant(ctx context.Context, req *livekit.Update
 		)
 
 		participant.SetPermission(req.Permission)
+
+		// the API revokes older tokens on every permission update, but the participant
+		// only refreshes its token when the permission actually changed
+		if r.config.TokenRevocation.Enabled {
+			if err := r.refreshToken(participant); err != nil {
+				participant.GetLogger().Errorw("could not refresh token", err)
+			}
+		}
 	}
 
 	return participant.ToProto(), nil

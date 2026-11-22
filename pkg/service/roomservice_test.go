@@ -313,6 +313,7 @@ func newTestRoomService(limitConf config.LimitConfig) *TestRoomService {
 		rpc.NewTopicFormatter(),
 		&rpcfakes.FakeTypedRoomClient{},
 		participantClient,
+		service.NilRevokeTokenClient{},
 	)
 	if err != nil {
 		panic(err)
