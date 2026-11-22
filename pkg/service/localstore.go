@@ -49,6 +49,7 @@ type LocalStore struct {
 	agentDispatches map[livekit.RoomName]map[string]*livekit.AgentDispatch
 	agentJobs       map[livekit.RoomName]map[string]*livekit.Job
 
+	revocationLock   sync.RWMutex
 	tokenRevocations map[string]*tokenRevocation
 	// ordered by expiresAt
 	tokenRevocationQueue  list.List
@@ -321,8 +322,8 @@ func (s *LocalStore) RevokeRoomParticipant(ctx context.Context, room livekit.Roo
 	notBefore = time.Unix(notBefore.Unix(), 0)
 	expiresAt := now.Add(ttl)
 
-	s.lock.Lock()
-	defer s.lock.Unlock()
+	s.revocationLock.Lock()
+	defer s.revocationLock.Unlock()
 
 	s.cleanupRevokedTokensLocked(now)
 
@@ -350,19 +351,19 @@ func (s *LocalStore) RevokeRoomParticipant(ctx context.Context, room livekit.Roo
 func (s *LocalStore) IsRoomParticipantRevoked(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) (bool, *time.Time, error) {
 	now := time.Now()
 
-	s.lock.RLock()
+	s.revocationLock.RLock()
 	var notBefore *time.Time
 	if r, ok := s.tokenRevocations[GenRoomParticipantRevocationIdentifier(identity, room)]; ok && now.Before(r.expiresAt) {
 		nb := r.notBefore
 		notBefore = &nb
 	}
 	cleanupDue := s.isRevokedTokensCleanupDueLocked(now)
-	s.lock.RUnlock()
+	s.revocationLock.RUnlock()
 
 	if cleanupDue {
-		s.lock.Lock()
+		s.revocationLock.Lock()
 		s.cleanupRevokedTokensLocked(now)
-		s.lock.Unlock()
+		s.revocationLock.Unlock()
 	}
 
 	return notBefore != nil, notBefore, nil

@@ -961,11 +961,11 @@ return 1
 
 func (s *RedisStore) RevokeRoomParticipant(ctx context.Context, room livekit.RoomName, identity livekit.ParticipantIdentity, notBefore time.Time, ttl time.Duration) error {
 	key := GenRoomParticipantRevocationIdentifier(identity, room)
-	return revokeRoomParticipantScript.Run(s.ctx, s.rc, []string{key}, notBefore.Unix(), ttl.Milliseconds()).Err()
+	return revokeRoomParticipantScript.Run(ctx, s.rc, []string{key}, notBefore.Unix(), ttl.Milliseconds()).Err()
 }
 
 func (s *RedisStore) IsRoomParticipantRevoked(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) (bool, *time.Time, error) {
-	revocationTimeInt, err := s.rc.Get(s.ctx, GenRoomParticipantRevocationIdentifier(identity, room)).Int64()
+	revocationTimeInt, err := s.rc.Get(ctx, GenRoomParticipantRevocationIdentifier(identity, room)).Int64()
 	if err == redis.Nil {
 		return false, nil, nil
 	}

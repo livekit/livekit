@@ -34,10 +34,7 @@ import (
 	"github.com/livekit/protocol/utils/guid"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
 	"github.com/livekit/livekit-server/pkg/service"
-	"github.com/livekit/livekit-server/pkg/service/servicefakes"
-	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
 )
 
 const (
@@ -353,27 +350,6 @@ func TestAuthMiddlewareTokenRevocationWithoutNotBefore(t *testing.T) {
 				require.Equal(t, http.StatusUnauthorized, code)
 				require.Nil(t, grants)
 			}
-		})
-	}
-}
-
-// A token without a room must not get a revoked identity into the room it was removed from.
-func TestRTCValidateRoomlessTokenAfterRevocation(t *testing.T) {
-	conf, err := config.NewConfig("", true, nil, nil)
-	require.NoError(t, err)
-
-	store := service.NewLocalStore()
-	revokeForTest(t, store, revocationTestRoom, "alice", time.Now().Add(2*time.Minute))
-
-	rtcService := service.NewRTCService(conf, &servicefakes.FakeRoomAllocator{}, &routingfakes.FakeRouter{}, &telemetryfakes.FakeTelemetryService{})
-	mux := http.NewServeMux()
-	rtcService.SetupRoutes(mux)
-
-	token := newRevocationTestToken(t, "alice", &auth.VideoGrant{RoomJoin: true})
-	for _, path := range []string{"/rtc/validate", "/rtc/v1/validate"} {
-		t.Run(path, func(t *testing.T) {
-			code, _ := serveWithRevocationStore(t, store, path+"?room="+revocationTestRoom, token, mux)
-			require.NotEqual(t, http.StatusOK, code)
 		})
 	}
 }

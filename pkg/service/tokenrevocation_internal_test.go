@@ -33,8 +33,8 @@ import (
 )
 
 func getRevocation(s *LocalStore, identity livekit.ParticipantIdentity, room livekit.RoomName) (tokenRevocation, bool) {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
+	s.revocationLock.RLock()
+	defer s.revocationLock.RUnlock()
 	r, ok := s.tokenRevocations[GenRoomParticipantRevocationIdentifier(identity, room)]
 	if !ok {
 		return tokenRevocation{}, false
@@ -43,8 +43,8 @@ func getRevocation(s *LocalStore, identity livekit.ParticipantIdentity, room liv
 }
 
 func revocationQueue(s *LocalStore) []livekit.ParticipantIdentity {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
+	s.revocationLock.RLock()
+	defer s.revocationLock.RUnlock()
 	var identities []livekit.ParticipantIdentity
 	for e := s.tokenRevocationQueue.Front(); e != nil; e = e.Next() {
 		r := e.Value.(*tokenRevocation)
@@ -54,8 +54,8 @@ func revocationQueue(s *LocalStore) []livekit.ParticipantIdentity {
 }
 
 func makeRevocationCleanupDue(s *LocalStore) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
+	s.revocationLock.Lock()
+	defer s.revocationLock.Unlock()
 	s.lastRevocationCleanup = time.Now().Add(-tokenRevocationCleanupInterval)
 }
 
