@@ -17,6 +17,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,56 +32,105 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
 )
 
-func addExpiredRevocation(s *LocalStore, identity livekit.ParticipantIdentity, room livekit.RoomName) string {
-	id := GenRoomParticipantRevocationIdentifier(identity, room)
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	s.tokenRevocationMap[id] = roomParticipantRevocationMapEntry{
-		expiresAt:      time.Now().Add(-time.Minute),
-		revocationTime: time.Now().Add(-time.Hour),
-	}
-	return id
-}
-
-func hasRevocationEntry(s *LocalStore, id string) bool {
+func getRevocation(s *LocalStore, identity livekit.ParticipantIdentity, room livekit.RoomName) (tokenRevocation, bool) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
-	_, ok := s.tokenRevocationMap[id]
-	return ok
+	r, ok := s.tokenRevocations[GenRoomParticipantRevocationIdentifier(identity, room)]
+	if !ok {
+		return tokenRevocation{}, false
+	}
+	return *r, true
 }
 
-func TestLocalStoreExpiredRevocation(t *testing.T) {
+func revocationQueue(s *LocalStore) []livekit.ParticipantIdentity {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	var identities []livekit.ParticipantIdentity
+	for e := s.tokenRevocationQueue.Front(); e != nil; e = e.Next() {
+		r := e.Value.(*tokenRevocation)
+		identities = append(identities, livekit.ParticipantIdentity(r.id[strings.LastIndex(r.id, ":")+1:]))
+	}
+	return identities
+}
+
+func makeRevocationCleanupDue(s *LocalStore) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.lastRevocationCleanup = time.Now().Add(-tokenRevocationCleanupInterval)
+}
+
+func TestLocalStoreRevocationCleanup(t *testing.T) {
+	ctx := context.Background()
 	s := NewLocalStore()
-	expired := addExpiredRevocation(s, "expired", "room")
+	require.NoError(t, s.RevokeRoomParticipant(ctx, "room", "expired", time.Now(), -time.Minute))
+	require.NoError(t, s.RevokeRoomParticipant(ctx, "room", "fresh", time.Now(), time.Hour))
 
-	require.NoError(t, s.RevokeRoomParticipant(context.Background(), "room", "fresh", time.Now(), time.Hour))
-	fresh := GenRoomParticipantRevocationIdentifier("fresh", "room")
-
-	revoked, _, err := s.IsRoomParticipantRevoked(context.Background(), "expired", "room")
+	revoked, _, err := s.IsRoomParticipantRevoked(ctx, "expired", "room")
 	require.NoError(t, err)
 	require.False(t, revoked)
 
-	s.CleanupRevokedTokens()
-	require.False(t, hasRevocationEntry(s, expired))
-	require.True(t, hasRevocationEntry(s, fresh))
+	// cleanup runs at most once per interval
+	_, ok := getRevocation(s, "expired", "room")
+	require.True(t, ok)
+
+	makeRevocationCleanupDue(s)
+	revoked, _, err = s.IsRoomParticipantRevoked(ctx, "fresh", "room")
+	require.NoError(t, err)
+	require.True(t, revoked)
+	_, ok = getRevocation(s, "expired", "room")
+	require.False(t, ok)
+	require.Equal(t, []livekit.ParticipantIdentity{"fresh"}, revocationQueue(s))
+
+	// revoking cleans up as well
+	require.NoError(t, s.RevokeRoomParticipant(ctx, "room", "expired", time.Now(), -time.Minute))
+	makeRevocationCleanupDue(s)
+	require.NoError(t, s.RevokeRoomParticipant(ctx, "room", "other", time.Now(), time.Hour))
+	_, ok = getRevocation(s, "expired", "room")
+	require.False(t, ok)
+	require.Equal(t, []livekit.ParticipantIdentity{"fresh", "other"}, revocationQueue(s))
+}
+
+func TestLocalStoreRevocationQueueOrder(t *testing.T) {
+	ctx := context.Background()
+	s := NewLocalStore()
+	require.NoError(t, s.RevokeRoomParticipant(ctx, "room", "a", time.Now(), time.Hour))
+	require.NoError(t, s.RevokeRoomParticipant(ctx, "room", "b", time.Now(), time.Minute))
+	require.NoError(t, s.RevokeRoomParticipant(ctx, "room", "c", time.Now(), 30*time.Minute))
+	require.Equal(t, []livekit.ParticipantIdentity{"b", "c", "a"}, revocationQueue(s))
+
+	// a later expiry moves the revocation back in the queue
+	require.NoError(t, s.RevokeRoomParticipant(ctx, "room", "b", time.Now(), 2*time.Hour))
+	require.Equal(t, []livekit.ParticipantIdentity{"c", "a", "b"}, revocationQueue(s))
 }
 
 func TestLocalStoreRevocationTTL(t *testing.T) {
+	ctx := context.Background()
 	s := NewLocalStore()
-	require.NoError(t, s.RevokeRoomParticipant(context.Background(), "room", "identity", time.Now(), 24*time.Hour))
+	require.NoError(t, s.RevokeRoomParticipant(ctx, "room", "identity", time.Now(), 24*time.Hour))
 
-	s.lock.RLock()
-	entry, ok := s.tokenRevocationMap[GenRoomParticipantRevocationIdentifier("identity", "room")]
-	s.lock.RUnlock()
+	r, ok := getRevocation(s, "identity", "room")
 	require.True(t, ok)
-	require.WithinDuration(t, time.Now().Add(24*time.Hour), entry.expiresAt, 5*time.Second)
+	require.WithinDuration(t, time.Now().Add(24*time.Hour), r.expiresAt, 5*time.Second)
 
 	// a shorter revocation does not cut the existing one short
-	require.NoError(t, s.RevokeRoomParticipant(context.Background(), "room", "identity", time.Now(), time.Minute))
-	s.lock.RLock()
-	entry = s.tokenRevocationMap[GenRoomParticipantRevocationIdentifier("identity", "room")]
-	s.lock.RUnlock()
-	require.WithinDuration(t, time.Now().Add(24*time.Hour), entry.expiresAt, 5*time.Second)
+	require.NoError(t, s.RevokeRoomParticipant(ctx, "room", "identity", time.Now(), time.Minute))
+	r, _ = getRevocation(s, "identity", "room")
+	require.WithinDuration(t, time.Now().Add(24*time.Hour), r.expiresAt, 5*time.Second)
+}
+
+func TestLocalStoreRevocationReplacesExpired(t *testing.T) {
+	ctx := context.Background()
+	s := NewLocalStore()
+	later := time.Now().Add(time.Hour)
+	require.NoError(t, s.RevokeRoomParticipant(ctx, "room", "identity", later, -time.Minute))
+
+	// the expired revocation is not merged into the new one
+	now := time.Now()
+	require.NoError(t, s.RevokeRoomParticipant(ctx, "room", "identity", now, time.Hour))
+	revoked, notBefore, err := s.IsRoomParticipantRevoked(ctx, "identity", "room")
+	require.NoError(t, err)
+	require.True(t, revoked)
+	require.Equal(t, now.Unix(), notBefore.Unix())
 }
 
 type revocationCall struct {
@@ -106,8 +156,6 @@ func (s *recordingRevocationStore) RevokeRoomParticipant(_ context.Context, room
 func (s *recordingRevocationStore) IsRoomParticipantRevoked(context.Context, livekit.ParticipantIdentity, livekit.RoomName) (bool, *time.Time, error) {
 	return false, nil, nil
 }
-
-func (s *recordingRevocationStore) CleanupRevokedTokens() {}
 
 type revocationRoomServiceTest struct {
 	svc               *RoomService

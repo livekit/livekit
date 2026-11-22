@@ -124,5 +124,4 @@ type RevokeTokenClient interface {
 type TokenRevocationStore interface {
 	RevokeRoomParticipant(ctx context.Context, room livekit.RoomName, identity livekit.ParticipantIdentity, notBefore time.Time, ttl time.Duration) error
 	IsRoomParticipantRevoked(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) (bool, *time.Time, error)
-	CleanupRevokedTokens()
 }

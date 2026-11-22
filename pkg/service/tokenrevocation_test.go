@@ -59,8 +59,6 @@ func (s *stubTokenRevocationStore) IsRoomParticipantRevoked(context.Context, liv
 	return false, nil, s.checkErr
 }
 
-func (s *stubTokenRevocationStore) CleanupRevokedTokens() {}
-
 // tokens whose nbf is earlier than notBefore minus the one minute leeway are revoked
 func revokeForTest(t *testing.T, store service.TokenRevocationStore, room string, identity string, notBefore time.Time) {
 	require.NoError(t, store.RevokeRoomParticipant(context.Background(), livekit.RoomName(room), livekit.ParticipantIdentity(identity), notBefore, revocationTestTTL))
@@ -148,12 +146,6 @@ func testTokenRevocationStore(t *testing.T, store service.TokenRevocationStore) 
 	require.NoError(t, err)
 	require.True(t, revoked)
 	require.Equal(t, revokedAt.Add(30*time.Second).Unix(), storedRevokedAt.Unix())
-
-	// entries within their TTL survive cleanup
-	store.CleanupRevokedTokens()
-	revoked, _, err = store.IsRoomParticipantRevoked(ctx, identity, room)
-	require.NoError(t, err)
-	require.True(t, revoked)
 }
 
 func TestLocalStoreTokenRevocation(t *testing.T) {
@@ -173,7 +165,6 @@ func TestLocalStoreTokenRevocationConcurrent(t *testing.T) {
 			for j := 0; j < 100; j++ {
 				_ = store.RevokeRoomParticipant(ctx, "room", livekit.ParticipantIdentity(identity), time.Now(), revocationTestTTL)
 				_, _, _ = store.IsRoomParticipantRevoked(ctx, livekit.ParticipantIdentity(identity), "room")
-				store.CleanupRevokedTokens()
 			}
 		}(i)
 	}

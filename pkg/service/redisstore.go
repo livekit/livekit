@@ -977,10 +977,6 @@ func (s *RedisStore) IsRoomParticipantRevoked(ctx context.Context, identity live
 	return true, &revocationTime, nil
 }
 
-func (s *RedisStore) CleanupRevokedTokens() {
-	// Not needed in the redis implementation
-}
-
 func redisStoreOne(ctx context.Context, s *RedisStore, key, id string, p proto.Message) error {
 	if id == "" {
 		return errors.New("id is not set")
