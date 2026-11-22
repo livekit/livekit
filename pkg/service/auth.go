@@ -114,7 +114,9 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 		if m.tokenRevocationStore != nil && len(grants.Identity) > 0 && grants.Video != nil && len(grants.Video.Room) > 0 {
 			revoked, revokedAt, err := m.tokenRevocationStore.IsRoomParticipantRevoked(ctx, livekit.ParticipantIdentity(grants.Identity), livekit.RoomName(grants.Video.Room))
 			if err != nil {
-				HandleError(w, r, http.StatusServiceUnavailable, fmt.Errorf("could not check token revocation: %w", err))
+				// the store error may carry internal addresses, only log it
+				handleError(w, r, http.StatusServiceUnavailable, fmt.Errorf("could not check token revocation: %w", err))
+				_, _ = w.Write([]byte("could not check token revocation"))
 				return
 			}
 			if revoked && isTokenRevoked(claims, *revokedAt) {

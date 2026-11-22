@@ -264,12 +264,21 @@ func TestAuthMiddlewareTokenRevocation(t *testing.T) {
 
 // When the revocation state cannot be read, the token must not be accepted.
 func TestAuthMiddlewareTokenRevocationStoreFailure(t *testing.T) {
-	store := &stubTokenRevocationStore{checkErr: errors.New("store unavailable")}
+	store := &stubTokenRevocationStore{checkErr: errors.New("dial tcp 10.0.0.5:6379: connection refused")}
 	token := newRevocationTestToken(t, "alice", &auth.VideoGrant{Room: revocationTestRoom, RoomJoin: true})
 
 	code, grants := serveWithRevocationStore(t, store, "/rtc", token, nil)
 	require.Equal(t, http.StatusServiceUnavailable, code)
 	require.Nil(t, grants)
+
+	// the store error is not returned to the client
+	provider := &authfakes.FakeKeyProvider{}
+	provider.GetSecretReturns(revocationTestSecret)
+	r := httptest.NewRequest(http.MethodGet, "/rtc", nil)
+	service.SetAuthorizationToken(r, token)
+	w := httptest.NewRecorder()
+	service.NewAPIKeyAuthMiddleware(provider, store).ServeHTTP(w, r, func(http.ResponseWriter, *http.Request) {})
+	require.Equal(t, "could not check token revocation", w.Body.String())
 }
 
 // The stored cutoff is revoke_token_ts plus the leeway, so tokens whose nbf is before revoke_token_ts are revoked.
