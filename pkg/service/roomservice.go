@@ -240,16 +240,16 @@ func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomPa
 
 	AppendLogFields(ctx, "room", req.Room, "participant", req.Identity)
 
-	if err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room)); err != nil {
-		return nil, twirpAuthError(err)
-	}
-
 	// the revocation below is stored even when the participant does not exist
 	if !s.limitConf.CheckRoomNameLength(req.Room) {
 		return nil, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, s.limitConf.MaxRoomNameLength)
 	}
 	if !s.limitConf.CheckParticipantIdentityLength(req.Identity) {
 		return nil, fmt.Errorf("%w: max length %d", ErrParticipantIdentityExceedsLimits, s.limitConf.MaxParticipantIdentityLength)
+	}
+
+	if err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room)); err != nil {
+		return nil, twirpAuthError(err)
 	}
 
 	notBefore := time.Now()

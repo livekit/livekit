@@ -16,6 +16,7 @@ package service_test
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net/http"
@@ -33,6 +34,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils/guid"
 
+	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/service"
 )
@@ -350,6 +352,58 @@ func TestAuthMiddlewareTokenRevocationWithoutNotBefore(t *testing.T) {
 				require.Equal(t, http.StatusUnauthorized, code)
 				require.Nil(t, grants)
 			}
+		})
+	}
+}
+
+// every chain with api-key auth checks revocation: the API, the agent endpoints and WebTransport
+func TestAuthChainsTokenRevocation(t *testing.T) {
+	conf, err := config.NewConfig("", true, nil, nil)
+	require.NoError(t, err)
+	provider := &authfakes.FakeKeyProvider{}
+	provider.GetSecretReturns(revocationTestSecret)
+	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	token := newRevocationTestToken(t, "alice", &auth.VideoGrant{Room: revocationTestRoom, RoomJoin: true})
+
+	for name, tc := range map[string]struct {
+		handler func(store service.TokenRevocationStore) http.Handler
+		path    string
+	}{
+		"api": {
+			handler: func(store service.TokenRevocationStore) http.Handler {
+				return service.NewHTTPHandler(conf, provider, store, ok, ok)
+			},
+			path: "/rtc/validate",
+		},
+		"agent endpoint": {
+			handler: func(store service.TokenRevocationStore) http.Handler {
+				return service.NewHTTPHandler(conf, provider, store, ok, ok)
+			},
+			path: endpoint.PathPrefix + "agent",
+		},
+		"webtransport": {
+			handler: func(store service.TokenRevocationStore) http.Handler {
+				return service.NewWebTransportHandler(provider, store, service.NewWebTransportServer(&tls.Config{}), ok)
+			},
+			path: "/rtc",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := service.NewLocalStore()
+			handler := tc.handler(store)
+			serve := func() int {
+				r := httptest.NewRequest(http.MethodGet, tc.path, nil)
+				service.SetAuthorizationToken(r, token)
+				w := httptest.NewRecorder()
+				handler.ServeHTTP(w, r)
+				return w.Code
+			}
+
+			require.Equal(t, http.StatusOK, serve())
+			revokeForTest(t, store, revocationTestRoom, "alice", time.Now().Add(2*time.Minute))
+			require.Equal(t, http.StatusUnauthorized, serve())
 		})
 	}
 }
