@@ -27,7 +27,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pion/dtls/v3/pkg/crypto/elliptic"
+	"github.com/pion/dtls/v4/pkg/crypto/elliptic"
 	"github.com/pion/ice/v4"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/cc"
@@ -38,6 +38,7 @@ import (
 	"github.com/pion/webrtc/v4"
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/protobuf/proto"
 
@@ -299,10 +300,8 @@ type PCTransport struct {
 	negotiateCounter          atomic.Int32
 	signalStateCheckTimer     *time.Timer
 	currentOfferIceCredential string // ice user:pwd, for publish side ice restart checking
-	pendingRestartIceOffer    *webrtc.SessionDescription
-	// parsed forms kept so that a remote description is parsed once per negotiation
-	pendingRestartIceOfferParsed *sdp.SessionDescription
-	remoteOfferParsed            *sdp.SessionDescription
+	// parsed form kept so that a remote description is parsed once per negotiation
+	remoteOfferParsed *sdp.SessionDescription
 }
 
 type TransportParams struct {
@@ -411,6 +410,7 @@ func newPeerConnection(
 	//
 	se.DisableSRTPReplayProtection(true)
 	se.DisableSRTCPReplayProtection(true)
+	iceLite := params.Config.ICELite
 	if !params.ProtocolVersion.SupportsICELite() || !params.ClientInfo.SupportsPrflxOverRelay() {
 		// if client don't support prflx over relay which is only Firefox, disable ICE Lite to ensure that
 		// aggressive nomination is handled properly. Firefox does aggressive nomination even if peer is
@@ -420,7 +420,14 @@ func newPeerConnection(
 		// ending up with different candidates.
 		// As Firefox does not support migration, ICE Lite can be disabled.
 		se.SetLite(false)
+		iceLite = false
 	}
+	if iceLite && params.ClientInfo.SupportsAnswerDTLSRoleServer() {
+		_ = se.SetAnsweringDTLSRole(webrtc.DTLSRoleServer)
+	}
+	// ICE checks already prove the remote address, so the HelloVerifyRequest cookie only adds a round trip.
+	// pion applies this only when this side ends up as the DTLS server.
+	se.SetDTLSInsecureSkipHelloVerify(true)
 	se.SetDTLSRetransmissionInterval(dtlsRetransmissionInterval)
 	se.SetDTLSConnectContextMaker(func() (context.Context, func()) {
 		return context.WithTimeout(context.Background(), dtlsHandshakeTimeout)
@@ -566,7 +573,6 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		previousTrackDescription: make(map[string]*trackDescription),
 		canReuseTransceiver:      true,
 		connectionDetails:        types.NewICEConnectionDetails(params.Transport, params.Logger),
-		lastNegotiate:            time.Now(),
 	}
 	t.localOfferId.Store(uint32(rand.Intn(1<<8) + 1))
 
@@ -898,7 +904,7 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 
 func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 	dc.OnOpen(func() {
-		t.params.Logger.Debugw(dc.Label() + " data channel open")
+		t.params.Logger.Infow("data channel open", zap.Inline(dataChannelLogObject{dc}))
 		var kind livekit.DataPacket_Kind
 		var isDataTrack bool
 		var isUnlabeled bool
@@ -913,7 +919,6 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 			isDataTrack = true
 
 		default:
-			t.params.Logger.Infow("unlabeled datachannel added", "label", dc.Label())
 			isUnlabeled = true
 		}
 
@@ -1040,6 +1045,7 @@ func (t *PCTransport) queueOrConfigureSender(
 		filterOutH264HighProfile: !t.params.IsOfferer,
 		enableAudioStereo:        enableAudioStereo,
 		enableAudioNACK:          enableAudioNACK,
+		enableFlexFEC:            t.params.DirectionConfig.FlexFEC.Enabled,
 	}
 	if !t.params.IsOfferer {
 		t.sendersPendingConfigMu.Lock()
@@ -1287,7 +1293,6 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 	switch dc.Label() {
 	default:
 		isUnlabeled = true
-		t.params.Logger.Infow("unlabeled datachannel added", "label", dc.Label())
 
 	case ReliableDataChannel:
 		dcPtr = &t.reliableDC
@@ -1339,7 +1344,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 			}
 		}
 		t.lock.Unlock()
-		t.params.Logger.Debugw(dc.Label() + " data channel open")
+		t.params.Logger.Infow("data channel open", zap.Inline(dataChannelLogObject{dc}))
 
 		go func() {
 			defer rawDC.Close()
@@ -1534,38 +1539,14 @@ func (t *PCTransport) SendDataMessage(kind livekit.DataPacket_Kind, data []byte)
 	return t.sendDataMessage(dc, data)
 }
 
-func (t *PCTransport) SendDataMessageUnlabeled(data []byte, useRaw bool, sender livekit.ParticipantIdentity) error {
-	convertToUserPacket := false
+func (t *PCTransport) SendDataMessageUnlabeled(data []byte) error {
 	var dc *datachannel.DataChannelWriter[*webrtc.DataChannel]
 	t.lock.RLock()
-	if t.params.UseOneShotSignallingMode || useRaw {
-		if len(t.unlabeledDataChannels) > 0 {
-			// use the first unlabeled to send
-			dc = t.unlabeledDataChannels[0]
-		}
-	} else {
-		if t.reliableDC != nil {
-			dc = t.reliableDC
-		} else if t.lossyDC != nil {
-			dc = t.lossyDC
-		}
-
-		convertToUserPacket = true
+	if len(t.unlabeledDataChannels) > 0 {
+		// use the first unlabeled to send
+		dc = t.unlabeledDataChannels[0]
 	}
 	t.lock.RUnlock()
-
-	if convertToUserPacket {
-		dpData, err := proto.Marshal(&livekit.DataPacket{
-			ParticipantIdentity: string(sender),
-			Value: &livekit.DataPacket_User{
-				User: &livekit.UserPacket{Payload: data},
-			},
-		})
-		if err != nil {
-			return err
-		}
-		return t.sendDataMessage(dc, dpData)
-	}
 
 	return t.sendDataMessage(dc, data)
 }
@@ -1707,12 +1688,24 @@ func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remo
 			return err
 		}
 		t.setRemoteOfferParsed(sd.Type, parsed)
+		if sd.Type == webrtc.SDPTypeOffer {
+			t.params.Handler.OnSetRemoteDescriptionOffer()
+		}
 
 		rtxRepairs := nonSimulcastRTXRepairsFromSDP(parsed, t.params.Logger)
 		if len(rtxRepairs) > 0 {
 			t.params.Logger.Debugw("rtx pairs found from sdp", "ssrcs", rtxRepairs)
 			for repair, base := range rtxRepairs {
 				t.params.Config.BufferFactory.SetRTXPair(repair, base, "")
+			}
+		}
+
+		if t.params.DirectionConfig.FlexFEC.Enabled {
+			if fecFlows := fecPairsFromSDP(parsed, t.params.Logger); len(fecFlows) > 0 {
+				t.params.Logger.Debugw("fec pairs found from sdp", "ssrcs", fecFlows)
+				for fec, base := range fecFlows {
+					t.params.Config.BufferFactory.SetFECPair(fec, base)
+				}
 			}
 		}
 		return nil
@@ -2384,9 +2377,8 @@ func (t *PCTransport) postEvent(e event) {
 func (t *PCTransport) handleICEGatheringComplete(_ event) error {
 	if t.params.IsOfferer {
 		return t.handleICEGatheringCompleteOfferer()
-	} else {
-		return t.handleICEGatheringCompleteAnswerer()
 	}
+	return nil
 }
 
 func (t *PCTransport) handleICEGatheringCompleteOfferer() error {
@@ -2397,27 +2389,6 @@ func (t *PCTransport) handleICEGatheringCompleteOfferer() error {
 	t.params.Logger.Debugw("restarting ICE after ICE gathering")
 	t.restartAfterGathering = false
 	return t.doICERestart()
-}
-
-func (t *PCTransport) handleICEGatheringCompleteAnswerer() error {
-	if t.pendingRestartIceOffer == nil {
-		return nil
-	}
-
-	offer := *t.pendingRestartIceOffer
-	parsed := t.pendingRestartIceOfferParsed
-	t.pendingRestartIceOffer = nil
-	t.pendingRestartIceOfferParsed = nil
-
-	t.params.Logger.Debugw("accept remote restart ice offer after ICE gathering")
-
-	if err := t.setRemoteDescription(offer, parsed); err != nil {
-		return err
-	}
-	t.params.Handler.OnSetRemoteDescriptionOffer()
-	t.processSendersPendingConfig(offerAudioPayloadTypes(parsed))
-
-	return t.createAndSendAnswer()
 }
 
 func (t *PCTransport) localDescriptionSent() error {
@@ -2856,6 +2827,7 @@ func (t *PCTransport) createAndSendAnswer() error {
 	t.lock.Unlock()
 
 	t.restrictReceiverCodecsToPublishList()
+	t.suppressCodecMismatchedSenders()
 
 	answer, err := t.pc.CreateAnswer(nil)
 	if err != nil {
@@ -2954,15 +2926,8 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, p
 		return errors.Wrap(err, "check remote offer restart ice failed")
 	}
 
-	if offerRestartICE && t.pendingRestartIceOffer == nil {
+	if offerRestartICE {
 		t.clearLocalDescriptionSent()
-	}
-
-	if offerRestartICE && t.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
-		t.params.Logger.Debugw("remote offer restart ice while ice gathering")
-		t.pendingRestartIceOffer = sd
-		t.pendingRestartIceOfferParsed = parsed
-		return nil
 	}
 
 	if offerRestartICE && t.resetShortConnOnICERestart.CompareAndSwap(true, false) {
@@ -2991,6 +2956,15 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, p
 		t.params.Logger.Debugw("rtx pairs found from sdp", "ssrcs", rtxRepairs)
 		for repair, base := range rtxRepairs {
 			t.params.Config.BufferFactory.SetRTXPair(repair, base, "")
+		}
+	}
+
+	if t.params.DirectionConfig.FlexFEC.Enabled {
+		if fecFlows := fecPairsFromSDP(parsed, t.params.Logger); len(fecFlows) > 0 {
+			t.params.Logger.Debugw("fec pairs found from sdp", "ssrcs", fecFlows)
+			for fec, base := range fecFlows {
+				t.params.Config.BufferFactory.SetFECPair(fec, base)
+			}
 		}
 	}
 
@@ -3167,6 +3141,7 @@ type configureSenderParams struct {
 	filterOutH264HighProfile bool
 	enableAudioStereo        bool
 	enableAudioNACK          bool
+	enableFlexFEC            bool
 }
 
 func configureSender(params configureSenderParams, offerAudioPT map[mime.MimeType]webrtc.PayloadType) {
@@ -3175,6 +3150,7 @@ func configureSender(params configureSenderParams, offerAudioPT map[mime.MimeTyp
 		params.enabledCodecs,
 		params.rtcpFeedbackConfig,
 		params.filterOutH264HighProfile,
+		params.enableFlexFEC,
 	)
 
 	if params.transceiver.Kind() == webrtc.RTPCodecTypeAudio {
@@ -3280,6 +3256,7 @@ func configureSenderCodecs(
 	enabledCodecs []*livekit.Codec,
 	rtcpFeedbackConfig RTCPFeedbackConfig,
 	filterOutH264HighProfile bool,
+	enableFlexFEC bool,
 ) {
 	if len(enabledCodecs) == 0 {
 		return
@@ -3295,6 +3272,7 @@ func configureSenderCodecs(
 		enabledCodecs,
 		rtcpFeedbackConfig,
 		filterOutH264HighProfile,
+		enableFlexFEC,
 	)
 	tr.SetCodecPreferences(filteredCodecs)
 }
@@ -3308,6 +3286,10 @@ func (t *PCTransport) restrictReceiverCodecsToPublishList() {
 			tr.Direction() != webrtc.RTPTransceiverDirectionSendrecv {
 			continue
 		}
+		// a mid-less sender is not negotiated yet, see sendersPendingConfig
+		if tr.Mid() == "" {
+			continue
+		}
 		receiver := tr.Receiver()
 		if receiver == nil {
 			continue
@@ -3317,6 +3299,7 @@ func (t *PCTransport) restrictReceiverCodecsToPublishList() {
 			t.params.EnabledPublishCodecs,
 			t.params.DirectionConfig.RTCPFeedback,
 			false,
+			t.params.DirectionConfig.FlexFEC.Enabled,
 		)
 		if len(filtered) == 0 {
 			continue
@@ -3325,6 +3308,80 @@ func (t *PCTransport) restrictReceiverCodecsToPublishList() {
 			t.params.Logger.Warnw("failed to set recv codec preferences", err, "mid", tr.Mid())
 		}
 	}
+}
+
+// suppressCodecMismatchedSenders parks a subscription when the client's offer for
+// its m-line carries no codec it can send. Without this the answer still advertises
+// the track msid, because Bind returns nil on a mismatch so pion keeps the sender,
+// and the subscriber briefly sees a spurious TrackSubscribed before it is torn down.
+func (t *PCTransport) suppressCodecMismatchedSenders() {
+	parsed := t.RemoteOfferParsed()
+	if parsed == nil {
+		return
+	}
+	for _, tr := range t.pc.GetTransceivers() {
+		mid := tr.Mid()
+		if mid == "" {
+			continue
+		}
+		sender := tr.Sender()
+		if sender == nil {
+			continue
+		}
+		local := sender.Track()
+		if local == nil {
+			continue
+		}
+		// check every codec Bind can pick, not only the primary one
+		codecer, ok := local.(interface {
+			BindableCodecs() []webrtc.RTPCodecParameters
+		})
+		if !ok {
+			continue
+		}
+		codecs := codecer.BindableCodecs()
+		if midOffersAnyCodec(parsed, mid, codecs) {
+			continue
+		}
+
+		t.params.Logger.Infow(
+			"suppressing codec mismatched sender from answer",
+			"mid", mid,
+			"trackID", local.ID(),
+			"codecs", codecs,
+		)
+		if err := t.pc.RemoveTrack(sender); err != nil {
+			t.params.Logger.Warnw("failed to park codec mismatched sender", err, "mid", mid)
+			continue
+		}
+		// let the participant tear the subscription down, so transport does not
+		// reach into the subscription to report the codec failure.
+		t.params.Handler.OnSubscribedTrackCodecUnmatched(livekit.TrackID(local.ID()))
+	}
+}
+
+// midOffersAnyCodec reports whether the remote offer m-line for mid lists a codec
+// whose encoding name matches one of codecs, the same mime match Bind falls back to.
+// A missing mid returns true, so an unmatched section is left alone.
+func midOffersAnyCodec(parsed *sdp.SessionDescription, mid string, codecs []webrtc.RTPCodecParameters) bool {
+	for _, md := range parsed.MediaDescriptions {
+		if lksdp.GetMidValue(md) != mid {
+			continue
+		}
+		offered, err := lksdp.CodecsFromMediaDescription(md)
+		if err != nil {
+			return true
+		}
+		for _, o := range offered {
+			for _, c := range codecs {
+				if mime.NormalizeMimeTypeCodec(o.Name) == mime.GetMimeTypeCodec(c.MimeType) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return true
 }
 
 func configureReceiverCodecs(
@@ -3368,6 +3425,14 @@ func configureReceiverCodecs(
 		// if the client don't comply with codec order in SDP answer, only keep preferred codecs to force client to use it
 		if compliesWithCodecOrderInSDPAnswer {
 			reorderedCodecs = append(reorderedCodecs, leftCodecs...)
+		} else {
+			// flexfec applies to whichever video codec is negotiated, retain
+			// it even when trimming to the preferred codec
+			for _, c := range leftCodecs {
+				if mime.IsMimeTypeStringFlexFEC03(c.RTPCodecCapability.MimeType) {
+					reorderedCodecs = append(reorderedCodecs, c)
+				}
+			}
 		}
 	} else {
 		reorderedCodecs = append(reorderedCodecs, leftCodecs...)
@@ -3418,6 +3483,37 @@ func nonSimulcastRTXRepairsFromSDP(s *sdp.SessionDescription, logger logger.Logg
 	return rtxRepairFlows
 }
 
+// fecPairsFromSDP extracts FlexFEC repair flows declared via
+// `a=ssrc-group:FEC-FR <media ssrc> <fec ssrc>` (RFC 5956) from the remote
+// description, returning a map of fec ssrc -> protected media ssrc.
+func fecPairsFromSDP(s *sdp.SessionDescription, logger logger.Logger) map[uint32]uint32 {
+	fecFlows := map[uint32]uint32{}
+	for _, media := range s.MediaDescriptions {
+		for _, attr := range media.Attributes {
+			if attr.Key != sdp.AttrKeySSRCGroup {
+				continue
+			}
+			fields := strings.Fields(attr.Value)
+			if len(fields) != 3 || fields[0] != sdp.SemanticTokenForwardErrorCorrectionFramework {
+				continue
+			}
+			baseSsrc, err := strconv.ParseUint(fields[1], 10, 32)
+			if err != nil {
+				logger.Warnw("failed to parse SSRC", err, "ssrc", fields[1])
+				continue
+			}
+			fecSsrc, err := strconv.ParseUint(fields[2], 10, 32)
+			if err != nil {
+				logger.Warnw("failed to parse SSRC", err, "ssrc", fields[2])
+				continue
+			}
+			fecFlows[uint32(fecSsrc)] = uint32(baseSsrc)
+		}
+	}
+
+	return fecFlows
+}
+
 // ----------------------
 
 type iceCandidatePairStatsEncoder struct {
@@ -3457,5 +3553,29 @@ func (r iceCandidatePairStats) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddTime("firstRequestReceivedAt", r.FirstRequestReceivedTimestamp.Time())
 	e.AddTime("lastRequestReceivedAt", r.LastRequestReceivedTimestamp.Time())
 
+	return nil
+}
+
+// ----------------------
+
+// dataChannelLogObject logs a data channel's negotiated options alongside its label
+type dataChannelLogObject struct {
+	dc *webrtc.DataChannel
+}
+
+func (d dataChannelLogObject) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddString("label", d.dc.Label())
+	if id := d.dc.ID(); id != nil {
+		e.AddUint16("id", *id)
+	}
+	e.AddBool("ordered", d.dc.Ordered())
+	if n := d.dc.MaxRetransmits(); n != nil {
+		e.AddUint16("maxRetransmits", *n)
+	}
+	if lifetime := d.dc.MaxPacketLifeTime(); lifetime != nil {
+		e.AddUint16("maxPacketLifeTime", *lifetime)
+	}
+	e.AddString("protocol", d.dc.Protocol())
+	e.AddBool("negotiated", d.dc.Negotiated())
 	return nil
 }

@@ -229,6 +229,7 @@ func (s *RTCService) validateInternal(
 		Identity:                livekit.ParticipantIdentity(res.grants.Identity),
 		Name:                    livekit.ParticipantName(res.grants.Name),
 		Grants:                  res.grants,
+		APIKey:                  GetAPIKey(r.Context()),
 		TokenExpiresAt:          res.tokenExpiresAt,
 		Region:                  res.region,
 		CreateRoom:              res.createRoomRequest,
@@ -280,8 +281,10 @@ func (s *RTCService) validateInternal(
 		pi.AdaptiveStream = joinRequest.GetConnectionSettings().GetAdaptiveStream()
 		pi.DisableICELite = joinRequest.GetConnectionSettings().GetDisableIceLite()
 
-		subscriberAllowPause := joinRequest.GetConnectionSettings().GetSubscriberAllowPause()
-		pi.SubscriberAllowPause = &subscriberAllowPause
+		if cs := joinRequest.GetConnectionSettings(); cs != nil && cs.SubscriberAllowPause != nil {
+			v := cs.GetSubscriberAllowPause()
+			pi.SubscriberAllowPause = &v
+		}
 
 		pi.AddTrackRequests = joinRequest.AddTrackRequests
 		pi.PublisherOffer = joinRequest.PublisherOffer
@@ -387,6 +390,9 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 		pID = pi.ID
 	}
 	pLogger.Debugw("join request validated", append(getLoggerFields(), "participantInit", &pi)...)
+
+	// before node selection and the connect attempts below, which are part of the user's wait
+	stampJoinRequestTime(&pi, startedAt)
 
 	// give it a few attempts to start session
 	var cr connectionResult
@@ -774,6 +780,17 @@ func (s *RTCService) startConnection(
 	}
 
 	return cr, initialResponse, nil
+}
+
+// stampJoinRequestTime sets when the server received a new participant's join request.
+func stampJoinRequestTime(pi *routing.ParticipantInit, at time.Time) {
+	if pi.Reconnect {
+		return
+	}
+	if pi.Grants.Attributes == nil {
+		pi.Grants.Attributes = make(map[string]string, 1)
+	}
+	pi.Grants.Attributes[livekit.AttrRTCJoinRequestTime] = strconv.FormatInt(at.UnixMilli(), 10)
 }
 
 func readInitialResponse(source routing.MessageSource, timeout time.Duration) (*livekit.SignalResponse, error) {

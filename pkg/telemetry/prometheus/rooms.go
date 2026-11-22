@@ -39,17 +39,20 @@ var (
 	// success rate by subtracting this from total attempts
 	trackSubscribeUserError atomic.Int32
 
-	promRoomCurrent            prometheus.Gauge
-	promRoomDuration           prometheus.Histogram
-	promParticipantCurrent     prometheus.Gauge
-	promTrackPublishedCurrent  *prometheus.GaugeVec
-	promTrackSubscribedCurrent *prometheus.GaugeVec
-	promTrackPublishCounter    *prometheus.CounterVec
-	promTrackSubscribeCounter  *prometheus.CounterVec
-	promSessionJoinLatency     *prometheus.HistogramVec
-	promSessionStartTime       *prometheus.HistogramVec
-	promSessionDuration        *prometheus.HistogramVec
-	promPubSubTime             *prometheus.HistogramVec
+	promRoomCurrent                        prometheus.Gauge
+	promRoomDuration                       prometheus.Histogram
+	promParticipantCurrent                 prometheus.Gauge
+	promTrackPublishedCurrent              *prometheus.GaugeVec
+	promTrackSubscribedCurrent             *prometheus.GaugeVec
+	promTrackPacketTrailerCurrent          prometheus.Gauge
+	promTrackPacketTrailerByFeatureCurrent *prometheus.GaugeVec
+	promTrackPublishCounter                *prometheus.CounterVec
+	promTrackSubscribeCounter              *prometheus.CounterVec
+	promSessionJoinLatency                 *prometheus.HistogramVec
+	promSessionStartTime                   *prometheus.HistogramVec
+	promSessionDuration                    *prometheus.HistogramVec
+	promPubSubTime                         *prometheus.HistogramVec
+	promSubscribePaceShadow                *prometheus.HistogramVec
 
 	promPeerConnection *prometheus.CounterVec
 )
@@ -88,6 +91,24 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "subscribed_total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, []string{"kind"})
+	promTrackPacketTrailerCurrent = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "track",
+		Name:        "packet_trailer_total",
+		Help:        "Current number of published video tracks with packet trailers enabled.",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+	})
+	promTrackPacketTrailerByFeatureCurrent = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "track",
+		Name:        "packet_trailer_feature_total",
+		Help:        "Current number of published video tracks by enabled packet trailer feature.",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+	}, []string{"feature"})
+	for value := range livekit.PacketTrailerFeature_name {
+		feature := livekit.PacketTrailerFeature(value)
+		promTrackPacketTrailerByFeatureCurrent.WithLabelValues(feature.String()).Set(0)
+	}
 	promTrackPublishCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "track",
@@ -128,6 +149,14 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		Buckets:     []float64{100, 200, 500, 700, 1000, 5000, 10000},
 	}, append(promStreamLabels, "sdk", "kind", "count"))
+	promSubscribePaceShadow = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "subscribe_pace",
+		Name:        "shadow_delay_ms",
+		Help:        "Wait that pacing video subscribes at each rate would add, per video subscribe.",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+		Buckets:     []float64{0, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 30000, 60000, 120000},
+	}, []string{"rate"})
 	promPeerConnection = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "peer_connection",
@@ -140,6 +169,8 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promParticipantCurrent)
 	prometheus.MustRegister(promTrackPublishedCurrent)
 	prometheus.MustRegister(promTrackSubscribedCurrent)
+	prometheus.MustRegister(promTrackPacketTrailerCurrent)
+	prometheus.MustRegister(promTrackPacketTrailerByFeatureCurrent)
 	prometheus.MustRegister(promTrackPublishCounter)
 	prometheus.MustRegister(promTrackSubscribeCounter)
 	prometheus.MustRegister(promSessionJoinLatency)
@@ -147,6 +178,7 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promSessionDuration)
 	prometheus.MustRegister(promPubSubTime)
 	prometheus.MustRegister(promPeerConnection)
+	prometheus.MustRegister(promSubscribePaceShadow)
 }
 
 func RoomStarted() {
@@ -180,6 +212,48 @@ func AddPublishedTrack(kind string) {
 func SubPublishedTrack(kind string) {
 	promTrackPublishedCurrent.WithLabelValues(kind).Sub(1)
 	trackPublishedCurrent.Dec()
+}
+
+func AddPacketTrailerTrack(track *livekit.TrackInfo) {
+	updatePacketTrailerTracks(track, 1)
+}
+
+func SubPacketTrailerTrack(track *livekit.TrackInfo) {
+	updatePacketTrailerTracks(track, -1)
+}
+
+func updatePacketTrailerTracks(track *livekit.TrackInfo, delta float64) {
+	if track.GetType() != livekit.TrackType_VIDEO {
+		return
+	}
+
+	features := packetTrailerFeatureLabels(track.GetPacketTrailerFeatures())
+	if len(features) == 0 {
+		return
+	}
+
+	promTrackPacketTrailerCurrent.Add(delta)
+	for _, feature := range features {
+		promTrackPacketTrailerByFeatureCurrent.WithLabelValues(feature).Add(delta)
+	}
+}
+
+func packetTrailerFeatureLabels(features []livekit.PacketTrailerFeature) []string {
+	labels := make([]string, 0, len(features))
+	seen := make(map[string]struct{}, len(features))
+	for _, feature := range features {
+		label := "UNKNOWN"
+		if _, ok := livekit.PacketTrailerFeature_name[int32(feature)]; ok {
+			label = feature.String()
+		}
+
+		if _, ok := seen[label]; ok {
+			continue
+		}
+		seen[label] = struct{}{}
+		labels = append(labels, label)
+	}
+	return labels
 }
 
 func RecordTrackPublishAttempt(kind string) {
@@ -250,6 +324,13 @@ func recordPubSubStreamStartTime(
 		kind.String(),
 		strconv.Itoa(count),
 	).Observe(float64(d.Milliseconds()))
+}
+
+// RecordSubscribePaceShadow records, per shadow pacing rate, the wait one video subscribe would have had.
+func RecordSubscribePaceShadow(delays map[string]time.Duration) {
+	for rate, delay := range delays {
+		promSubscribePaceShadow.WithLabelValues(rate).Observe(float64(delay) / float64(time.Millisecond))
+	}
 }
 
 func RecordTrackSubscribeSuccess(kind string) {

@@ -15,10 +15,12 @@
 package rtc
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 
@@ -50,7 +52,12 @@ func newMediaSectionsHarness(t *testing.T) *mediaSectionsHarness {
 		{Mime: mime.MimeTypeOpus.String()},
 		{Mime: mime.MimeTypeVP8.String()},
 	}
+	var clientME webrtc.MediaEngine
+	require.NoError(t, registerCodecs(&clientME, codecs, RTCPFeedbackConfig{}, false))
+	return newMediaSectionsHarnessWithClient(t, codecs, &clientME)
+}
 
+func newMediaSectionsHarnessWithClient(t *testing.T, codecs []*livekit.Codec, clientME *webrtc.MediaEngine) *mediaSectionsHarness {
 	h := &mediaSectionsHarness{t: t, handler: &transportfakes.FakeHandler{}}
 
 	server, err := NewPCTransport(TransportParams{
@@ -63,9 +70,7 @@ func newMediaSectionsHarness(t *testing.T) *mediaSectionsHarness {
 	require.NoError(t, err)
 	h.server = server
 
-	var clientME webrtc.MediaEngine
-	require.NoError(t, registerCodecs(&clientME, codecs, RTCPFeedbackConfig{}, false))
-	client, err := webrtc.NewAPI(webrtc.WithMediaEngine(&clientME)).NewPeerConnection(webrtc.Configuration{})
+	client, err := webrtc.NewAPI(webrtc.WithMediaEngine(clientME)).NewPeerConnection(webrtc.Configuration{})
 	require.NoError(t, err)
 	h.client = client
 
@@ -233,4 +238,182 @@ func TestMediaSectionsRequirementReissuedWhenLost(t *testing.T) {
 	h.negotiate(nil)
 
 	require.NotEmpty(t, transceiver.Mid(), "lost requirement was never re-issued")
+}
+
+// firefoxMediaEngine registers the payload types Firefox offers.
+func firefoxMediaEngine(t *testing.T) *webrtc.MediaEngine {
+	me := &webrtc.MediaEngine{}
+	require.NoError(t, me.RegisterCodec(webrtc.RTPCodecParameters{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType: mime.MimeTypeOpus.String(), ClockRate: 48000, Channels: 2,
+			SDPFmtpLine: "maxplaybackrate=48000;stereo=1;useinbandfec=1",
+		},
+		PayloadType: 109,
+	}, webrtc.RTPCodecTypeAudio))
+	video := func(pt uint8, mimeType, fmtp string) {
+		require.NoError(t, me.RegisterCodec(webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: mimeType, ClockRate: 90000, SDPFmtpLine: fmtp},
+			PayloadType:        webrtc.PayloadType(pt),
+		}, webrtc.RTPCodecTypeVideo))
+	}
+	video(120, mime.MimeTypeVP8.String(), "max-fs=12288;max-fr=60")
+	video(124, mime.MimeTypeRTX.String(), "apt=120")
+	video(121, mime.MimeTypeVP9.String(), "max-fs=12288;max-fr=60")
+	video(125, mime.MimeTypeRTX.String(), "apt=121")
+	video(126, mime.MimeTypeH264.String(), "profile-level-id=42e01f;level-asymmetry-allowed=1;packetization-mode=1")
+	video(127, mime.MimeTypeRTX.String(), "apt=126")
+	video(97, mime.MimeTypeH264.String(), "profile-level-id=42e01f;level-asymmetry-allowed=1")
+	video(98, mime.MimeTypeRTX.String(), "apt=97")
+	video(99, mime.MimeTypeAV1.String(), "profile=0;level-idx=9;tier=0")
+	video(100, mime.MimeTypeRTX.String(), "apt=99")
+	return me
+}
+
+// videoRtpmaps returns payload type -> "codec/clockrate" of the first video section.
+func videoRtpmaps(t *testing.T, sdpText string) map[uint8]string {
+	var parsed sdp.SessionDescription
+	require.NoError(t, parsed.Unmarshal([]byte(sdpText)))
+	rtpmaps := map[uint8]string{}
+	for _, md := range parsed.MediaDescriptions {
+		if md.MediaName.Media != "video" {
+			continue
+		}
+		for _, attr := range md.Attributes {
+			if attr.Key != "rtpmap" {
+				continue
+			}
+			var pt uint8
+			var codec string
+			_, err := fmt.Sscanf(attr.Value, "%d %s", &pt, &codec)
+			require.NoError(t, err)
+			rtpmaps[pt] = codec
+		}
+		break
+	}
+	return rtpmaps
+}
+
+// Single peer connection mode: the answer must echo the offered video payload
+// types. Firefox receives on the payload types it offered, so a server-chosen
+// payload type is never decoded (livekit/livekit#5030).
+func TestMediaSectionsAnswerEchoesOfferedVideoPayloadTypes(t *testing.T) {
+	codecs := []*livekit.Codec{
+		{Mime: mime.MimeTypeOpus.String()},
+		{Mime: mime.MimeTypeVP8.String()},
+		{Mime: mime.MimeTypeVP9.String()},
+		{Mime: mime.MimeTypeH264.String()},
+	}
+	h := newMediaSectionsHarnessWithClient(t, codecs, firefoxMediaEngine(t))
+
+	_, err := h.client.CreateDataChannel("d", nil)
+	require.NoError(t, err)
+	_, err = h.client.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{
+		Direction: webrtc.RTPTransceiverDirectionSendonly,
+	})
+	require.NoError(t, err)
+	h.negotiate(nil)
+
+	h.addVideoTrack("v1")
+	// an unrelated offer/answer round while the video sender has no media section
+	h.negotiate(nil)
+	require.Eventually(t, func() bool {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		return h.pendingVideos > 0
+	}, 5*time.Second, 10*time.Millisecond, "media section for video was never requested")
+	h.negotiate(nil)
+
+	offered := videoRtpmaps(t, h.client.LocalDescription().SDP)
+	require.NotEmpty(t, offered)
+	h.mu.Lock()
+	answered := videoRtpmaps(t, h.answer.SDP)
+	h.mu.Unlock()
+	require.NotEmpty(t, answered)
+	for pt, codec := range answered {
+		require.Equal(t, codec, offered[pt], "answer payload type %d (%s) is not what the client offered", pt, codec)
+	}
+}
+
+// multiCodecTrack exposes several upstream codecs, like a DownTrack before Bind.
+type multiCodecTrack struct {
+	*webrtc.TrackLocalStaticRTP
+	codecs []webrtc.RTPCodecParameters
+}
+
+func (m *multiCodecTrack) BindableCodecs() []webrtc.RTPCodecParameters { return m.codecs }
+
+// A subscribed track is kept out of the answer only when the client offers none of
+// its upstream codecs. A later upstream codec that the client offers keeps it.
+func TestSuppressCodecMismatchedSender(t *testing.T) {
+	serverCodecs := []*livekit.Codec{
+		{Mime: mime.MimeTypeOpus.String()},
+		{Mime: mime.MimeTypeRED.String()},
+		{Mime: mime.MimeTypeVP8.String()},
+		{Mime: mime.MimeTypeH264.String()},
+	}
+	clientCodecs := []*livekit.Codec{
+		{Mime: mime.MimeTypeOpus.String()},
+		{Mime: mime.MimeTypeVP8.String()},
+	}
+	codec := func(m mime.MimeType, clockRate uint32) webrtc.RTPCodecParameters {
+		return webrtc.RTPCodecParameters{RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: m.String(), ClockRate: clockRate}}
+	}
+	opus, red := codec(mime.MimeTypeOpus, 48000), codec(mime.MimeTypeRED, 48000)
+	vp8, h264 := codec(mime.MimeTypeVP8, 90000), codec(mime.MimeTypeH264, 90000)
+
+	cases := []struct {
+		name       string
+		bindCodec  webrtc.RTPCodecParameters
+		upstream   []webrtc.RTPCodecParameters
+		suppressed bool
+	}{
+		{name: "no offered codec", bindCodec: h264, upstream: []webrtc.RTPCodecParameters{h264}, suppressed: true},
+		{name: "RED first, Opus offered", bindCodec: opus, upstream: []webrtc.RTPCodecParameters{red, opus}},
+		{name: "H264 first, VP8 offered", bindCodec: vp8, upstream: []webrtc.RTPCodecParameters{h264, vp8}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var clientME webrtc.MediaEngine
+			require.NoError(t, registerCodecs(&clientME, clientCodecs, RTCPFeedbackConfig{}, false))
+			h := newMediaSectionsHarnessWithClient(t, serverCodecs, &clientME)
+
+			_, err := h.client.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{
+				Direction: webrtc.RTPTransceiverDirectionSendonly,
+			})
+			require.NoError(t, err)
+			h.negotiate(nil)
+
+			static, err := webrtc.NewTrackLocalStaticRTP(c.bindCodec.RTPCodecCapability, "subtrack", "subtrack")
+			require.NoError(t, err)
+			enabled := make([]*livekit.Codec, 0, len(c.upstream))
+			for _, u := range c.upstream {
+				enabled = append(enabled, &livekit.Codec{Mime: u.MimeType})
+			}
+			sender, _, err := h.server.AddTrack(
+				&multiCodecTrack{TrackLocalStaticRTP: static, codecs: c.upstream},
+				types.AddTrackParams{},
+				enabled,
+				RTCPFeedbackConfig{},
+			)
+			require.NoError(t, err)
+
+			h.negotiate(nil)
+			h.negotiate(nil)
+			h.negotiate(nil)
+
+			h.mu.Lock()
+			answerSDP := h.answer.SDP
+			h.mu.Unlock()
+			if c.suppressed {
+				require.Nil(t, sender.Track(), "codec mismatched sender was not parked")
+				require.NotContains(t, answerSDP, "subtrack", "answer advertises a track the subscriber cannot receive")
+				require.Positive(t, h.handler.OnSubscribedTrackCodecUnmatchedCallCount())
+				require.Equal(t, livekit.TrackID("subtrack"), h.handler.OnSubscribedTrackCodecUnmatchedArgsForCall(0))
+			} else {
+				require.NotNil(t, sender.Track(), "decodable sender was parked")
+				require.Contains(t, answerSDP, "subtrack", "answer drops a track the subscriber can receive")
+				require.Zero(t, h.handler.OnSubscribedTrackCodecUnmatchedCallCount())
+			}
+		})
+	}
 }

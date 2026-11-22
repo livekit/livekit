@@ -48,6 +48,10 @@ type RTPDeltaInfo struct {
 	PacketsPadding       uint32
 	BytesPadding         uint64
 	HeaderBytesPadding   uint64
+	FecPackets           uint32
+	FecBytes             uint64
+	FecPacketsDiscarded  uint32
+	FecPacketsRecovered  uint32
 	PacketsLost          uint32
 	PacketsMissing       uint32
 	PacketsOutOfOrder    uint32
@@ -76,6 +80,10 @@ func (r *RTPDeltaInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddUint32("PacketsPadding", r.PacketsPadding)
 	e.AddUint64("BytesPadding", r.BytesPadding)
 	e.AddUint64("HeaderBytesPadding", r.HeaderBytesPadding)
+	e.AddUint32("FecPackets", r.FecPackets)
+	e.AddUint64("FecBytes", r.FecBytes)
+	e.AddUint32("FecPacketsDiscarded", r.FecPacketsDiscarded)
+	e.AddUint32("FecPacketsRecovered", r.FecPacketsRecovered)
 	e.AddUint32("PacketsLost", r.PacketsLost)
 	e.AddUint32("PacketsMissing", r.PacketsMissing)
 	e.AddUint32("PacketsOutOfOrder", r.PacketsOutOfOrder)
@@ -104,6 +112,11 @@ type snapshot struct {
 	bytesPadding       uint64
 	headerBytesPadding uint64
 
+	fecPackets          uint64
+	fecBytes            uint64
+	fecPacketsDiscarded uint64
+	fecPacketsRecovered uint64
+
 	frames uint32
 
 	plis uint32
@@ -126,6 +139,10 @@ func (s *snapshot) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddUint64("packetsPadding", s.packetsPadding)
 	e.AddUint64("bytesPadding", s.bytesPadding)
 	e.AddUint64("headerBytesPadding", s.headerBytesPadding)
+	e.AddUint64("fecPackets", s.fecPackets)
+	e.AddUint64("fecBytes", s.fecBytes)
+	e.AddUint64("fecPacketsDiscarded", s.fecPacketsDiscarded)
+	e.AddUint64("fecPacketsRecovered", s.fecPacketsRecovered)
 	e.AddUint32("frames", s.frames)
 	e.AddUint32("plis", s.plis)
 	e.AddUint32("firs", s.firs)
@@ -201,18 +218,28 @@ func RTCPSenderReportPropagationDelay(rsrs *livekit.RTCPSenderReportState) time.
 // ------------------------------------------------------------------
 
 type rtpStatsBase struct {
-	*rtpStatsBaseLite
+	rtpStatsBaseLite
 
-	rtpConverter *rtputil.RTPConverter
+	// fields that every packet updates are together
+	rtpConverter rtputil.RTPConverter
 
-	firstTime           int64
-	firstTimeAdjustment time.Duration
-	highestTime         int64
+	firstTime   int64
+	highestTime int64
 
 	lastTransit            uint64
 	lastJitterExtTimestamp uint64
 
 	headerBytes uint64
+
+	jitter    float64
+	maxJitter float64
+
+	frames uint32
+
+	nextSnapshotID uint32
+	snapshots      []snapshot
+
+	firstTimeAdjustment time.Duration
 
 	packetsDuplicate     uint64
 	bytesDuplicate       uint64
@@ -222,10 +249,10 @@ type rtpStatsBase struct {
 	bytesPadding       uint64
 	headerBytesPadding uint64
 
-	frames uint32
-
-	jitter    float64
-	maxJitter float64
+	fecPackets          uint64
+	fecBytes            uint64
+	fecPacketsDiscarded uint64
+	fecPacketsRecovered uint64
 
 	firs    uint32
 	lastFir time.Time
@@ -238,17 +265,12 @@ type rtpStatsBase struct {
 
 	srFirst  *livekit.RTCPSenderReportState
 	srNewest *livekit.RTCPSenderReportState
-
-	nextSnapshotID uint32
-	snapshots      []snapshot
 }
 
-func newRTPStatsBase(params RTPStatsParams) *rtpStatsBase {
-	return &rtpStatsBase{
-		rtpStatsBaseLite: newRTPStatsBaseLite(params),
-		nextSnapshotID:   cFirstSnapshotID,
-		snapshots:        make([]snapshot, 2),
-	}
+func (r *rtpStatsBase) init(params RTPStatsParams) {
+	r.rtpStatsBaseLite.init(params)
+	r.nextSnapshotID = cFirstSnapshotID
+	r.snapshots = make([]snapshot, 2)
 }
 
 func (r *rtpStatsBase) SetClockRate(clockRate uint32) {
@@ -259,12 +281,12 @@ func (r *rtpStatsBase) SetClockRate(clockRate uint32) {
 }
 
 func (r *rtpStatsBase) setClockRateLocked(clockRate uint32) {
-	r.rtpConverter = rtputil.NewRTPConverter(int64(clockRate))
+	r.rtpConverter = *rtputil.NewRTPConverter(int64(clockRate))
 	r.rtpStatsBaseLite.setClockRateLocked(clockRate)
 }
 
 func (r *rtpStatsBase) seed(from *rtpStatsBase) bool {
-	if !r.rtpStatsBaseLite.seed(from.rtpStatsBaseLite) {
+	if !r.rtpStatsBaseLite.seed(&from.rtpStatsBaseLite) {
 		return false
 	}
 
@@ -284,6 +306,11 @@ func (r *rtpStatsBase) seed(from *rtpStatsBase) bool {
 	r.packetsPadding = from.packetsPadding
 	r.bytesPadding = from.bytesPadding
 	r.headerBytesPadding = from.headerBytesPadding
+
+	r.fecPackets = from.fecPackets
+	r.fecBytes = from.fecBytes
+	r.fecPacketsDiscarded = from.fecPacketsDiscarded
+	r.fecPacketsRecovered = from.fecPacketsRecovered
 
 	r.frames = from.frames
 
@@ -324,6 +351,25 @@ func (r *rtpStatsBase) newSnapshotID(extStartSN uint64) uint32 {
 	return id
 }
 
+func (r *rtpStatsBase) UpdateFEC(
+	fecPackets uint64,
+	fecBytes uint64,
+	fecPacketsDiscarded uint64,
+	fecPacketsRecovered uint64,
+) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if r.endTime != 0 {
+		return
+	}
+
+	r.fecPackets += fecPackets
+	r.fecBytes += fecBytes
+	r.fecPacketsDiscarded += fecPacketsDiscarded
+	r.fecPacketsRecovered += fecPacketsRecovered
+}
+
 func (r *rtpStatsBase) UpdateFir(firCount uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
@@ -359,8 +405,8 @@ func (r *rtpStatsBase) UpdateKeyFrame(kfCount uint32) {
 }
 
 func (r *rtpStatsBase) KeyFrame() (uint32, time.Time) {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	return r.keyFrames, r.lastKeyFrame
 }
@@ -387,8 +433,8 @@ func (r *rtpStatsBase) UpdateRtt(rtt uint32) {
 }
 
 func (r *rtpStatsBase) GetRtt() uint32 {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	return r.rtt
 }
@@ -503,8 +549,12 @@ func (r *rtpStatsBase) deltaInfo(
 	}
 	if packetsExpected == 0 {
 		deltaInfo = &RTPDeltaInfo{
-			StartTime: time.Unix(0, startTime),
-			EndTime:   time.Unix(0, endTime),
+			StartTime:           time.Unix(0, startTime),
+			EndTime:             time.Unix(0, endTime),
+			FecPackets:          uint32(now.fecPackets - then.fecPackets),
+			FecBytes:            now.fecBytes - then.fecBytes,
+			FecPacketsDiscarded: uint32(now.fecPacketsDiscarded - then.fecPacketsDiscarded),
+			FecPacketsRecovered: uint32(now.fecPacketsRecovered - then.fecPacketsRecovered),
 		}
 		return
 	}
@@ -544,6 +594,10 @@ func (r *rtpStatsBase) deltaInfo(
 		PacketsPadding:       uint32(packetsPadding),
 		BytesPadding:         now.bytesPadding - then.bytesPadding,
 		HeaderBytesPadding:   now.headerBytesPadding - then.headerBytesPadding,
+		FecPackets:           uint32(now.fecPackets - then.fecPackets),
+		FecBytes:             now.fecBytes - then.fecBytes,
+		FecPacketsDiscarded:  uint32(now.fecPacketsDiscarded - then.fecPacketsDiscarded),
+		FecPacketsRecovered:  uint32(now.fecPacketsRecovered - then.fecPacketsRecovered),
 		PacketsLost:          packetsLost,
 		PacketsOutOfOrder:    uint32(now.packetsOutOfOrder - then.packetsOutOfOrder),
 		Frames:               now.frames - then.frames,
@@ -587,6 +641,11 @@ func (r *rtpStatsBase) marshalLogObject(
 	e.AddUint64("bytesPadding", r.bytesPadding)
 	e.AddFloat64("bitratePadding", float64(r.bytesPadding)*8.0/elapsedSeconds)
 	e.AddUint64("headerBytesPadding", r.headerBytesPadding)
+
+	e.AddUint64("fecPackets", r.fecPackets)
+	e.AddUint64("fecBytes", r.fecBytes)
+	e.AddUint64("fecPacketsDiscarded", r.fecPacketsDiscarded)
+	e.AddUint64("fecPacketsRecovered", r.fecPacketsRecovered)
 
 	e.AddUint32("frames", r.frames)
 	e.AddFloat64("frameRate", float64(r.frames)/elapsedSeconds)
@@ -638,6 +697,11 @@ func (r *rtpStatsBase) toProto(
 	p.BitratePadding = float64(r.bytesPadding) * 8.0 / p.Duration
 	p.HeaderBytesPadding = r.headerBytesPadding
 
+	p.FecPackets = uint32(r.fecPackets)
+	p.FecBytes = r.fecBytes
+	p.FecPacketsDiscarded = uint32(r.fecPacketsDiscarded)
+	p.FecPacketsRecovered = uint32(r.fecPacketsRecovered)
+
 	p.Frames = r.frames
 	p.FrameRate = float64(r.frames) / p.Duration
 
@@ -665,7 +729,7 @@ func (r *rtpStatsBase) updateJitter(ets uint64, packetTime int64) float64 {
 	//          p1f1 -> p1f2 -> p2f1
 	//       In this case, p2f1 (packet 2, frame 1) will still be used in jitter calculation
 	//       although it is the second packet of a frame because of out-of-order receival.
-	if r.lastJitterExtTimestamp != ets && r.rtpConverter != nil {
+	if r.lastJitterExtTimestamp != ets && r.clockRate != 0 {
 		timeSinceFirst := packetTime - r.firstTime
 		packetTimeRTP := r.rtpConverter.ToRTPExt(time.Duration(timeSinceFirst))
 		transit := packetTimeRTP - ets
@@ -813,6 +877,10 @@ func (r *rtpStatsBase) getSnapshot(startTime int64, extStartSN uint64) snapshot 
 		packetsPadding:       r.packetsPadding,
 		bytesPadding:         r.bytesPadding,
 		headerBytesPadding:   r.headerBytesPadding,
+		fecPackets:           r.fecPackets,
+		fecBytes:             r.fecBytes,
+		fecPacketsDiscarded:  r.fecPacketsDiscarded,
+		fecPacketsRecovered:  r.fecPacketsRecovered,
 		frames:               r.frames,
 		plis:                 r.plis,
 		firs:                 r.firs,
@@ -853,6 +921,11 @@ func AggregateRTPDeltaInfo(deltaInfoList []*RTPDeltaInfo) *RTPDeltaInfo {
 	bytesPadding := uint64(0)
 	headerBytesPadding := uint64(0)
 
+	fecPackets := uint32(0)
+	fecBytes := uint64(0)
+	fecPacketsDiscarded := uint32(0)
+	fecPacketsRecovered := uint32(0)
+
 	packetsLost := uint32(0)
 	packetsMissing := uint32(0)
 	packetsOutOfOrder := uint32(0)
@@ -891,6 +964,11 @@ func AggregateRTPDeltaInfo(deltaInfoList []*RTPDeltaInfo) *RTPDeltaInfo {
 		bytesPadding += deltaInfo.BytesPadding
 		headerBytesPadding += deltaInfo.HeaderBytesPadding
 
+		fecPackets += deltaInfo.FecPackets
+		fecBytes += deltaInfo.FecBytes
+		fecPacketsDiscarded += deltaInfo.FecPacketsDiscarded
+		fecPacketsRecovered += deltaInfo.FecPacketsRecovered
+
 		packetsLost += deltaInfo.PacketsLost
 		packetsMissing += deltaInfo.PacketsMissing
 		packetsOutOfOrder += deltaInfo.PacketsOutOfOrder
@@ -925,6 +1003,10 @@ func AggregateRTPDeltaInfo(deltaInfoList []*RTPDeltaInfo) *RTPDeltaInfo {
 		PacketsPadding:       packetsPadding,
 		BytesPadding:         bytesPadding,
 		HeaderBytesPadding:   headerBytesPadding,
+		FecPackets:           fecPackets,
+		FecBytes:             fecBytes,
+		FecPacketsDiscarded:  fecPacketsDiscarded,
+		FecPacketsRecovered:  fecPacketsRecovered,
 		PacketsLost:          packetsLost,
 		PacketsMissing:       packetsMissing,
 		PacketsOutOfOrder:    packetsOutOfOrder,

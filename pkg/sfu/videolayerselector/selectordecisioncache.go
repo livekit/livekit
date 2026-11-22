@@ -128,7 +128,13 @@ func (s *SelectorDecisionCache) addEntity(entity uint64, sd selectorDecision) {
 		return
 	}
 
-	for e := s.last + 1; e != entity; e++ {
+	// only the last numEntries entities fit in the ring
+	floor := uint64(0)
+	if entity > s.numEntries {
+		floor = entity - s.numEntries
+	}
+
+	for e := max(s.last+1, floor); e != entity; e++ {
 		s.setEntity(e, selectorDecisionUnknown)
 	}
 
@@ -144,6 +150,9 @@ func (s *SelectorDecisionCache) addEntity(entity uint64, sd selectorDecision) {
 		missingEnd -= s.numNackEntries
 	} else {
 		missingEnd = s.base
+	}
+	if missingEnd > missingStart+s.numEntries {
+		missingStart = missingEnd - s.numEntries
 	}
 	if missingEnd > missingStart {
 		for e := missingStart; e != missingEnd; e++ {

@@ -65,6 +65,7 @@ type RTCClient struct {
 	subscriber              *rtc.PCTransport
 	enabledCodecs           []*livekit.Codec
 	forceRelay              bool
+	enableFlexFEC           bool
 	transportReady          chan struct{}
 	// sid => track
 	localTracks        map[string]webrtc.TrackLocal
@@ -143,6 +144,7 @@ type Options struct {
 	UseJoinRequestQueryParam  bool
 	RTCServicePath            string
 	ForceRelay                bool
+	EnableFlexFEC             bool
 }
 
 func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
@@ -278,6 +280,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 		c.signalRequestInterceptor = opts.SignalRequestInterceptor
 		c.signalResponseInterceptor = opts.SignalResponseInterceptor
 		c.forceRelay = opts.ForceRelay
+		c.enableFlexFEC = opts.EnableFlexFEC
 	}
 
 	return c, nil
@@ -295,6 +298,14 @@ func (c *RTCClient) createTransport(rtcconf webrtc.Configuration) error {
 	conf.SettingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleClient)
 	ff := buffer.NewFactoryOfBufferFactory(500, 200)
 	conf.SetBufferFactory(ff.CreateBufferFactory())
+
+	if c.enableFlexFEC {
+		fecConfig := rtc.FlexFECDirectionConfig{
+			Enabled: true,
+		}
+		conf.Publisher.FlexFEC = fecConfig
+		conf.Subscriber.FlexFEC = fecConfig
+	}
 
 	//
 	// The signal targets are from point of view of server.
@@ -359,35 +370,39 @@ func (c *RTCClient) createTransport(rtcconf webrtc.Configuration) error {
 	})
 
 	ordered := true
-	if err := c.publisher.CreateDataChannel(rtc.ReliableDataChannel, &webrtc.DataChannelInit{
-		Ordered: &ordered,
-	}); err != nil {
-		return err
+	if c.useSinglePeerConnection {
+		if err := createNegotiatedDataChannels(c.publisher); err != nil {
+			return err
+		}
+	} else {
+		if err := c.publisher.CreateDataChannel(rtc.ReliableDataChannel, &webrtc.DataChannelInit{
+			Ordered: &ordered,
+		}); err != nil {
+			return err
+		}
 	}
-
 	if err := c.publisher.CreateDataChannel("pubraw", &webrtc.DataChannelInit{
 		Ordered: &ordered,
 	}); err != nil {
 		return err
 	}
 
-	ordered = false
-	maxRetransmits := uint16(0)
-	if err := c.publisher.CreateDataChannel(rtc.LossyDataChannel, &webrtc.DataChannelInit{
-		Ordered:        &ordered,
-		MaxRetransmits: &maxRetransmits,
-	}); err != nil {
-		return err
-	}
-
-	if err := c.publisher.CreateDataChannel(rtc.DataTrackDataChannel, &webrtc.DataChannelInit{
-		Ordered:        &ordered,
-		MaxRetransmits: &maxRetransmits,
-	}); err != nil {
-		return err
-	}
-
 	if !c.useSinglePeerConnection {
+		maxRetransmits := uint16(0)
+		ordered = false
+		if err := c.publisher.CreateDataChannel(rtc.LossyDataChannel, &webrtc.DataChannelInit{
+			Ordered:        &ordered,
+			MaxRetransmits: &maxRetransmits,
+		}); err != nil {
+			return err
+		}
+		if err := c.publisher.CreateDataChannel(rtc.DataTrackDataChannel, &webrtc.DataChannelInit{
+			Ordered:        &ordered,
+			MaxRetransmits: &maxRetransmits,
+		}); err != nil {
+			return err
+		}
+
 		subscriberHandler := &transportfakes.FakeHandler{}
 		c.subscriber, err = rtc.NewPCTransport(rtc.TransportParams{
 			Config:                           &conf,
@@ -1051,7 +1066,7 @@ func (c *RTCClient) PublishDataUnlabeled(data []byte) error {
 		return err
 	}
 
-	return c.publisher.SendDataMessageUnlabeled(data, true, "test")
+	return c.publisher.SendDataMessageUnlabeled(data)
 }
 
 func (c *RTCClient) PublishDataTrack() (writer TrackWriter, err error) {
@@ -1404,4 +1419,39 @@ func (c *RTCClient) SendNacks(count int) {
 
 func encodeQueryParam(key, value string) string {
 	return fmt.Sprintf("&%s=%s", url.QueryEscape(key), url.QueryEscape(value))
+}
+
+// createNegotiatedDataChannels creates the well-known data channels the way protocol >= 18 clients do:
+// out-of-band with fixed IDs, matching what the server creates in single peer connection mode.
+func createNegotiatedDataChannels(t *rtc.PCTransport) error {
+	negotiated := true
+	ordered := true
+	reliableID := uint16(livekit.NegotiatedDataChannelID_NDCI_RELIABLE)
+	if err := t.CreateDataChannel(rtc.ReliableDataChannel, &webrtc.DataChannelInit{
+		Ordered:    &ordered,
+		Negotiated: &negotiated,
+		ID:         &reliableID,
+	}); err != nil {
+		return err
+	}
+
+	ordered = false
+	maxRetransmits := uint16(0)
+	lossyID := uint16(livekit.NegotiatedDataChannelID_NDCI_LOSSY)
+	if err := t.CreateDataChannel(rtc.LossyDataChannel, &webrtc.DataChannelInit{
+		Ordered:        &ordered,
+		MaxRetransmits: &maxRetransmits,
+		Negotiated:     &negotiated,
+		ID:             &lossyID,
+	}); err != nil {
+		return err
+	}
+
+	dataTrackID := uint16(livekit.NegotiatedDataChannelID_NDCI_DATA_TRACK)
+	return t.CreateDataChannel(rtc.DataTrackDataChannel, &webrtc.DataChannelInit{
+		Ordered:        &ordered,
+		MaxRetransmits: &maxRetransmits,
+		Negotiated:     &negotiated,
+		ID:             &dataTrackID,
+	})
 }

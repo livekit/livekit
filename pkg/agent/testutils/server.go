@@ -15,6 +15,7 @@ import (
 	"github.com/gammazero/deque"
 
 	"github.com/livekit/livekit-server/pkg/agent"
+	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
@@ -40,7 +41,7 @@ type TestServer struct {
 
 func NewTestServer(bus psrpc.MessageBus) *TestServer {
 	localNode, _ := routing.NewLocalNode(nil)
-	return NewTestServerWithService(must.Get(service.NewAgentService(
+	return NewTestServerWithService(must.Get(service.NewAgentHandler(
 		&config.Config{
 			Region: "test",
 			Agents: agent.Config{
@@ -50,6 +51,8 @@ func NewTestServer(bus psrpc.MessageBus) *TestServer {
 		localNode,
 		bus,
 		auth.NewSimpleKeyProvider("test", "verysecretsecret"),
+		endpoint.NewRegistry(),
+		service.NewEndpointScopes(),
 	)))
 }
 
@@ -126,6 +129,7 @@ func (h *TestServer) SimulateAgentWorker(opts ...SimulatedWorkerOption) *AgentWo
 		JobAssignments:          events.NewObserverList[*livekit.JobAssignment](),
 		JobTerminations:         events.NewObserverList[*livekit.JobTermination](),
 		WorkerPongs:             events.NewObserverList[*livekit.WorkerPong](),
+		CreateJobTokenResponses: events.NewObserverList[*livekit.CreateJobTokenResponse](),
 	}
 	w.ctx, w.cancel = context.WithCancel(context.Background())
 
@@ -193,6 +197,7 @@ type AgentWorker struct {
 	JobAssignments          *events.ObserverList[*livekit.JobAssignment]
 	JobTerminations         *events.ObserverList[*livekit.JobTermination]
 	WorkerPongs             *events.ObserverList[*livekit.WorkerPong]
+	CreateJobTokenResponses *events.ObserverList[*livekit.CreateJobTokenResponse]
 }
 
 func (w *AgentWorker) statusWorker() {
@@ -282,6 +287,8 @@ func (w *AgentWorker) handleServerMessages() {
 			w.handleTermination(m.Termination)
 		case *livekit.ServerMessage_Pong:
 			w.handlePong(m.Pong)
+		case *livekit.ServerMessage_CreateJobToken:
+			w.CreateJobTokenResponses.Emit(m.CreateJobToken)
 		}
 
 		w.mu.Lock()
@@ -378,6 +385,12 @@ func (w *AgentWorker) SendSimulateJob(m *livekit.SimulateJobRequest) {
 func (w *AgentWorker) SendMigrateJob(m *livekit.MigrateJobRequest) {
 	w.SendMessage(&livekit.WorkerMessage{Message: &livekit.WorkerMessage_MigrateJob{
 		MigrateJob: m,
+	}})
+}
+
+func (w *AgentWorker) SendCreateJobToken(m *livekit.CreateJobTokenRequest) {
+	w.SendMessage(&livekit.WorkerMessage{Message: &livekit.WorkerMessage_CreateJobToken{
+		CreateJobToken: m,
 	}})
 }
 

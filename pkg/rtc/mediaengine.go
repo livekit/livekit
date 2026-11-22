@@ -137,6 +137,15 @@ func createMediaEngine(codecs []*livekit.Codec, config DirectionConfig, filterOu
 		return nil, err
 	}
 
+	if config.FlexFEC.Enabled {
+		// registering a flexfec codec makes pion allocate FEC SSRCs for video
+		// senders and emit a=ssrc-group:FEC-FR in offers, and lets answers
+		// accept flexfec offered by publishers
+		if err := me.RegisterCodec(protoCodecs.FlexFEC03CodecParameters, webrtc.RTPCodecTypeVideo); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := registerHeaderExtensions(me, config.RTPHeaderExtension); err != nil {
 		return nil, err
 	}
@@ -162,6 +171,10 @@ func isCodecEnabledWithFmtp(codecs []*livekit.Codec, cap webrtc.RTPCodecCapabili
 
 func selectAlternativeVideoCodec(enabledCodecs []*livekit.Codec) string {
 	for _, c := range enabledCodecs {
+		// RTX and FEC are not real codecs, skip them
+		if mime.IsMimeTypeStringRTX(c.Mime) || mime.IsMimeTypeStringFlexFEC03(c.Mime) {
+			continue
+		}
 		if mime.IsMimeTypeStringVideo(c.Mime) {
 			return c.Mime
 		}
@@ -204,10 +217,20 @@ func filterCodecs(
 	enabledCodecs []*livekit.Codec,
 	rtcpFeedbackConfig RTCPFeedbackConfig,
 	filterOutH264HighProfile bool,
+	enableFlexFEC bool,
 ) []webrtc.RTPCodecParameters {
 	filteredCodecs := make([]webrtc.RTPCodecParameters, 0, len(codecs))
 	for _, c := range codecs {
 		if filterOutH264HighProfile && isH264HighProfile(c.RTPCodecCapability.SDPFmtpLine) {
+			continue
+		}
+
+		// flexfec-03 is not part of the enabled codec lists, retain it when
+		// the transport direction has FlexFEC enabled
+		if mime.IsMimeTypeStringFlexFEC03(c.RTPCodecCapability.MimeType) {
+			if enableFlexFEC {
+				filteredCodecs = append(filteredCodecs, c)
+			}
 			continue
 		}
 

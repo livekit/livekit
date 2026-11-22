@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/pion/rtp"
-	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/protobuf/proto"
@@ -208,6 +207,11 @@ type TranslationParams struct {
 	marker             bool
 	// end of the svc spatial layer frame
 	isEndOfLayerFrame bool
+	// The packet is dropped, but the RTP munger gave its outgoing sequence number
+	// away when it saw the gap, so the downtrack sends padding in that slot. Without
+	// it the subscriber NACKs a sequence number nothing can answer, and a VP8
+	// receiver without picture IDs stalls on the hole until a key frame.
+	padDroppedSlot bool
 }
 
 // codecHeader returns the munged codec header to prepend to the payload.
@@ -277,6 +281,13 @@ type Forwarder struct {
 	rtpMunger *RTPMunger
 
 	vls videolayerselector.VideoLayerSelector
+	// set for VP8 with the dependency descriptor, forwards the descriptor to the subscriber
+	ddForwarder *videolayerselector.DDForwarder
+	// migrated descriptor state that arrived before the codec was known
+	ddForwarderSeed *livekit.DependencyDescriptorForwarderState
+	// temporal layer of the packet being translated, the selector's current layer is
+	// already the next one on the last packet before a down switch
+	packetTemporal int32
 
 	codecMunger codecmunger.CodecMunger
 }
@@ -354,6 +365,21 @@ func (f *Forwarder) MaybeExpireAcquireGrace() bool {
 	return !f.vls.GetCurrent().IsValid()
 }
 
+// NeedsPeriodicSyncCheck reports whether the layer lock state can change without an event, so the
+// key frame requester has to keep polling it: an initial-acquisition grace deadline is armed
+// (MaybeExpireAcquireGrace may still fire), or layers are selected with the dependency descriptor,
+// which can lose the lock on the packet path (key frame mismatch, broken frame chain).
+func (f *Forwarder) NeedsPeriodicSyncCheck() bool {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	if f.acquireDeadline != 0 {
+		return true
+	}
+	_, isDD := f.vls.(*videolayerselector.DependencyDescriptor)
+	return isDD
+}
+
 func (f *Forwarder) SetMaxTemporalLayerSeen(maxTemporalLayerSeen int32) bool {
 	f.lock.Lock()
 	defer f.lock.Unlock()
@@ -394,82 +420,112 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		return false
 	}
 
+	prevDDForwarder := f.ddForwarder
+	f.ddForwarder = nil
 	switch f.mime {
 	case mime.MimeTypeVP8:
-		f.codecMunger = codecmunger.NewVP8FromOther(f.codecMunger, f.logger)
-		if f.vls != nil {
-			if vls := videolayerselector.NewSimulcastFromOther(f.vls); vls != nil {
-				f.vls = vls
-			} else {
-				f.logger.Errorw("failed to create simulcast on codec change", nil)
-			}
+		f.setSimulcastSelector()
+		if ddAvailable(extensions) {
+			f.setDDTemporalFilter(prevDDForwarder)
 		} else {
-			f.vls = videolayerselector.NewSimulcast(f.logger)
+			f.isDDAvailable = false
+			f.codecMunger = codecmunger.NewVP8FromOther(f.codecMunger, f.logger)
+			f.vls.SetTemporalLayerSelector(temporallayerselector.NewVP8(f.logger))
 		}
-		f.vls.SetTemporalLayerSelector(temporallayerselector.NewVP8(f.logger))
 
 	case mime.MimeTypeH264, mime.MimeTypeH265:
-		f.codecMunger = codecmunger.NewNull(f.logger)
-		if f.vls != nil {
-			if vls := videolayerselector.NewSimulcastFromOther(f.vls); vls != nil {
-				f.vls = vls
-			} else {
-				f.logger.Errorw("failed to create simulcast on codec change", nil)
-			}
-		} else {
-			f.vls = videolayerselector.NewSimulcast(f.logger)
-		}
+		f.setSimulcastSelector()
+		f.setUnfilteredTemporal()
 
 	case mime.MimeTypeVP9:
-		f.codecMunger = codecmunger.NewNull(f.logger)
 		if sfuutils.IsSimulcastMode(videoLayerMode) {
-			if f.vls != nil {
-				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
+			f.setSimulcastSelector()
+			if ddAvailable(extensions) {
+				f.setDDTemporalFilter(prevDDForwarder)
 			} else {
-				f.vls = videolayerselector.NewSimulcast(f.logger)
+				f.setUnfilteredTemporal()
 			}
-		} else {
-			f.isDDAvailable = ddAvailable(extensions)
-			if f.isDDAvailable {
-				if f.vls != nil {
-					f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
-				} else {
-					f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
-				}
-			} else {
-				if f.vls != nil {
-					f.vls = videolayerselector.NewVP9FromOther(f.vls)
-				} else {
-					f.vls = videolayerselector.NewVP9(f.logger)
-				}
-			}
+			break
 		}
 
-	case mime.MimeTypeAV1:
 		f.codecMunger = codecmunger.NewNull(f.logger)
-		if sfuutils.IsSimulcastMode(videoLayerMode) {
+		f.isDDAvailable = ddAvailable(extensions)
+		if f.isDDAvailable {
 			if f.vls != nil {
-				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
+				f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
 			} else {
-				f.vls = videolayerselector.NewSimulcast(f.logger)
+				f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
 			}
 		} else {
-			f.isDDAvailable = ddAvailable(extensions)
-			if f.isDDAvailable {
-				if f.vls != nil {
-					f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
-				} else {
-					f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
-				}
+			if f.vls != nil {
+				f.vls = videolayerselector.NewVP9FromOther(f.vls)
 			} else {
-				if f.vls != nil {
-					f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
-				} else {
-					f.vls = videolayerselector.NewSimulcast(f.logger)
-				}
+				f.vls = videolayerselector.NewVP9(f.logger)
 			}
 		}
+		// the svc selectors pick temporal layers themselves
+		f.vls.SetTemporalLayerSelector(nil)
+
+	case mime.MimeTypeAV1:
+		if sfuutils.IsSimulcastMode(videoLayerMode) {
+			f.setSimulcastSelector()
+			if ddAvailable(extensions) {
+				f.setDDTemporalFilter(prevDDForwarder)
+			} else {
+				f.setUnfilteredTemporal()
+			}
+			break
+		}
+
+		f.codecMunger = codecmunger.NewNull(f.logger)
+		f.isDDAvailable = ddAvailable(extensions)
+		if f.isDDAvailable {
+			if f.vls != nil {
+				f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
+			} else {
+				f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
+			}
+			f.vls.SetTemporalLayerSelector(nil)
+		} else {
+			// without the dependency descriptor nothing tells the temporal layers apart
+			f.setSimulcastSelector()
+			f.setUnfilteredTemporal()
+		}
 	}
+}
+
+// setSimulcastSelector switches to the simulcast selector, keeping the selector state
+// across a codec change
+func (f *Forwarder) setSimulcastSelector() {
+	if f.vls == nil {
+		f.vls = videolayerselector.NewSimulcast(f.logger)
+		return
+	}
+	if vls := videolayerselector.NewSimulcastFromOther(f.vls); vls != nil {
+		f.vls = vls
+	} else {
+		f.logger.Errorw("failed to create simulcast on codec change", nil)
+	}
+}
+
+// setDDTemporalFilter filters the temporal layers of a simulcast stream by frame with the
+// dependency descriptor, and forwards the descriptor to the subscriber
+func (f *Forwarder) setDDTemporalFilter(prevDDForwarder *videolayerselector.DDForwarder) {
+	f.isDDAvailable = true
+	f.codecMunger = codecmunger.NewDDTemporal(f.mime, f.logger)
+	f.vls.SetTemporalLayerSelector(temporallayerselector.NewDependencyDescriptor(f.logger))
+	// the downtrack keeps its SSRC, so the frame numbers continue
+	f.ddForwarder = videolayerselector.NewDDForwarderFromOther(prevDDForwarder, f.logger)
+	f.ddForwarder.SeedState(f.ddForwarderSeed)
+	f.ddForwarderSeed = nil
+}
+
+// setUnfilteredTemporal forwards every temporal layer of a simulcast stream that has
+// nothing to filter them with
+func (f *Forwarder) setUnfilteredTemporal() {
+	f.isDDAvailable = false
+	f.codecMunger = codecmunger.NewNull(f.logger)
+	f.vls.SetTemporalLayerSelector(temporallayerselector.NewNull())
 }
 
 func (f *Forwarder) GetState() *livekit.RTPForwarderState {
@@ -502,6 +558,12 @@ func (f *Forwarder) GetState() *livekit.RTPForwarderState {
 	for layer, refInfo := range f.refInfos {
 		state.SenderReportState[layer] = proto.CloneOf(refInfo.senderReport)
 	}
+	if f.ddForwarder != nil {
+		state.DependencyDescriptorForwarder = f.ddForwarder.GetState()
+	} else {
+		// seeded, but migrating on before the codec was known
+		state.DependencyDescriptorForwarder = proto.CloneOf(f.ddForwarderSeed)
+	}
 	return state
 }
 
@@ -522,6 +584,11 @@ func (f *Forwarder) SeedState(state *livekit.RTPForwarderState) {
 
 	f.rtpMunger.SeedState(state.RtpMunger)
 	f.codecMunger.SeedState(state.CodecMunger)
+	if f.ddForwarder != nil {
+		f.ddForwarder.SeedState(state.DependencyDescriptorForwarder)
+	} else {
+		f.ddForwarderSeed = state.DependencyDescriptorForwarder
+	}
 
 	f.started = true
 	f.referenceLayerSpatial = state.ReferenceLayerSpatial
@@ -752,6 +819,11 @@ func (f *Forwarder) getRefLayer() (int32, int32) {
 }
 
 func (f *Forwarder) SetRefSenderReport(layer int32, srData *livekit.RTCPSenderReportState) {
+	// a stream restart can clear the publisher report between the report callback and this read
+	if srData == nil {
+		return
+	}
+
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -1720,6 +1792,9 @@ func (f *Forwarder) Resync() {
 func (f *Forwarder) resyncLocked() {
 	f.vls.SetCurrent(buffer.InvalidLayer)
 	f.lastSSRC = 0
+	if f.ddForwarder != nil {
+		f.ddForwarder.Resync()
+	}
 	if f.pubMuted {
 		f.resumeBehindThreshold = ResumeBehindThresholdSeconds
 	}
@@ -1740,6 +1815,10 @@ func (f *Forwarder) Restart() {
 	f.setTargetLayer(buffer.InvalidLayer, buffer.InvalidLayerSpatial)
 	f.referenceLayerSpatial = buffer.InvalidLayerSpatial
 	f.lastReferencePayloadType = -1
+	// The next source switch re-derives the offset from the new reference layer's raw timestamp,
+	// so that it maps onto the downtrack's existing timeline (extExpectedTS). Keeping the old
+	// offset would fold it into the new one and shift every later switch by the old value.
+	f.dummyStartTSOffset = 0
 
 	for layer := range len(f.refInfos) {
 		f.refInfos[layer] = refInfo{}
@@ -1933,12 +2012,21 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 			)
 			return starting, err
 		}
-	}
 
-	// adjust extRefTS to current packet's timestamp mapped to that of reference layer's
-	extRefTS = (extRefTS & 0xFFFF_FFFF_0000_0000) + uint64(refTS) + f.dummyStartTSOffset
+		// adjust refTS to current packet's timestamp mapped to that of reference layer's.
+		// Without a reference layer (skipReferenceTS), refTS is the last outgoing timestamp,
+		// which is already on the downtrack's timeline and needs no offset.
+		//
+		// The dummy start offset is applied modulo 2^32, before the cycles are restored from
+		// extLastTS. Adding it in 64 bits lets a borrow (negative offset) or a carry (positive offset)
+		// reach the upper half of extRefTS, and the wrap correction below only compares the lower 32
+		// bits, so it cannot undo it: extRefTS would end up 2^32 below (or above) the right value.
+		// With a negative offset that rejects every switch point as too far behind until the
+		// reference layer's 32-bit timestamp climbs past |dummyStartTSOffset|, which can take hours.
+		refTS = uint32(uint64(refTS) + f.dummyStartTSOffset)
+	}
+	extRefTS = (extRefTS & 0xFFFF_FFFF_0000_0000) + uint64(refTS)
 	lastTS := uint32(extLastTS)
-	refTS = uint32(extRefTS)
 	if (refTS-lastTS) < 1<<31 && refTS < lastTS {
 		extRefTS += (1 << 32)
 	}
@@ -1947,11 +2035,13 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 	}
 
 	if f.rtpStats != nil {
-		tsExt, err := f.rtpStats.GetExpectedRTPTimestamp(switchingAt)
+		tsExt, err := f.rtpStats.GetExpectedRTPTimestamp(switchingAt.UnixNano())
 		if err == nil {
 			extExpectedTS = tsExt
 			if f.lastReferencePayloadType == -1 {
-				f.dummyStartTSOffset = extExpectedTS - uint64(refTS)
+				if !f.skipReferenceTS {
+					f.dummyStartTSOffset = extExpectedTS - uint64(refTS)
+				}
 				extRefTS = extExpectedTS
 			}
 		} else {
@@ -1960,7 +2050,9 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 				rtpDiff := uint64(timeSinceFirst.Nanoseconds() * int64(f.clockRate) / 1e9)
 				extExpectedTS = f.extFirstTS + rtpDiff
 				if f.dummyStartTSOffset == 0 {
-					f.dummyStartTSOffset = extExpectedTS - uint64(refTS)
+					if !f.skipReferenceTS {
+						f.dummyStartTSOffset = extExpectedTS - uint64(refTS)
+					}
 					extRefTS = extExpectedTS
 					f.logger.Infow(
 						"calculating dummyStartTSOffset",
@@ -2150,8 +2242,7 @@ func (f *Forwarder) isEndOfLayerFrame(extPkt *buffer.ExtPacket) bool {
 	}
 
 	if f.mime == mime.MimeTypeVP9 {
-		vp9, ok := extPkt.Payload.(codecs.VP9Packet)
-		return ok && vp9.E
+		return extPkt.VP9 != nil && extPkt.VP9.E
 	}
 
 	return false
@@ -2160,6 +2251,38 @@ func (f *Forwarder) isEndOfLayerFrame(extPkt *buffer.ExtPacket) bool {
 // should be called with lock held
 func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer int32) (TranslationParams, error) {
 	tp := TranslationParams{}
+	if f.ddForwarder != nil && extPkt.DependencyDescriptor == nil && len(extPkt.Packet.Payload) != 0 {
+		// The buffer stopped parsing the dependency descriptor because the publisher does
+		// not send it. VP8 switches temporal layers with its payload descriptor, other
+		// codecs forward every temporal layer. Padding never carries the descriptor, so it
+		// does not count.
+		f.logger.Infow("turning off dependency descriptor for simulcast temporal layers", "layer", layer)
+		f.ddForwarder = nil
+		if f.mime == mime.MimeTypeVP8 {
+			f.isDDAvailable = false
+			f.codecMunger = codecmunger.NewVP8FromOther(f.codecMunger, f.logger)
+			if f.started {
+				// the munger takes its picture ID and TL0PICIDX from the first packet it sees
+				f.codecMunger.SetLast(extPkt)
+			}
+			f.vls.SetTemporalLayerSelector(temporallayerselector.NewVP8(f.logger))
+		} else {
+			f.setUnfilteredTemporal()
+		}
+	}
+	if _, ok := f.codecMunger.(*codecmunger.DDTemporal); ok && f.mime == mime.MimeTypeVP8 && extPkt.DependencyDescriptor != nil {
+		if extPkt.VP8 != nil && extPkt.VP8.I {
+			// The publisher sends picture IDs with the dependency descriptor, so they need
+			// rewriting. The VP8 munger does that, the temporal layers still switch with the
+			// dependency descriptor.
+			f.logger.Infow("VP8 picture ID with dependency descriptor, munging picture IDs", "layer", layer)
+			f.codecMunger = codecmunger.NewVP8FromOther(f.codecMunger, f.logger)
+			if f.started {
+				f.codecMunger.SetLast(extPkt)
+			}
+		}
+	}
+
 	if !f.vls.GetTarget().IsValid() {
 		// stream is paused by streamallocator
 		tp.shouldDrop = true
@@ -2168,7 +2291,8 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 
 	result := f.vls.Select(extPkt, layer)
 	if !result.IsSelected {
-		if f.isDDAvailable && extPkt.DependencyDescriptor == nil {
+		// the svc selector, simulcast with the dependency descriptor turns it off above
+		if f.isDDAvailable && f.ddForwarder == nil && extPkt.DependencyDescriptor == nil {
 			f.logger.Infow(
 				"turning off dependency descriptor",
 				"layer", layer,
@@ -2183,15 +2307,22 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 			case mime.MimeTypeVP9:
 				f.vls = videolayerselector.NewVP9FromOther(f.vls)
 			case mime.MimeTypeAV1:
-				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
+				f.setSimulcastSelector()
+				f.setUnfilteredTemporal()
 			}
 		}
 		tp.shouldDrop = true
 		if f.started && result.IsRelevant {
 			// call to update highest incoming sequence number and other internal structures
 			if tpRTP, err := f.rtpMunger.UpdateAndGetSnTs(extPkt, result.RTPMarker); err == nil {
-				if tpRTP.snOrdering == SequenceNumberOrderingContiguous {
+				switch tpRTP.snOrdering {
+				case SequenceNumberOrderingContiguous:
 					f.rtpMunger.PacketDropped(extPkt)
+				case SequenceNumberOrderingGap, SequenceNumberOrderingOutOfOrder:
+					// a rollback after a gap moves the last outgoing number below the missing
+					// packets' slots and their late copies are rejected, so pad the slot instead
+					tp.rtp = tpRTP
+					tp.padDroppedSlot = true
 				}
 			}
 		}
@@ -2202,6 +2333,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	tp.ddBytes, tp.ddBytesLen, tp.ddBytesSpill = result.DDBytes, result.DDBytesLen, result.DDBytesSpill
 	tp.marker = result.RTPMarker
 	tp.isEndOfLayerFrame = f.isEndOfLayerFrame(extPkt)
+	f.packetTemporal = f.vls.GetCurrent().Temporal
 
 	starting, err := f.getTranslationParamsCommon(extPkt, layer, &tp)
 	tp.isStarting = starting
@@ -2228,8 +2360,25 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		//
 		// To differentiate between the two cases, drop only when in DEFICIENT state.
 		//
+		// Roll the outgoing timestamp back, or pad a gap. Leaving the dropped
+		// packet's timestamp in place holds the switch clock on the higher layer,
+		// so a lower layer that stays a little behind is rejected on every keyframe.
 		tp.shouldDrop = true
+		switch tp.rtp.snOrdering {
+		case SequenceNumberOrderingContiguous:
+			f.rtpMunger.PacketDropped(extPkt)
+		case SequenceNumberOrderingGap, SequenceNumberOrderingOutOfOrder:
+			tp.padDroppedSlot = true
+		}
 		return tp, nil
+	}
+
+	if f.ddForwarder != nil {
+		// after translateCodecHeader, which picks the packet's temporal layer
+		var ddResult videolayerselector.VideoLayerSelectorResult
+		if f.ddForwarder.Forward(extPkt, f.packetTemporal, &ddResult) {
+			tp.ddBytes, tp.ddBytesLen, tp.ddBytesSpill = ddResult.DDBytes, ddResult.DDBytesLen, ddResult.DDBytesSpill
+		}
 	}
 
 	return tp, nil
@@ -2238,6 +2387,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tp *TranslationParams) error {
 	// codec specific forwarding check and any needed packet munging
 	tl := f.vls.SelectTemporal(extPkt)
+	f.packetTemporal = tl
 	inputSize, codecBytes, codecBytesLen, err := f.codecMunger.UpdateAndGet(
 		extPkt,
 		tp.rtp.snOrdering == SequenceNumberOrderingOutOfOrder,
@@ -2246,10 +2396,16 @@ func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tp *Translati
 	)
 	if err != nil {
 		tp.shouldDrop = true
-		if err == codecmunger.ErrFilteredVP8TemporalLayer || err == codecmunger.ErrOutOfOrderVP8PictureIdCacheMiss {
-			if err == codecmunger.ErrFilteredVP8TemporalLayer {
-				// filtered temporal layer, update sequence number offset to prevent holes
-				f.rtpMunger.PacketDropped(extPkt)
+		if err == codecmunger.ErrFilteredTemporalLayer || err == codecmunger.ErrOutOfOrderVP8PictureIdCacheMiss || err == codecmunger.ErrFilteredOutOfOrder {
+			switch tp.rtp.snOrdering {
+			case SequenceNumberOrderingContiguous:
+				if err == codecmunger.ErrFilteredTemporalLayer {
+					// filtered temporal layer, update sequence number offset to prevent holes
+					f.rtpMunger.PacketDropped(extPkt)
+				}
+			case SequenceNumberOrderingGap, SequenceNumberOrderingOutOfOrder:
+				// no rollback after a gap, see getTranslationParamsVideo
+				tp.padDroppedSlot = true
 			}
 			return nil
 		}
@@ -2331,7 +2487,7 @@ func (f *Forwarder) GetSnTsForBlankFrames(frameRate uint32, numPackets int) ([]S
 	extLastTS := f.rtpMunger.GetExtLastTimestamp()
 	extExpectedTS := extLastTS
 	if f.rtpStats != nil {
-		tsExt, err := f.rtpStats.GetExpectedRTPTimestamp(mono.Now())
+		tsExt, err := f.rtpStats.GetExpectedRTPTimestamp(mono.UnixNano())
 		if err == nil {
 			extExpectedTS = tsExt
 		}

@@ -15,22 +15,29 @@
 package sfu
 
 import (
+	"encoding/hex"
+	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/mediatransportutil/pkg/codec"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils/mono"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/codecmunger"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
+	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/testutils"
+	"github.com/livekit/livekit-server/pkg/sfu/videolayerselector"
 )
 
 func disable(f *Forwarder) {
@@ -88,6 +95,17 @@ func TestForwarderLayersAudio(t *testing.T) {
 	require.Equal(t, buffer.InvalidLayer, maxLayer)
 
 	require.Equal(t, buffer.InvalidLayer, f.MaxLayer())
+}
+
+func TestForwarderSetRefSenderReportNil(t *testing.T) {
+	f := newForwarder(testutils.TestOpusCodec, webrtc.RTPCodecTypeAudio)
+	f.lastSSRC = 1234 // makes layer 0 the reference layer
+
+	sr := &livekit.RTCPSenderReportState{RtpTimestamp: 1000, RtpTimestampExt: 1000}
+	f.SetRefSenderReport(0, sr)
+
+	require.NotPanics(t, func() { f.SetRefSenderReport(0, nil) })
+	require.Equal(t, sr, f.refInfos[0].senderReport)
 }
 
 func TestForwarderLayersVideo(t *testing.T) {
@@ -1933,6 +1951,415 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	require.Equal(t, f.lastSSRC, params.SSRC)
 }
 
+func TestForwarderVP8TemporalUpSwitchAtLayerSync(t *testing.T) {
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+	f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 2})
+
+	// a frame without Y may reference a dropped frame of its layer
+	steps := []struct {
+		name            string
+		tid             uint8
+		y               bool
+		expectedThis    int32
+		expectedCurrent int32
+	}{
+		{name: "TL2 without Y", tid: 2, expectedThis: 0, expectedCurrent: 0},
+		{name: "TL1 without Y", tid: 1, expectedThis: 0, expectedCurrent: 0},
+		{name: "TL0", tid: 0, expectedThis: 0, expectedCurrent: 0},
+		{name: "TL2 with Y before TL1 sync", tid: 2, y: true, expectedThis: 0, expectedCurrent: 0},
+		{name: "TL1 with Y", tid: 1, y: true, expectedThis: 1, expectedCurrent: 1},
+		{name: "TL2 without Y after TL1 switch", tid: 2, expectedThis: 1, expectedCurrent: 1},
+		{name: "TL2 with Y", tid: 2, y: true, expectedThis: 2, expectedCurrent: 2},
+	}
+	for i, step := range steps {
+		extPkt, err := testutils.GetTestExtPacketVP8(
+			&testutils.TestExtPacketParams{SequenceNumber: uint16(i), PayloadSize: 20},
+			&codec.VP8{S: true, I: true, PictureID: uint16(i), T: true, TID: step.tid, Y: step.y},
+		)
+		require.NoError(t, err)
+		require.Equal(t, step.expectedThis, f.vls.SelectTemporal(extPkt), step.name)
+		require.Equal(t, step.expectedCurrent, f.vls.GetCurrent().Temporal, step.name)
+	}
+
+	// key frame refreshes all buffers, up-switch at it even without Y
+	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+	extPkt, err := testutils.GetTestExtPacketVP8(
+		&testutils.TestExtPacketParams{SequenceNumber: 10, PayloadSize: 20},
+		&codec.VP8{S: true, I: true, PictureID: 10, T: true, TID: 0, IsKeyFrame: true},
+	)
+	require.NoError(t, err)
+	require.Equal(t, int32(2), f.vls.SelectTemporal(extPkt))
+	require.Equal(t, int32(2), f.vls.GetCurrent().Temporal)
+}
+
+func TestForwarderVP8TemporalUpSwitchWithDependencyDescriptor(t *testing.T) {
+	f := NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
+	f.DetermineCodec(testutils.TestVP8Codec, []webrtc.RTPHeaderExtensionParameter{{URI: dd.ExtensionURI}}, livekit.VideoLayer_MODE_UNUSED)
+	require.IsType(t, &codecmunger.DDTemporal{}, f.codecMunger)
+	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+	f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 2})
+
+	// libwebrtc strips the VP8 payload descriptor when it sends the dependency
+	// descriptor: no TID and no layer sync bit
+	packet := func(frameNum uint64, tid int, dtis string, frameDiffs []int, isKeyFrame bool) *buffer.ExtPacket {
+		extPkt, err := testutils.GetTestExtPacketVP8DD(
+			&testutils.TestExtPacketParams{SequenceNumber: uint16(frameNum), PayloadSize: 20, Marker: true, IsKeyFrame: isKeyFrame},
+			&testutils.TestDDParams{
+				FirstPacketInFrame: true,
+				ExtFrameNum:        frameNum,
+				TemporalID:         tid,
+				DTIs:               dtis,
+				FrameDiffs:         frameDiffs,
+				DecodeTargets:      testutils.TestVP8DecodeTargets,
+			},
+		)
+		require.NoError(t, err)
+		return extPkt
+	}
+
+	f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+	require.Equal(t, int32(0), f.vls.SelectTemporal(packet(0, 0, "SSS", nil, true)))
+	f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 2})
+	require.Equal(t, int32(0), f.vls.SelectTemporal(packet(1, 2, "--D", []int{1}, false)))
+	require.Equal(t, int32(0), f.vls.GetCurrent().Temporal)
+	require.Equal(t, int32(2), f.vls.SelectTemporal(packet(2, 1, "-SS", []int{2}, false)))
+	require.Equal(t, int32(2), f.vls.GetCurrent().Temporal)
+
+	// padding never carries the descriptor and leaves it on
+	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+	padding, err := testutils.GetTestExtPacket(&testutils.TestExtPacketParams{SequenceNumber: 3, PaddingSize: 20})
+	require.NoError(t, err)
+	_, _ = f.getTranslationParamsVideo(padding, 0)
+	require.True(t, f.isDDAvailable)
+
+	// a packet with a payload and without the descriptor means the buffer stopped
+	// parsing it, the Y bit then raises the layer
+	extPkt, err := testutils.GetTestExtPacketVP8(
+		&testutils.TestExtPacketParams{SequenceNumber: 4, PayloadSize: 20},
+		&codec.VP8{S: true, I: true, PictureID: 4, T: true, TID: 0},
+	)
+	require.NoError(t, err)
+	_, _ = f.getTranslationParamsVideo(extPkt, 0)
+	require.False(t, f.isDDAvailable)
+	require.IsType(t, &codecmunger.VP8{}, f.codecMunger)
+
+	extPkt, err = testutils.GetTestExtPacketVP8(
+		&testutils.TestExtPacketParams{SequenceNumber: 5, PayloadSize: 20},
+		&codec.VP8{S: true, I: true, PictureID: 5, T: true, TID: 1, Y: true},
+	)
+	require.NoError(t, err)
+	require.Equal(t, int32(1), f.vls.SelectTemporal(extPkt))
+	require.Equal(t, int32(1), f.vls.GetCurrent().Temporal)
+}
+
+func TestForwarderVP8DDTemporalFilterAfterGap(t *testing.T) {
+	f := NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
+	f.DetermineCodec(testutils.TestVP8Codec, []webrtc.RTPHeaderExtensionParameter{{URI: dd.ExtensionURI}}, livekit.VideoLayer_MODE_UNUSED)
+	f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+
+	// one packet per frame, the minimized VP8 payload descriptor has no picture ID
+	packet := func(sn uint16, frameNum uint64, tid int, isKeyFrame bool) *buffer.ExtPacket {
+		extPkt, err := testutils.GetTestExtPacketVP8DD(
+			&testutils.TestExtPacketParams{
+				SequenceNumber: sn,
+				Timestamp:      uint32(frameNum) * 3000,
+				SSRC:           0x12345678,
+				PayloadSize:    20,
+				Marker:         true,
+				IsKeyFrame:     isKeyFrame,
+			},
+			&testutils.TestDDParams{
+				FirstPacketInFrame: true,
+				ExtFrameNum:        frameNum,
+				TemporalID:         tid,
+				DTIs:               "SSS",
+				DecodeTargets:      testutils.TestVP8DecodeTargets,
+			},
+		)
+		require.NoError(t, err)
+		return extPkt
+	}
+
+	steps := []struct {
+		name       string
+		sn         uint16
+		frameNum   uint64
+		tid        int
+		isKeyFrame bool
+		shouldDrop bool
+	}{
+		{name: "key frame", sn: 100, frameNum: 0, tid: 0, isKeyFrame: true},
+		{name: "TL2 after a gap", sn: 102, frameNum: 2, tid: 2, shouldDrop: true},
+		{name: "TL2", sn: 103, frameNum: 3, tid: 2, shouldDrop: true},
+		{name: "TL0", sn: 104, frameNum: 4, tid: 0},
+		{name: "TL2 after TL0", sn: 105, frameNum: 5, tid: 2, shouldDrop: true},
+	}
+	for _, step := range steps {
+		tp, err := f.GetTranslationParams(packet(step.sn, step.frameNum, step.tid, step.isKeyFrame), 0)
+		require.NoError(t, err, step.name)
+		require.Equal(t, step.shouldDrop, tp.shouldDrop, step.name)
+	}
+}
+
+func TestForwarderVP8DDWithPictureID(t *testing.T) {
+	f := NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
+	f.DetermineCodec(testutils.TestVP8Codec, []webrtc.RTPHeaderExtensionParameter{{URI: dd.ExtensionURI}}, livekit.VideoLayer_MODE_UNUSED)
+	f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 2})
+	require.IsType(t, &codecmunger.DDTemporal{}, f.codecMunger)
+
+	// the one byte descriptor keeps the dependency descriptor munger
+	extPkt, err := testutils.GetTestExtPacketVP8DD(
+		&testutils.TestExtPacketParams{SequenceNumber: 1, Timestamp: 3000, SSRC: 0x12345678, PayloadSize: 20, Marker: true, IsKeyFrame: true},
+		&testutils.TestDDParams{FirstPacketInFrame: true, ExtFrameNum: 1, DTIs: "SSS", DecodeTargets: testutils.TestVP8DecodeTargets},
+	)
+	require.NoError(t, err)
+	_, _ = f.GetTranslationParams(extPkt, 0)
+	require.IsType(t, &codecmunger.DDTemporal{}, f.codecMunger)
+	require.True(t, f.started)
+
+	// a picture ID next to the dependency descriptor needs the VP8 munger
+	extPkt, err = testutils.GetTestExtPacketVP8DD(
+		&testutils.TestExtPacketParams{SequenceNumber: 2, Timestamp: 6000, SSRC: 0x12345678, PayloadSize: 20, Marker: true},
+		&testutils.TestDDParams{FirstPacketInFrame: true, ExtFrameNum: 2, TemporalID: 1, DTIs: "-SS", FrameDiffs: []int{1}, DecodeTargets: testutils.TestVP8DecodeTargets},
+	)
+	require.NoError(t, err)
+	extPkt.VP8 = &codec.VP8{S: true, I: true, PictureID: 2}
+	_, _ = f.GetTranslationParams(extPkt, 0)
+	require.IsType(t, &codecmunger.VP8{}, f.codecMunger)
+	require.True(t, f.codecMunger.GetState().(*livekit.VP8MungerState).PictureIdUsed, "seeded from the packet")
+	require.True(t, f.isDDAvailable, "temporal layers still switch with the dependency descriptor")
+}
+
+// testKeyFrameDescriptor is an L3T3 key frame descriptor with its dependency structure, the
+// capture the dependency descriptor package tests with
+func testKeyFrameDescriptor(t *testing.T) dd.DependencyDescriptor {
+	raw, err := hex.DecodeString("c1017280081485214eafffaaaa863cf0430c10c302afc0aaa0063c00430010c002a000a80006000040001d954926e082b04a0941b820ac1282503157f974000ca864330e222222eca8655304224230eca877530077004200ef008601df010d")
+	require.NoError(t, err)
+	keyFrameDescriptor := dd.DependencyDescriptor{}
+	_, err = (&dd.DependencyDescriptorExtension{Descriptor: &keyFrameDescriptor}).Unmarshal(raw)
+	require.NoError(t, err)
+	require.NotNil(t, keyFrameDescriptor.AttachedStructure)
+	return keyFrameDescriptor
+}
+
+// testDDPacket is a packet of frame frameNum on temporalID, with keyFrameDescriptor as its
+// dependency descriptor, its structure attached only on a key frame
+func testDDPacket(t *testing.T, keyFrameDescriptor dd.DependencyDescriptor, sn uint16, frameNum uint64, temporalID int, isKeyFrame bool) *buffer.ExtPacket {
+	extPkt, err := testutils.GetTestExtPacketVP8DD(
+		&testutils.TestExtPacketParams{SequenceNumber: sn, Timestamp: 0xabcdef + uint32(frameNum)*3000, SSRC: 0x12345678, PayloadSize: 20, Marker: true, IsKeyFrame: isKeyFrame},
+		&testutils.TestDDParams{FirstPacketInFrame: true, ExtFrameNum: frameNum, TemporalID: temporalID, DTIs: "SSS", DecodeTargets: testutils.TestVP8DecodeTargets},
+	)
+	require.NoError(t, err)
+	descriptor := keyFrameDescriptor
+	descriptor.FrameNumber = uint16(frameNum)
+	if !isKeyFrame {
+		descriptor.AttachedStructure = nil
+		descriptor.ActiveDecodeTargetsBitmask = nil
+	}
+	extPkt.DependencyDescriptor.Descriptor = &descriptor
+	return extPkt
+}
+
+func TestForwarderVP8ForwardsDependencyDescriptor(t *testing.T) {
+	keyFrameDescriptor := testKeyFrameDescriptor(t)
+	packet := func(sn uint16, frameNum uint64, isKeyFrame bool) *buffer.ExtPacket {
+		return testDDPacket(t, keyFrameDescriptor, sn, frameNum, 0, isKeyFrame)
+	}
+
+	f := NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
+	f.DetermineCodec(testutils.TestVP8Codec, []webrtc.RTPHeaderExtensionParameter{{URI: dd.ExtensionURI}}, livekit.VideoLayer_MODE_UNUSED)
+	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+	f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+
+	// the key frame carries the structure, too big to hold inline
+	tp, err := f.GetTranslationParams(packet(10, 100, true), 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	require.NotEmpty(t, tp.ddBytesSpill)
+
+	tp, err = f.GetTranslationParams(packet(11, 101, false), 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	require.NotEmpty(t, tp.ddInline())
+
+	// a restarted upstream receiver sets the codec again, the frame numbers continue on
+	// the same downtrack
+	f.DetermineCodec(testutils.TestVP8Codec, []webrtc.RTPHeaderExtensionParameter{{URI: dd.ExtensionURI}}, livekit.VideoLayer_MODE_UNUSED)
+	tp, err = f.GetTranslationParams(packet(12, 50, true), 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	out := dd.DependencyDescriptor{}
+	_, err = (&dd.DependencyDescriptorExtension{Descriptor: &out, Structure: keyFrameDescriptor.AttachedStructure}).Unmarshal(tp.ddBytesSpill)
+	require.NoError(t, err)
+	require.Equal(t, uint16(102), out.FrameNumber)
+
+	// the last packet of a TL2 frame that starts a down switch to TL0 is forwarded at TL2,
+	// its descriptor names the TL2 decode target
+	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 2})
+	f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+	tl2 := packet(13, 51, false)
+	tl2.Temporal = 2
+	tp, err = f.GetTranslationParams(tl2, 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	require.Equal(t, int32(0), f.vls.GetCurrent().Temporal, "the switch takes effect after this packet")
+	out = dd.DependencyDescriptor{}
+	_, err = (&dd.DependencyDescriptorExtension{Descriptor: &out, Structure: keyFrameDescriptor.AttachedStructure}).Unmarshal(tp.ddInline())
+	require.NoError(t, err)
+	require.Equal(t, uint32(1<<0|1<<1|1<<2), *out.ActiveDecodeTargetsBitmask)
+
+	// a migrated subscriber: the state is seeded before the codec is known, and the new
+	// node's first key frame continues after the last number sent
+	state := f.GetState()
+	require.Equal(t, uint64(103), state.DependencyDescriptorForwarder.ExtLastFrameNumber)
+	f = NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
+	f.SeedState(state)
+
+	// it migrates on before its codec is known, the next node still gets the number
+	state = f.GetState()
+	require.Equal(t, uint64(103), state.DependencyDescriptorForwarder.ExtLastFrameNumber)
+	f = NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
+	f.SeedState(state)
+	f.DetermineCodec(testutils.TestVP8Codec, []webrtc.RTPHeaderExtensionParameter{{URI: dd.ExtensionURI}}, livekit.VideoLayer_MODE_UNUSED)
+	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+	f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+	tp, err = f.GetTranslationParams(packet(20, 60, true), 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	out = dd.DependencyDescriptor{}
+	_, err = (&dd.DependencyDescriptorExtension{Descriptor: &out, Structure: keyFrameDescriptor.AttachedStructure}).Unmarshal(tp.ddBytesSpill)
+	require.NoError(t, err)
+	require.Equal(t, uint16(104), out.FrameNumber)
+
+	// without the extension the forwarder writes no descriptor
+	f = NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
+	f.DetermineCodec(testutils.TestVP8Codec, nil, livekit.VideoLayer_MODE_UNUSED)
+	require.Nil(t, f.ddForwarder)
+}
+
+func TestForwarderPadDroppedSlot(t *testing.T) {
+	f := NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
+	f.DetermineCodec(testutils.TestVP8Codec, []webrtc.RTPHeaderExtensionParameter{{URI: dd.ExtensionURI}}, livekit.VideoLayer_MODE_UNUSED)
+	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+	f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+
+	packet := func(sn uint16, frameNum uint64, tid int, isOutOfOrder bool) *buffer.ExtPacket {
+		extPkt, err := testutils.GetTestExtPacketVP8DD(
+			&testutils.TestExtPacketParams{SequenceNumber: sn, Timestamp: 0xabcdef, SSRC: 0x12345678, PayloadSize: 20, Marker: true, IsOutOfOrder: isOutOfOrder},
+			&testutils.TestDDParams{
+				FirstPacketInFrame: true,
+				ExtFrameNum:        frameNum,
+				TemporalID:         tid,
+				DTIs:               "SSS",
+				DecodeTargets:      testutils.TestVP8DecodeTargets,
+			},
+		)
+		require.NoError(t, err)
+		return extPkt
+	}
+
+	tp, err := f.GetTranslationParams(packet(10, 0, 0, false), 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+
+	// a gap, the munger hands out a slot for sequence number 11
+	tp, err = f.GetTranslationParams(packet(12, 2, 0, false), 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	require.Equal(t, uint64(12), tp.rtp.extSequenceNumber)
+
+	// the late packet is on a filtered layer, its slot gets padding
+	tp, err = f.GetTranslationParams(packet(11, 1, 2, true), 0)
+	require.NoError(t, err)
+	require.True(t, tp.shouldDrop)
+	require.True(t, tp.padDroppedSlot)
+	require.Equal(t, uint64(11), tp.rtp.extSequenceNumber)
+	require.Equal(t, uint64(0xabcdef), tp.rtp.extTimestamp)
+
+	// an in-order drop rolls the slot back instead
+	tp, err = f.GetTranslationParams(packet(13, 3, 2, false), 0)
+	require.NoError(t, err)
+	require.True(t, tp.shouldDrop)
+	require.False(t, tp.padDroppedSlot)
+	tp, err = f.GetTranslationParams(packet(14, 4, 0, false), 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	require.Equal(t, uint64(13), tp.rtp.extSequenceNumber)
+}
+
+// dropSelector drops one packet as relevant, the result a decode target selector gives for a
+// frame outside the target
+type dropSelector struct {
+	videolayerselector.VideoLayerSelector
+	dropSN uint64
+}
+
+func (d *dropSelector) Select(extPkt *buffer.ExtPacket, layer int32) videolayerselector.VideoLayerSelectorResult {
+	if extPkt.ExtSequenceNumber == d.dropSN {
+		return videolayerselector.VideoLayerSelectorResult{IsRelevant: true}
+	}
+	return d.VideoLayerSelector.Select(extPkt, layer)
+}
+
+func TestForwarderPadFilteredSlotAfterGap(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		dropBySelector bool
+	}{
+		{"codec munger", false},
+		{"layer selector", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
+			f.DetermineCodec(testutils.TestVP8Codec, []webrtc.RTPHeaderExtensionParameter{{URI: dd.ExtensionURI}}, livekit.VideoLayer_MODE_UNUSED)
+			f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+			f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+			if tc.dropBySelector {
+				f.vls = &dropSelector{VideoLayerSelector: f.vls, dropSN: 12}
+			}
+
+			packet := func(sn uint16, frameNum uint64, tid int, isOutOfOrder bool) *buffer.ExtPacket {
+				extPkt, err := testutils.GetTestExtPacketVP8DD(
+					&testutils.TestExtPacketParams{SequenceNumber: sn, Timestamp: 0xabcdef + uint32(frameNum)*3000, SSRC: 0x12345678, PayloadSize: 20, Marker: true, IsOutOfOrder: isOutOfOrder},
+					&testutils.TestDDParams{
+						FirstPacketInFrame: true,
+						ExtFrameNum:        frameNum,
+						TemporalID:         tid,
+						DTIs:               "SSS",
+						DecodeTargets:      testutils.TestVP8DecodeTargets,
+					},
+				)
+				require.NoError(t, err)
+				return extPkt
+			}
+
+			tp, err := f.GetTranslationParams(packet(10, 0, 0, false), 0)
+			require.NoError(t, err)
+			require.False(t, tp.shouldDrop)
+
+			// 11 is lost, 12 is on a filtered layer: its slot gets padding and is not rolled back
+			tp, err = f.GetTranslationParams(packet(12, 2, 2, false), 0)
+			require.NoError(t, err)
+			require.True(t, tp.shouldDrop)
+			require.True(t, tp.padDroppedSlot)
+			require.Equal(t, uint64(12), tp.rtp.extSequenceNumber)
+
+			// the retransmission of 11 still has its slot
+			tp, err = f.GetTranslationParams(packet(11, 1, 0, true), 0)
+			require.NoError(t, err)
+			require.False(t, tp.shouldDrop)
+			require.Equal(t, uint64(11), tp.rtp.extSequenceNumber)
+
+			// the next packet follows the padded slot
+			tp, err = f.GetTranslationParams(packet(13, 3, 0, false), 0)
+			require.NoError(t, err)
+			require.False(t, tp.shouldDrop)
+			require.Equal(t, uint64(13), tp.rtp.extSequenceNumber)
+		})
+	}
+}
+
 func TestForwarderGetSnTsForPadding(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
@@ -2233,24 +2660,24 @@ func TestForwarderIsEndOfLayerFrame(t *testing.T) {
 	vp9Codec := webrtc.RTPCodecCapability{MimeType: mime.MimeTypeVP9.String(), ClockRate: 90000}
 
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
-	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{Payload: codecs.VP9Packet{E: true}}))
+	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{VP9: &codecs.VP9Packet{E: true}}))
 
 	f = newForwarder(vp9Codec, webrtc.RTPCodecTypeVideo)
-	require.True(t, f.isEndOfLayerFrame(&buffer.ExtPacket{Payload: codecs.VP9Packet{E: true}}))
-	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{Payload: codecs.VP9Packet{E: false}}))
+	require.True(t, f.isEndOfLayerFrame(&buffer.ExtPacket{VP9: &codecs.VP9Packet{E: true}}))
+	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{VP9: &codecs.VP9Packet{E: false}}))
 	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{}))
 
 	require.True(t, f.isEndOfLayerFrame(&buffer.ExtPacket{
 		DependencyDescriptor: &buffer.ExtDependencyDescriptor{
 			Descriptor: &dd.DependencyDescriptor{LastPacketInFrame: true},
 		},
-		Payload: codecs.VP9Packet{E: false},
+		VP9: &codecs.VP9Packet{E: false},
 	}))
 	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{
 		DependencyDescriptor: &buffer.ExtDependencyDescriptor{
 			Descriptor: &dd.DependencyDescriptor{LastPacketInFrame: false},
 		},
-		Payload: codecs.VP9Packet{E: true},
+		VP9: &codecs.VP9Packet{E: true},
 	}))
 	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{
 		DependencyDescriptor: &buffer.ExtDependencyDescriptor{},
@@ -2271,4 +2698,556 @@ func TestPacerScratchFitsInlineDependencyDescriptor(t *testing.T) {
 
 	require.Len(t, p.HoldExtension(make([]byte, dd.MaxInlineExtensionSize)), dd.MaxInlineExtensionSize)
 	require.Nil(t, p.HoldExtension(make([]byte, dd.MaxInlineExtensionSize+1)))
+}
+
+func TestForwarderNeedsPeriodicSyncCheck(t *testing.T) {
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	require.False(t, f.NeedsPeriodicSyncCheck())
+
+	// VP8 with the dependency descriptor uses it only for temporal layers
+	f.DetermineCodec(testutils.TestVP8Codec, []webrtc.RTPHeaderExtensionParameter{{URI: dd.ExtensionURI}}, livekit.VideoLayer_MODE_UNUSED)
+	require.False(t, f.NeedsPeriodicSyncCheck())
+
+	// a new max published layer before any layer is forwarded arms the acquisition grace
+	require.True(t, f.SetMaxPublishedLayer(1))
+	require.True(t, f.NeedsPeriodicSyncCheck())
+
+	// spatial layers selected with the dependency descriptor
+	f = newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	av1 := webrtc.RTPCodecCapability{MimeType: mime.MimeTypeAV1.String(), ClockRate: 90000}
+	f.DetermineCodec(av1, []webrtc.RTPHeaderExtensionParameter{{URI: dd.ExtensionURI}}, livekit.VideoLayer_MODE_UNUSED)
+	require.True(t, f.NeedsPeriodicSyncCheck())
+}
+
+// TestForwarderSimulcastTemporalLayerAfterSwitch checks that, after a spatial layer switch on a
+// key frame (which is always on temporal layer 0), the forwarder reaches its target layer so that
+// GetNextHigherTransition (and hence stream allocator probing) is not blocked forever.
+//
+// VP9, AV1 and H.264 simulcast without the dependency descriptor forward every temporal layer of
+// the selected spatial layer, so the current temporal layer has to follow the target. VP8 steps
+// up through its temporal layer selector.
+func TestForwarderSimulcastTemporalLayerAfterSwitch(t *testing.T) {
+	bitrates := Bitrates{
+		{100, 150, 200, 0},
+		{300, 450, 600, 0},
+		{900, 1350, 1800, 0},
+	}
+
+	testCases := []struct {
+		name            string
+		previousCodec   *webrtc.RTPCodecCapability
+		codec           webrtc.RTPCodecCapability
+		target          buffer.VideoLayer
+		expectedCurrent buffer.VideoLayer
+	}{
+		{
+			name:            "VP9 simulcast, three temporal layers",
+			codec:           webrtc.RTPCodecCapability{MimeType: mime.MimeTypeVP9.String(), ClockRate: 90000},
+			target:          buffer.VideoLayer{Spatial: 1, Temporal: 2},
+			expectedCurrent: buffer.VideoLayer{Spatial: 1, Temporal: 2},
+		},
+		{
+			name:            "AV1 simulcast, three temporal layers",
+			codec:           webrtc.RTPCodecCapability{MimeType: mime.MimeTypeAV1.String(), ClockRate: 90000},
+			target:          buffer.VideoLayer{Spatial: 1, Temporal: 2},
+			expectedCurrent: buffer.VideoLayer{Spatial: 1, Temporal: 2},
+		},
+		{
+			name:            "VP9 simulcast, one temporal layer",
+			codec:           webrtc.RTPCodecCapability{MimeType: mime.MimeTypeVP9.String(), ClockRate: 90000},
+			target:          buffer.VideoLayer{Spatial: 1, Temporal: 0},
+			expectedCurrent: buffer.VideoLayer{Spatial: 1, Temporal: 0},
+		},
+		{
+			name:            "H.264 simulcast",
+			codec:           webrtc.RTPCodecCapability{MimeType: mime.MimeTypeH264.String(), ClockRate: 90000},
+			target:          buffer.VideoLayer{Spatial: 1, Temporal: 0},
+			expectedCurrent: buffer.VideoLayer{Spatial: 1, Temporal: 0},
+		},
+		{
+			// the VP8 temporal layer selector moves to the target on a key frame
+			name:            "VP8 simulcast, three temporal layers",
+			codec:           testutils.TestVP8Codec,
+			target:          buffer.VideoLayer{Spatial: 1, Temporal: 2},
+			expectedCurrent: buffer.VideoLayer{Spatial: 1, Temporal: 2},
+		},
+		{
+			// the VP8 temporal layer selector must not be carried over on codec change
+			name:            "VP8 to VP9 simulcast, three temporal layers",
+			previousCodec:   &testutils.TestVP8Codec,
+			codec:           webrtc.RTPCodecCapability{MimeType: mime.MimeTypeVP9.String(), ClockRate: 90000},
+			target:          buffer.VideoLayer{Spatial: 1, Temporal: 2},
+			expectedCurrent: buffer.VideoLayer{Spatial: 1, Temporal: 2},
+		},
+		{
+			name:            "VP8 to AV1 simulcast, three temporal layers",
+			previousCodec:   &testutils.TestVP8Codec,
+			codec:           webrtc.RTPCodecCapability{MimeType: mime.MimeTypeAV1.String(), ClockRate: 90000},
+			target:          buffer.VideoLayer{Spatial: 1, Temporal: 2},
+			expectedCurrent: buffer.VideoLayer{Spatial: 1, Temporal: 2},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := NewForwarder(
+				webrtc.RTPCodecTypeVideo,
+				logger.GetLogger(),
+				true,  // skipReferenceTS
+				true,  // disableOpportunisticAllocation
+				false, // enableStartAtDesiredQuality
+				nil,
+			)
+			if tc.previousCodec != nil {
+				f.DetermineCodec(*tc.previousCodec, nil, livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM)
+			}
+			f.DetermineCodec(tc.codec, nil, livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM)
+			f.SetMaxSpatialLayer(buffer.DefaultMaxLayerSpatial)
+			f.SetMaxTemporalLayer(buffer.DefaultMaxLayerTemporal)
+			f.SetMaxPublishedLayer(buffer.DefaultMaxLayerSpatial)
+			f.SetMaxTemporalLayerSeen(buffer.DefaultMaxLayerTemporal)
+
+			// down-switched for bandwidth: was on the top layer, target is now lower
+			f.lastAllocation.IsDeficient = true
+			f.vls.SetCurrent(buffer.VideoLayer{Spatial: 2, Temporal: tc.target.Temporal})
+			f.vls.SetTarget(tc.target)
+
+			// target pending (spatial switch not done yet): no higher transition
+			_, available := f.GetNextHigherTransition(bitrates, false)
+			require.False(t, available)
+
+			// key frame of the target spatial layer, temporal layer 0
+			params := &testutils.TestExtPacketParams{
+				SequenceNumber: 23333,
+				Timestamp:      0xabcdef,
+				SSRC:           0x12345678,
+				PayloadSize:    20,
+				IsKeyFrame:     true,
+				VideoLayer:     buffer.VideoLayer{Spatial: tc.target.Spatial, Temporal: 0},
+			}
+			var extPkt *buffer.ExtPacket
+			var err error
+			if tc.codec.MimeType == testutils.TestVP8Codec.MimeType {
+				extPkt, err = testutils.GetTestExtPacketVP8(params, &codec.VP8{
+					FirstByte:  25,
+					I:          true,
+					M:          true,
+					PictureID:  13467,
+					L:          true,
+					TL0PICIDX:  233,
+					T:          true,
+					TID:        0,
+					Y:          true,
+					K:          true,
+					KEYIDX:     23,
+					HeaderSize: 6,
+					IsKeyFrame: true,
+				})
+			} else {
+				extPkt, err = testutils.GetTestExtPacket(params)
+			}
+			require.NoError(t, err)
+
+			tp, err := f.GetTranslationParams(extPkt, tc.target.Spatial)
+			require.NoError(t, err)
+			require.False(t, tp.shouldDrop)
+			require.True(t, tp.isSwitching)
+
+			require.Equal(t, tc.expectedCurrent, f.vls.GetCurrent())
+			// target reached: the next higher transition (and hence probing) is available
+			_, available = f.GetNextHigherTransition(bitrates, false)
+			require.True(t, available)
+		})
+	}
+}
+
+// VP9 and AV1 simulcast with the dependency descriptor filter temporal layers by frame and
+// forward the descriptor, as VP8 does. A publisher that stops sending the descriptor gets
+// every temporal layer forwarded.
+func TestForwarderSimulcastDependencyDescriptor(t *testing.T) {
+	for _, mimeType := range []mime.MimeType{mime.MimeTypeVP9, mime.MimeTypeAV1} {
+		t.Run(mimeType.String(), func(t *testing.T) {
+			keyFrameDescriptor := testKeyFrameDescriptor(t)
+			f := NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
+			f.DetermineCodec(
+				webrtc.RTPCodecCapability{MimeType: mimeType.String(), ClockRate: 90000},
+				[]webrtc.RTPHeaderExtensionParameter{{URI: dd.ExtensionURI}},
+				livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM,
+			)
+			require.IsType(t, &codecmunger.DDTemporal{}, f.codecMunger)
+			require.NotNil(t, f.ddForwarder)
+			f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+			f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+
+			tp, err := f.GetTranslationParams(testDDPacket(t, keyFrameDescriptor, 10, 100, 0, true), 0)
+			require.NoError(t, err)
+			require.False(t, tp.shouldDrop)
+			require.NotEmpty(t, tp.ddBytesSpill)
+
+			// TL2 is above the target and is filtered, its slot is rolled back
+			tp, err = f.GetTranslationParams(testDDPacket(t, keyFrameDescriptor, 11, 101, 2, false), 0)
+			require.NoError(t, err)
+			require.True(t, tp.shouldDrop)
+
+			tp, err = f.GetTranslationParams(testDDPacket(t, keyFrameDescriptor, 12, 102, 0, false), 0)
+			require.NoError(t, err)
+			require.False(t, tp.shouldDrop)
+			require.Equal(t, uint64(11), tp.rtp.extSequenceNumber)
+			require.NotEmpty(t, tp.ddInline())
+
+			// the publisher stops sending the descriptor
+			noDD, err := testutils.GetTestExtPacket(&testutils.TestExtPacketParams{SequenceNumber: 13, Timestamp: 0xabcdef + 103*3000, SSRC: 0x12345678, PayloadSize: 20, Marker: true})
+			require.NoError(t, err)
+			tp, err = f.GetTranslationParams(noDD, 0)
+			require.NoError(t, err)
+			require.False(t, tp.shouldDrop)
+			require.Nil(t, f.ddForwarder)
+			require.IsType(t, &codecmunger.Null{}, f.codecMunger)
+			require.Empty(t, tp.ddInline())
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Switching back to a layer after the reference layer's RTP timestamp wrapped,
+// on a downtrack that started with dummy forwarding (dummyStartTSOffset != 0).
+
+const (
+	wrapTestSSRCLow  = uint32(0x0a0a0a0a)
+	wrapTestSSRCHigh = uint32(0x0c0c0c0c)
+	wrapTestFrame    = uint32(3000) // 30 fps at 90 kHz
+	wrapTestHighTS   = uint32(0x10000000)
+)
+
+func newWrapTestForwarder(t *testing.T, skipReferenceTS bool) *Forwarder {
+	t.Helper()
+	f := NewForwarder(
+		webrtc.RTPCodecTypeVideo,
+		logger.GetLogger(),
+		skipReferenceTS,
+		false, // disableOpportunisticAllocation
+		false, // enableStartAtDesiredQuality
+		rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{}, 1024),
+	)
+	f.DetermineCodec(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264, ClockRate: 90000}, nil, livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM)
+	f.SetMaxSpatialLayer(2)
+	f.SetMaxTemporalLayer(0)
+	f.SetMaxPublishedLayer(2)
+	return f
+}
+
+func wrapTestBitrates(layer int32) Bitrates {
+	var brs Bitrates
+	brs[layer][0] = 1_000_000
+	return brs
+}
+
+func wrapTestKeyFrame(t *testing.T, ssrc uint32, sn uint16, ts uint32, tsCycles int, layer int32) *buffer.ExtPacket {
+	t.Helper()
+	extPkt, err := testutils.GetTestExtPacket(&testutils.TestExtPacketParams{
+		SequenceNumber: sn,
+		Timestamp:      ts,
+		TSCycles:       tsCycles,
+		SSRC:           ssrc,
+		PayloadSize:    20,
+		Marker:         true,
+		IsKeyFrame:     true,
+		VideoLayer:     buffer.VideoLayer{Spatial: layer, Temporal: 0},
+	})
+	require.NoError(t, err)
+	return extPkt
+}
+
+func wrapTestSenderReport(at time.Time, rtpTS uint32) *livekit.RTCPSenderReportState {
+	return &livekit.RTCPSenderReportState{
+		RtpTimestamp:    rtpTS,
+		RtpTimestampExt: uint64(rtpTS),
+		NtpTimestamp:    uint64(mediatransportutil.ToNtpTime(at)),
+		At:              at.UnixNano(),
+		AtAdjusted:      at.UnixNano(),
+	}
+}
+
+// runToHighLayer starts the forwarder with dummy forwarding, locks it onto layer 0 (whose first
+// timestamp is lowStart), switches it to layer 2 when layer 0 stops, forwards layer 2 for
+// `elapsed`, and then has the allocator target layer 0 again. It returns layer 0's timestamp and
+// timestamp cycles at that point, for the keyframe that switches back.
+func runToHighLayer(t *testing.T, f *Forwarder, lowStart uint32, elapsed time.Duration) (uint32, int) {
+	t.Helper()
+
+	// dummy start, then lock onto layer 0: layer 0 becomes the reference layer
+	f.maybeStart()
+	f.AllocateOptimal([]int32{0}, wrapTestBitrates(0), true, false)
+	tp, err := f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCLow, 1000, lowStart, 0, 0), 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	require.Equal(t, int32(0), f.referenceLayerSpatial)
+	require.Equal(t, int32(0), f.CurrentLayer().Spatial)
+
+	now := time.Now()
+	f.SetRefSenderReport(0, wrapTestSenderReport(now, lowStart+wrapTestFrame))
+	f.SetRefSenderReport(2, wrapTestSenderReport(now, wrapTestHighTS+wrapTestFrame))
+
+	// layer 0 stops, layer 2 is available: switch to layer 2
+	alloc := f.AllocateOptimal([]int32{2}, wrapTestBitrates(2), true, false)
+	require.Equal(t, int32(2), alloc.TargetLayer.Spatial)
+	tp, err = f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCHigh, 5000, wrapTestHighTS+2*wrapTestFrame, 0, 2), 2)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	require.Equal(t, int32(2), f.CurrentLayer().Spatial)
+
+	// forward layer 2 for `elapsed`
+	ticks := uint64(elapsed.Seconds() * 90000)
+	highTS := uint64(wrapTestHighTS) + ticks
+	tp, err = f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCHigh, 5001, uint32(highTS), int(highTS>>32), 2), 2)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+
+	// layer 2 stops, layer 0 is back: the allocator targets layer 0
+	alloc = f.AllocateOptimal([]int32{0}, wrapTestBitrates(0), true, false)
+	require.Equal(t, int32(0), alloc.TargetLayer.Spatial)
+
+	lowTS := uint64(lowStart) + ticks + uint64(wrapTestFrame)
+	return uint32(lowTS), int(lowTS >> 32)
+}
+
+func TestForwarderSwitchBackAfterReferenceTimestampWrap(t *testing.T) {
+	// maybeStart draws the dummy first timestamp in [2^31, 2^31 + 2^30), so a reference layer
+	// starting above 2^31 + 2^30 always yields a negative dummyStartTSOffset
+	const lowStart = uint32(0xf0000000)
+
+	t.Run("after the wrap", func(t *testing.T) {
+		f := newWrapTestForwarder(t, false)
+		lowTS, cycles := runToHighLayer(t, f, lowStart, time.Hour)
+
+		// preconditions: negative offset, layer 0 wrapped and its 32-bit timestamp is below |offset|
+		offset := int64(f.dummyStartTSOffset)
+		require.Less(t, offset, int64(0))
+		require.Equal(t, 1, cycles)
+		require.Less(t, int64(lowTS), -offset)
+
+		tp, err := f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCLow, 1001, lowTS, cycles, 0), 0)
+		require.NoError(t, err)
+		require.False(t, tp.shouldDrop, "switch point rejected")
+		require.Equal(t, int32(0), f.CurrentLayer().Spatial)
+	})
+
+	t.Run("before the wrap", func(t *testing.T) {
+		f := newWrapTestForwarder(t, false)
+		lowTS, cycles := runToHighLayer(t, f, lowStart, 30*time.Minute)
+		require.Equal(t, 0, cycles)
+
+		tp, err := f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCLow, 1001, lowTS, cycles, 0), 0)
+		require.NoError(t, err)
+		require.False(t, tp.shouldDrop, "switch point rejected")
+		require.Equal(t, int32(0), f.CurrentLayer().Spatial)
+	})
+
+	t.Run("random start and duration", func(t *testing.T) {
+		rng := rand.New(rand.NewSource(1))
+		for i := 0; i < 400; i++ {
+			f := newWrapTestForwarder(t, false)
+			start := rng.Uint32()
+			elapsed := time.Duration(60+rng.Int63n(26*3600)) * time.Second
+			lowTS, cycles := runToHighLayer(t, f, start, elapsed)
+
+			tp, err := f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCLow, 1001, lowTS, cycles, 0), 0)
+			require.NoError(t, err)
+			require.False(t, tp.shouldDrop, "switch point rejected, start %d, elapsed %s", start, elapsed)
+		}
+	})
+}
+
+// Receiver restart on a downtrack that started with dummy forwarding: the new reference layer's
+// timestamps must keep mapping onto the downtrack's existing timeline on every switch after
+// the restart, not only on the first one.
+func TestForwarderRestartKeepsTimestampContinuity(t *testing.T) {
+	f := newWrapTestForwarder(t, false)
+	f.rtpStats.SetClockRate(90000)
+
+	// dummy start, lock onto layer 0 with a reference timestamp that yields a negative offset
+	f.maybeStart()
+	f.AllocateOptimal([]int32{0}, wrapTestBitrates(0), true, false)
+	tp, err := f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCLow, 1000, 0xf0000000, 0, 0), 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	require.Less(t, int64(f.dummyStartTSOffset), int64(0))
+
+	// the downtrack has been sending: rtpStats is initialized on the first forwarded packet
+	f.rtpStats.Update(mono.UnixNano(), tp.rtp.extSequenceNumber, tp.rtp.extTimestamp, true, 12, 20, 0, false)
+
+	// upstream receiver restart: new stream, new timestamp base for every layer
+	f.Restart()
+	f.DetermineCodec(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264, ClockRate: 90000}, nil, livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM)
+	const newLowStart = uint32(0x20000000)
+	now := time.Now()
+	f.SetRefSenderReport(0, wrapTestSenderReport(now, newLowStart))
+	f.SetRefSenderReport(2, wrapTestSenderReport(now, wrapTestHighTS))
+
+	f.AllocateOptimal([]int32{0}, wrapTestBitrates(0), true, false)
+	tp, err = f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCLow, 1, newLowStart, 0, 0), 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	lastTS := tp.rtp.extTimestamp
+
+	// one frame later, switch to layer 2: the timestamp must advance by about one frame
+	f.AllocateOptimal([]int32{2}, wrapTestBitrates(2), true, false)
+	tp, err = f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCHigh, 1, wrapTestHighTS+wrapTestFrame, 0, 2), 2)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	advance := int64(tp.rtp.extTimestamp - lastTS)
+	require.Greater(t, advance, int64(0))
+	require.Less(t, advance, int64(90000), "timestamp jumped %d ticks (%.1f s) across the switch after restart", advance, float64(advance)/90000)
+}
+
+// Stream without a usable reference layer (incomplete sender reports, skipReferenceTS): refTS is
+// the last outgoing timestamp, already on the downtrack's timeline. No dummy start offset may be
+// computed or applied, otherwise the gap between the last packet and the restart is added again
+// on every later switch.
+func TestForwarderSkipReferenceTSRestartNoOffset(t *testing.T) {
+	f := newWrapTestForwarder(t, true)
+	f.rtpStats.SetClockRate(90000)
+
+	f.maybeStart()
+	f.AllocateOptimal([]int32{0}, wrapTestBitrates(0), true, false)
+	tp, err := f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCLow, 1000, 0xf0000000, 0, 0), 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	require.Zero(t, f.dummyStartTSOffset)
+	firstTS := tp.rtp.extTimestamp
+
+	// the last packet went out 5 s ago
+	const gap = 5 * time.Second
+	f.rtpStats.Update(mono.UnixNano()-gap.Nanoseconds(), tp.rtp.extSequenceNumber, firstTS, true, 12, 20, 0, false)
+
+	// upstream restart, new SSRC: the 5 s gap shows up once, at the restart
+	f.Restart()
+	f.DetermineCodec(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264, ClockRate: 90000}, nil, livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM_INCOMPLETE_RTCP_SR)
+	f.AllocateOptimal([]int32{0}, wrapTestBitrates(0), true, false)
+	tp, err = f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCHigh, 1, 0x20000000, 0, 0), 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	require.Zero(t, f.dummyStartTSOffset)
+	require.InDelta(t, gap.Seconds()*90000, float64(int64(tp.rtp.extTimestamp-firstTS)), 90000)
+	lastTS := tp.rtp.extTimestamp
+
+	// one frame later, switch to another layer: the gap must not be added again
+	f.AllocateOptimal([]int32{2}, wrapTestBitrates(2), true, false)
+	tp, err = f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCLow, 1, wrapTestHighTS+wrapTestFrame, 0, 2), 2)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	advance := int64(tp.rtp.extTimestamp - lastTS)
+	require.GreaterOrEqual(t, advance, int64(0))
+	require.Less(t, advance, int64(90000), "timestamp jumped %d ticks (%.1f s) on the switch after restart", advance, float64(advance)/90000)
+}
+
+// A bandwidth downgrade keeps the subscriber on the higher spatial layer until a lower-layer
+// keyframe is close enough in time. These tests keep the higher layer flowing, with sender
+// reports, and ask whether a lower layer that trails by a fixed amount is ever forwarded.
+// Trails are LayerSwitchBehindThresholdSeconds plus or minus 10ms.
+const downgradeTrailClockRate = 90000
+
+func downgradeSwitchThreshold() time.Duration {
+	return time.Duration(LayerSwitchBehindThresholdSeconds * float64(time.Second))
+}
+
+func downgradeTrailBitrates() Bitrates {
+	var brs Bitrates
+	brs[0][0] = 100_000
+	brs[2][0] = 2_000_000
+	return brs
+}
+
+// startDowngradeTrailForwarder forwards layer 2, then allocates only layer 0 because that is
+// all the channel can hold. The subscriber is deficient: target is 0, current stays 2.
+func startDowngradeTrailForwarder(t *testing.T) *Forwarder {
+	t.Helper()
+
+	f := newWrapTestForwarder(t, false)
+	const highBase = uint32(1_000_000)
+	const lowBase = uint32(100_000)
+
+	alloc := f.AllocateOptimal([]int32{2}, downgradeTrailBitrates(), true, false)
+	require.Equal(t, int32(2), alloc.TargetLayer.Spatial)
+
+	tp, err := f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCHigh, 1000, highBase, 0, 2), 2)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	require.Equal(t, int32(2), f.CurrentLayer().Spatial)
+
+	// one more in-order frame so the following drops are not the first packet
+	tp, err = f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCHigh, 1001, highBase+wrapTestFrame, 0, 2), 2)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+
+	now := time.Now()
+	f.SetRefSenderReport(2, wrapTestSenderReport(now, highBase))
+	f.SetRefSenderReport(0, wrapTestSenderReport(now, lowBase))
+
+	f.ProvisionalAllocatePrepare([]int32{0, 2}, downgradeTrailBitrates())
+	fitted, _ := f.ProvisionalAllocate(downgradeTrailBitrates()[0][0], buffer.VideoLayer{Spatial: 0, Temporal: 0}, true, false)
+	require.True(t, fitted)
+	alloc = f.ProvisionalAllocateCommit()
+	require.True(t, alloc.IsDeficient)
+	require.Equal(t, int32(0), alloc.TargetLayer.Spatial)
+	require.Equal(t, int32(2), f.CurrentLayer().Spatial)
+	return f
+}
+
+// offerDowngradeTrail feeds one higher-layer frame, then a lower-layer keyframe whose
+// sender-report-aligned time is trailBehind earlier than that higher-layer frame.
+func offerDowngradeTrail(t *testing.T, f *Forwarder, highSN, lowSN uint16, frameIndex int, trailBehind time.Duration) (highDropped, lowDropped bool) {
+	t.Helper()
+
+	const highBase = uint32(1_000_000)
+	const lowBase = uint32(100_000)
+	// frames 0 and 1 were forwarded before the downgrade
+	highTS := highBase + uint32(frameIndex)*wrapTestFrame
+	trailTicks := uint32(trailBehind.Seconds() * downgradeTrailClockRate)
+	lowTS := lowBase + uint32(frameIndex)*wrapTestFrame - trailTicks
+
+	before := f.rtpMunger.GetExtLastTimestamp()
+	tp, err := f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCHigh, highSN, highTS, 0, 2), 2)
+	require.NoError(t, err)
+	highDropped = tp.shouldDrop
+	if highDropped {
+		require.Equal(t, before, f.rtpMunger.GetExtLastTimestamp(), "dropped higher-layer frame advanced the outgoing timestamp")
+	}
+
+	tp, err = f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCLow, lowSN, lowTS, 0, 0), 0)
+	require.NoError(t, err)
+	lowDropped = tp.shouldDrop
+	if !lowDropped {
+		advance := int64(tp.rtp.extTimestamp - before)
+		require.GreaterOrEqual(t, advance, int64(0), "switch moved the timestamp backwards")
+		require.Less(t, advance, int64(downgradeTrailClockRate), "switch jumped the timestamp by %d ticks", advance)
+	}
+	return highDropped, lowDropped
+}
+
+func TestForwarderDowngradeWhenLowerLayerTrails(t *testing.T) {
+	t.Run("less than the layer switch threshold", func(t *testing.T) {
+		f := startDowngradeTrailForwarder(t)
+		highDropped, lowDropped := offerDowngradeTrail(t, f, 1002, 2000, 2, downgradeSwitchThreshold()-10*time.Millisecond)
+		require.True(t, highDropped, "higher layer should be held back while deficient")
+		require.False(t, lowDropped, "a trail under the layer switch threshold should switch")
+		require.Equal(t, int32(0), f.CurrentLayer().Spatial)
+	})
+
+	t.Run("more than the layer switch threshold", func(t *testing.T) {
+		f := startDowngradeTrailForwarder(t)
+		highDropped, lowDropped := offerDowngradeTrail(t, f, 1002, 2000, 2, downgradeSwitchThreshold()+10*time.Millisecond)
+		require.True(t, highDropped, "higher layer should be held back while deficient")
+		require.False(t, lowDropped, "a trail over the layer switch threshold should switch")
+		require.Equal(t, int32(0), f.CurrentLayer().Spatial)
+	})
+}
+
+func TestForwarderDowngradePadsGap(t *testing.T) {
+	f := startDowngradeTrailForwarder(t)
+	// 1002 is lost, 1003 arrives after the gap
+	tp, err := f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCHigh, 1003, 1_000_000+2*wrapTestFrame, 0, 2), 2)
+	require.NoError(t, err)
+	require.True(t, tp.shouldDrop)
+	require.True(t, tp.padDroppedSlot, "a dropped packet after a gap should pad its slot")
 }

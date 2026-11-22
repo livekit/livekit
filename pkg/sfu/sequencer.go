@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/protocol/logger"
 	"go.uber.org/zap/zapcore"
@@ -35,16 +36,18 @@ type packetMeta struct {
 	// The original extended sequence number is used to find the original
 	// packet from publisher
 	sourceSeqNo uint64
+	// Cache identity must survive metadata snapshots held across a restart.
+	sourceStreamGeneration uint64
 	// Modified sequence number after offset.
 	// This sequence number is used for the associated
 	// down track, is modified according the offsets, and
 	// must not be shared
 	targetSeqNo uint16
+	// Modified marker
+	marker bool
 	// Modified timestamp for current associated
 	// down track.
 	timestamp uint32
-	// Modified marker
-	marker bool
 	// The last time this packet was nack requested.
 	// Sometimes clients request the same packet more than once, so keep
 	// track of the requested packets helps to avoid writing multiple times
@@ -65,13 +68,15 @@ type packetMeta struct {
 	ddBytesSize  uint8
 	ddBytesSlice []byte
 	// abs-capture-time of packet
-	actBytes []byte
+	actBytes     [act.MaxSize]byte
+	actBytesSize uint8
 	// number of packet trailer bytes stripped when the packet was forwarded
 	trailerStripped uint8
 }
 
 func (pm packetMeta) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddUint64("sourceSeqNo", pm.sourceSeqNo)
+	e.AddUint64("sourceStreamGeneration", pm.sourceStreamGeneration)
 	e.AddUint16("targetSeqNo", pm.targetSeqNo)
 	e.AddInt8("layer", pm.layer)
 	e.AddUint8("nacked", pm.nacked)
@@ -86,8 +91,8 @@ func (pm packetMeta) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	} else {
 		e.AddUint8("ddBytesSize", pm.ddBytesSize)
 	}
-	if len(pm.actBytes) != 0 {
-		e.AddInt("actBytes", len(pm.actBytes))
+	if pm.actBytesSize != 0 {
+		e.AddUint8("actBytes", pm.actBytesSize)
 	}
 	if pm.trailerStripped != 0 {
 		e.AddUint8("trailerStripped", pm.trailerStripped)
@@ -99,11 +104,13 @@ type extPacketMeta struct {
 	packetMeta
 	extSequenceNumber uint64
 	extTimestamp      uint64
+	slot              int
 }
 
 func (epm extPacketMeta) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddObject("packetMeta", epm.packetMeta)
 	e.AddUint64("extSequenceNumber", epm.extSequenceNumber)
+	e.AddUint64("extTimestamp", epm.extTimestamp)
 	return nil
 }
 
@@ -184,6 +191,7 @@ func (s *sequencer) push(
 	ddBytes []byte,
 	actBytes []byte,
 	trailerStripped int,
+	sourceStreamGeneration uint64,
 ) {
 	s.Lock()
 	defer s.Unlock()
@@ -246,14 +254,15 @@ func (s *sequencer) push(
 
 	slot := extModifiedSNAdjusted % uint64(s.size)
 	s.meta[slot] = packetMeta{
-		sourceSeqNo:     extIncomingSN,
-		targetSeqNo:     uint16(extModifiedSN),
-		timestamp:       uint32(extModifiedTS),
-		marker:          marker,
-		layer:           layer,
-		numCodecBytesIn: uint8(numCodecBytesIn),
-		trailerStripped: uint8(trailerStripped),
-		lastNack:        s.getRefTime(packetTime), // delay retransmissions after the original transmission
+		sourceSeqNo:            extIncomingSN,
+		sourceStreamGeneration: sourceStreamGeneration,
+		targetSeqNo:            uint16(extModifiedSN),
+		timestamp:              uint32(extModifiedTS),
+		marker:                 marker,
+		layer:                  layer,
+		numCodecBytesIn:        uint8(numCodecBytesIn),
+		trailerStripped:        uint8(trailerStripped),
+		lastNack:               s.getRefTime(packetTime), // delay retransmissions after the original transmission
 	}
 	pm := &s.meta[slot]
 
@@ -271,7 +280,7 @@ func (s *sequencer) push(
 		copy(pm.ddBytes[:pm.ddBytesSize], ddBytes)
 	}
 
-	pm.actBytes = append([]byte{}, actBytes...)
+	pm.actBytesSize = uint8(copy(pm.actBytes[:], actBytes))
 
 	if extModifiedSN > s.extHighestSN {
 		s.extHighestSN = extModifiedSN
@@ -394,15 +403,32 @@ func (s *sequencer) getExtPacketMetas(seqNo []uint16) []extPacketMeta {
 				packetMeta:        *meta,
 				extSequenceNumber: extSN,
 				extTimestamp:      extTS,
+				slot:              int(slot),
 			}
 			epm.codecBytesSlice = append([]byte{}, meta.codecBytesSlice...)
 			epm.ddBytesSlice = append([]byte{}, meta.ddBytesSlice...)
-			epm.actBytes = append([]byte{}, meta.actBytes...)
 			extPacketMetas = append(extPacketMetas, epm)
 		}
 	}
 
 	return extPacketMetas
+}
+
+// unmarkNacked reverts the NACK count getExtPacketMetas added for packets that were not
+// retransmitted, so they do not run into maxAck. lastNack stays, so a repeat NACK inside the
+// duplicate window is still ignored.
+func (s *sequencer) unmarkNacked(epms []extPacketMeta) {
+	s.Lock()
+	defer s.Unlock()
+
+	for i := range epms {
+		meta := &s.meta[epms[i].slot]
+		// skip if the slot holds a newer packet, or a newer NACK marked it again
+		if meta.targetSeqNo != epms[i].targetSeqNo || meta.lastNack != epms[i].lastNack || meta.nacked == 0 {
+			continue
+		}
+		meta.nacked--
+	}
 }
 
 func (s *sequencer) lookupExtPacketMeta(extSN uint64) *extPacketMeta {
@@ -447,7 +473,6 @@ func (s *sequencer) lookupExtPacketMeta(extSN uint64) *extPacketMeta {
 	}
 	epm.codecBytesSlice = append([]byte{}, meta.codecBytesSlice...)
 	epm.ddBytesSlice = append([]byte{}, meta.ddBytesSlice...)
-	epm.actBytes = append([]byte{}, meta.actBytes...)
 	return &epm
 }
 

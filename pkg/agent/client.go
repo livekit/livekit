@@ -62,9 +62,10 @@ type JobRequest struct {
 	// only set for participant jobs
 	Participant *livekit.ParticipantInfo
 	Metadata    string
-	AgentName  string
-	Deployment string
-	Attributes map[string]string
+	AgentName   string
+	Deployment  string
+	Attributes  map[string]string
+	ThreadId    string
 }
 
 type agentClient struct {
@@ -175,6 +176,7 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverut
 				EnableRedaction: c.config.EnableUserDataRedaction,
 				Deployment:      desc.Deployment,
 				Attributes:      desc.Attributes,
+				ThreadId:        desc.ThreadId,
 			}
 			resp, err := c.client.JobRequest(context.Background(), topic, jobTypeTopic, job)
 			if err != nil {
@@ -240,7 +242,7 @@ func (c *agentClient) getDispatcher(agName string, jobType livekit.JobType) *ser
 	}
 
 	done := make(chan *serverutils.IncrementalDispatcher[string], 1)
-	c.workers.Submit(func() {
+	go func() {
 		agentNames.ForEach(func(ag string) {
 			if ag == agName {
 				select {
@@ -253,7 +255,7 @@ func (c *agentClient) getDispatcher(agName string, jobType livekit.JobType) *ser
 		case done <- nil:
 		default:
 		}
-	})
+	}()
 
 	return <-done
 }

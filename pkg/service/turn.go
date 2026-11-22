@@ -19,12 +19,13 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jxskiss/base62"
-	"github.com/pion/stun/v3"
+	"github.com/pion/stun/v4"
 	"github.com/pion/turn/v5"
 	"github.com/pires/go-proxyproto"
 	"github.com/pkg/errors"
@@ -61,6 +62,18 @@ func parsePeerCIDRs(field string, cidrs []string) ([]*net.IPNet, error) {
 	return parsed, nil
 }
 
+// hasIPv6BindAddress reports whether any TURN bind address is IPv6, the only
+// kind that can open an IPv6 relay. It classifies addresses the same way
+// NewTurnServer picks the node IP for each one.
+func hasIPv6BindAddress(addrs []string) bool {
+	for _, addr := range addrs {
+		if net.ParseIP(addr).To4() == nil {
+			return true
+		}
+	}
+	return false
+}
+
 func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone bool) (*turn.Server, error) {
 	turnConf := conf.TURN
 	if !turnConf.Enabled {
@@ -94,6 +107,11 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 		Realm:         LivekitRealm,
 		AuthHandler:   authHandler,
 		LoggerFactory: pionlogger.NewLoggerFactory(logger.GetLogger()),
+		// without REQUESTED-ADDRESS-FAMILY, pion picks the relay family from the
+		// address the client reached, so an IPv6 client of a dual-stack 0.0.0.0
+		// listener would be refused (508) an IPv6 relay that no IPv4 bind address
+		// can open. With no IPv6 bind address, keep the RFC 8656 default of IPv4.
+		StrictAddressFamily: !hasIPv6BindAddress(turnConf.BindAddresses),
 	}
 
 	// cap concurrent relay allocations per participant so one credential cannot
@@ -108,6 +126,17 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 	logValues = append(logValues, "turn.relay_range_start", turnConf.RelayPortRangeStart)
 	logValues = append(logValues, "turn.relay_range_end", turnConf.RelayPortRangeEnd)
 	logValues = append(logValues, "turn.per_user_relay_allocation_limit", turnConf.PerUserRelayAllocationLimit)
+
+	// embedded TURN shares the host with the SFU, limit relays to this host to its media ports
+	var localIPs map[netip.Addr]struct{}
+	var mediaPorts []portRange
+	if !standalone {
+		localIPs, err = getTURNLocalIPs(&conf.RTC)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not get local IPs for TURN relay policy")
+		}
+		mediaPorts = getTURNMediaPorts(&conf.RTC)
+	}
 
 	for _, addr := range turnConf.BindAddresses {
 		var nodeIP string
@@ -127,18 +156,10 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 			MaxPort:      turnConf.RelayPortRangeEnd,
 			MaxRetries:   allocateRetries,
 		}
-		if standalone {
-			relayAddrGen = telemetry.NewRelayAddressGenerator(relayAddrGen)
-		}
 
 		permissionHandler := func(_clientAddr net.Addr, peerIP net.IP) bool {
 			// restricted peer IP is denied by default, unless allowed by the allow list,
-			if peerIP.IsLoopback() ||
-				peerIP.IsLinkLocalUnicast() ||
-				peerIP.IsLinkLocalMulticast() ||
-				peerIP.IsMulticast() ||
-				peerIP.IsPrivate() ||
-				peerIP.IsUnspecified() {
+			if isRestrictedPeerIP(peerIP) {
 				allowed := false
 				for _, ipnet := range allowRestrictedPeerCIDRs {
 					if ipnet.Contains(peerIP) {
@@ -160,6 +181,13 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 			}
 
 			return true
+		}
+
+		relayAddrGen = newRejectTCPRelayAddressGenerator(relayAddrGen)
+		if standalone {
+			relayAddrGen = telemetry.NewRelayAddressGenerator(relayAddrGen)
+		} else {
+			relayAddrGen = newTURNRelayPolicy(relayAddrGen, localIPs, mediaPorts)
 		}
 
 		if turnConf.TLSPort > 0 {

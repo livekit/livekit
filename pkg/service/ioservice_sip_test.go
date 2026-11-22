@@ -24,6 +24,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc/pkg/bus/redisbus"
 )
 
@@ -119,5 +120,20 @@ func TestSIPRuleSelect(t *testing.T) {
 			slices.Sort(ids)
 			require.Equal(t, c.exp, ids)
 		})
+	}
+}
+
+func TestSIPDispatchNoRuleRejects(t *testing.T) {
+	ctx := context.Background()
+	s, rs := ioStoreDocker(t)
+	require.NoError(t, rs.StoreSIPInboundTrunk(ctx, &livekit.SIPInboundTrunkInfo{SipTrunkId: "A", Numbers: []string{"+1000"}}))
+
+	for number, trunk := range map[string]string{"+1000": "A", "+2000": ""} {
+		resp, err := s.EvaluateSIPDispatchRules(ctx, &rpc.EvaluateSIPDispatchRulesRequest{
+			Call: &rpc.SIPCall{SourceIp: "1.1.1.1", From: &livekit.SIPUri{User: "+3000"}, To: &livekit.SIPUri{User: number}},
+		})
+		require.NoError(t, err)
+		require.Equal(t, rpc.SIPDispatchResult_REJECT, resp.Result, number)
+		require.Equal(t, trunk, resp.SipTrunkId)
 	}
 }

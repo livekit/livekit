@@ -24,6 +24,9 @@ import (
 
 const (
 	AbsCaptureTimeURI = "http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time"
+
+	// MaxSize is the marshaled size with the estimated capture clock offset
+	MaxSize = 16
 )
 
 var (
@@ -84,21 +87,23 @@ func (a *AbsCaptureTime) Rewrite(offset time.Duration) error {
 	return nil
 }
 
-func (a *AbsCaptureTime) Marshal() ([]byte, error) {
+func (a *AbsCaptureTime) MarshalTo(buf []byte) (int, error) {
 	if a.absoluteCaptureTimestamp == 0 {
-		return nil, errInvalidData
+		return 0, errInvalidData
 	}
 
 	size := 8
 	if a.estimatedCaptureClockOffset != 0 {
 		size += 8
 	}
-	marshalled := make([]byte, size)
-	binary.BigEndian.PutUint64(marshalled, uint64(a.absoluteCaptureTimestamp))
-	if a.estimatedCaptureClockOffset != 0 {
-		binary.BigEndian.PutUint64(marshalled[8:], uint64(a.estimatedCaptureClockOffset))
+	if len(buf) < size {
+		return 0, errTooSmall
 	}
-	return marshalled, nil
+	binary.BigEndian.PutUint64(buf, uint64(a.absoluteCaptureTimestamp))
+	if a.estimatedCaptureClockOffset != 0 {
+		binary.BigEndian.PutUint64(buf[8:], uint64(a.estimatedCaptureClockOffset))
+	}
+	return size, nil
 }
 
 func (a *AbsCaptureTime) Unmarshal(marshalled []byte) error {

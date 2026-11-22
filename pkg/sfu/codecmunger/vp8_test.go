@@ -296,7 +296,7 @@ func TestTemporalLayerFiltering(t *testing.T) {
 	// translate
 	nIn, _, nOut, err := v.UpdateAndGet(extPkt, false, false, 0)
 	require.Error(t, err)
-	require.ErrorIs(t, err, ErrFilteredVP8TemporalLayer)
+	require.ErrorIs(t, err, ErrFilteredTemporalLayer)
 	require.Equal(t, 0, nIn)
 	require.Equal(t, 0, nOut)
 	dropped, _ := v.droppedPictureIds.Get(13467)
@@ -310,7 +310,7 @@ func TestTemporalLayerFiltering(t *testing.T) {
 
 	nIn, _, nOut, err = v.UpdateAndGet(extPkt, false, false, 0)
 	require.Error(t, err)
-	require.ErrorIs(t, err, ErrFilteredVP8TemporalLayer)
+	require.ErrorIs(t, err, ErrFilteredTemporalLayer)
 	require.Equal(t, 0, nIn)
 	require.Equal(t, 0, nOut)
 	dropped, _ = v.droppedPictureIds.Get(13467)
@@ -324,7 +324,7 @@ func TestTemporalLayerFiltering(t *testing.T) {
 
 	nIn, _, nOut, err = v.UpdateAndGet(extPkt, false, false, 0)
 	require.Error(t, err)
-	require.ErrorIs(t, err, ErrFilteredVP8TemporalLayer)
+	require.ErrorIs(t, err, ErrFilteredTemporalLayer)
 	require.Equal(t, 0, nIn)
 	require.Equal(t, 0, nOut)
 	dropped, _ = v.droppedPictureIds.Get(13467)

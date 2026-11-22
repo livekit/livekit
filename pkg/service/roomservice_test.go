@@ -17,6 +17,7 @@ package service_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/twitchtv/twirp"
@@ -25,6 +26,9 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/rpc/rpcfakes"
+	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/guid"
+	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
@@ -102,6 +106,24 @@ func TestMetaDataLimits(t *testing.T) {
 		requireInvalidArg(t, err)
 	})
 
+	t.Run("lk attributes exceed lk limit", func(t *testing.T) {
+		svc := newTestRoomService(config.LimitConfig{MaxAttributesSize: 100, MaxLKAttributesSize: 5})
+		attrs := map[string]string{"lk.key": "abcdefg"}
+
+		_, err := svc.UpdateParticipant(adminCtx(), &livekit.UpdateParticipantRequest{
+			Room:       "testroom",
+			Identity:   "123",
+			Attributes: attrs,
+		})
+		requireInvalidArg(t, err)
+
+		_, err = svc.CreateRoom(createCtx(), &livekit.CreateRoomRequest{
+			Name:   "testroom",
+			Agents: []*livekit.RoomAgentDispatch{{AgentName: "bot", Attributes: attrs}},
+		})
+		requireInvalidArg(t, err)
+	})
+
 	notExceedsLimitsSvc := map[string]*TestRoomService{
 		"metadata exceeds limits": newTestRoomService(config.LimitConfig{
 			MaxMetadataSize:   5,
@@ -167,6 +189,107 @@ func TestAgentDispatchMetadataLimits(t *testing.T) {
 		})
 		require.ErrorIs(t, err, service.ErrAttributeExceedsLimits)
 	})
+
+	t.Run("lk attributes exceeds limits", func(t *testing.T) {
+		svc := newTestAgentDispatchService(config.LimitConfig{MaxAttributesSize: 100, MaxLKAttributesSize: 5})
+		_, err := svc.CreateDispatch(ctx, &livekit.CreateAgentDispatchRequest{
+			Room:       "testroom",
+			Attributes: map[string]string{"lk.key": "abcdefg"},
+		})
+		require.ErrorIs(t, err, service.ErrAttributeExceedsLimits)
+	})
+
+	t.Run("room name exceeds limits", func(t *testing.T) {
+		allocator := &servicefakes.FakeRoomAllocator{}
+		allocator.AutoCreateEnabledReturns(true)
+		router := &routingfakes.FakeRouter{}
+		svc := service.NewAgentDispatchService(
+			config.LimitConfig{MaxRoomNameLength: 5},
+			&rpcfakes.FakeTypedAgentDispatchInternalClient{},
+			rpc.NewTopicFormatter(),
+			allocator,
+			router,
+		)
+		ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{
+			Video: &auth.VideoGrant{Room: "abcdefg", RoomAdmin: true},
+		}, "")
+		_, err := svc.CreateDispatch(ctx, &livekit.CreateAgentDispatchRequest{
+			Room: "abcdefg",
+		})
+		require.ErrorIs(t, err, service.ErrRoomNameExceedsLimits)
+		require.Zero(t, router.CreateRoomCallCount())
+	})
+}
+
+var invalidThreadIDs = []string{"AT_not-valid", "AT_0123456789ab", "AT_api"}
+
+func requireTwirpInvalidArgument(t *testing.T, err error) {
+	t.Helper()
+	terr, ok := err.(twirp.Error)
+	require.True(t, ok, "expected twirp error, got %T (%v)", err, err)
+	require.Equal(t, twirp.InvalidArgument, terr.Code())
+	require.Equal(t, "thread_id", terr.Meta("argument"))
+}
+
+func TestAgentDispatchThreadID(t *testing.T) {
+	ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{
+		Video: &auth.VideoGrant{Room: "testroom", RoomAdmin: true},
+	}, "")
+	allocator := &servicefakes.FakeRoomAllocator{}
+	allocator.AutoCreateEnabledReturns(false)
+	dispatchClient := &rpcfakes.FakeTypedAgentDispatchInternalClient{}
+	svc := service.NewAgentDispatchService(
+		config.LimitConfig{},
+		dispatchClient,
+		rpc.NewTopicFormatter(),
+		allocator,
+		&routingfakes.FakeRouter{},
+	)
+
+	for _, threadID := range invalidThreadIDs {
+		_, err := svc.CreateDispatch(ctx, &livekit.CreateAgentDispatchRequest{
+			Room:      "testroom",
+			AgentName: "front-desk",
+			ThreadId:  threadID,
+		})
+		requireTwirpInvalidArgument(t, err)
+	}
+	require.Zero(t, dispatchClient.CreateDispatchCallCount())
+
+	threadID := guid.New(guid.AgentThreadPrefix)
+	_, err := svc.CreateDispatch(ctx, &livekit.CreateAgentDispatchRequest{
+		Room:      "testroom",
+		AgentName: "front-desk",
+		ThreadId:  threadID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, dispatchClient.CreateDispatchCallCount())
+	_, _, dispatch, _ := dispatchClient.CreateDispatchArgsForCall(0)
+	require.Equal(t, threadID, dispatch.ThreadId)
+}
+
+func TestCreateRoomAgentThreadID(t *testing.T) {
+	ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{Video: &auth.VideoGrant{RoomCreate: true}}, "")
+	svc := newTestRoomService(config.LimitConfig{})
+
+	for _, threadID := range invalidThreadIDs {
+		_, err := svc.CreateRoom(ctx, &livekit.CreateRoomRequest{
+			Name:   "testroom",
+			Agents: []*livekit.RoomAgentDispatch{{AgentName: "front-desk", ThreadId: threadID}},
+		})
+		requireTwirpInvalidArgument(t, err)
+	}
+	require.Zero(t, svc.router.CreateRoomCallCount())
+
+	threadID := guid.New(guid.AgentThreadPrefix)
+	_, err := svc.CreateRoom(ctx, &livekit.CreateRoomRequest{
+		Name:   "testroom",
+		Agents: []*livekit.RoomAgentDispatch{{AgentName: "front-desk", ThreadId: threadID}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, svc.router.CreateRoomCallCount())
+	_, req := svc.router.CreateRoomArgsForCall(0)
+	require.Equal(t, threadID, req.Agents[0].ThreadId)
 }
 
 func newTestAgentDispatchService(limitConf config.LimitConfig) *service.AgentDispatchService {
@@ -179,6 +302,7 @@ func newTestRoomService(limitConf config.LimitConfig) *TestRoomService {
 	router := &routingfakes.FakeRouter{}
 	allocator := &servicefakes.FakeRoomAllocator{}
 	store := &servicefakes.FakeServiceStore{}
+	participantClient := &rpcfakes.FakeTypedParticipantClient{}
 	svc, err := service.NewRoomService(
 		limitConf,
 		config.APIConfig{ExecutionTimeout: 2},
@@ -188,23 +312,56 @@ func newTestRoomService(limitConf config.LimitConfig) *TestRoomService {
 		nil,
 		rpc.NewTopicFormatter(),
 		&rpcfakes.FakeTypedRoomClient{},
-		&rpcfakes.FakeTypedParticipantClient{},
+		participantClient,
 		service.NilRevokeTokenClient{},
 	)
 	if err != nil {
 		panic(err)
 	}
 	return &TestRoomService{
-		RoomService: *svc,
-		router:      router,
-		allocator:   allocator,
-		store:       store,
+		RoomService:       *svc,
+		router:            router,
+		allocator:         allocator,
+		store:             store,
+		participantClient: participantClient,
 	}
+}
+
+func TestPerformRpcRequestTimeout(t *testing.T) {
+	grant := &auth.ClaimGrants{
+		Video: &auth.VideoGrant{RoomAdmin: true, Room: "testroom"},
+	}
+	ctx := service.WithGrants(context.Background(), grant, "")
+
+	requestTimeout := func(t *testing.T, svc *TestRoomService, call int) time.Duration {
+		t.Helper()
+		_, _, _, opts := svc.participantClient.PerformRpcArgsForCall(call)
+		var ro psrpc.RequestOpts
+		for _, o := range opts {
+			o(&ro)
+		}
+		return ro.Timeout
+	}
+
+	t.Run("default response timeout", func(t *testing.T) {
+		svc := newTestRoomService(config.LimitConfig{})
+		_, err := svc.PerformRpc(ctx, &livekit.PerformRpcRequest{Room: "testroom", DestinationIdentity: "p", Method: "m"})
+		require.NoError(t, err)
+		require.Equal(t, utils.DataChannelRpcDefaultResponseTimeout+utils.DataChannelRpcMaxRoundTripLatency, requestTimeout(t, svc, 0))
+	})
+
+	t.Run("requested response timeout", func(t *testing.T) {
+		svc := newTestRoomService(config.LimitConfig{})
+		_, err := svc.PerformRpc(ctx, &livekit.PerformRpcRequest{Room: "testroom", DestinationIdentity: "p", Method: "m", ResponseTimeoutMs: 500})
+		require.NoError(t, err)
+		require.Equal(t, 500*time.Millisecond+utils.DataChannelRpcMaxRoundTripLatency, requestTimeout(t, svc, 0))
+	})
 }
 
 type TestRoomService struct {
 	service.RoomService
-	router    *routingfakes.FakeRouter
-	allocator *servicefakes.FakeRoomAllocator
-	store     *servicefakes.FakeServiceStore
+	router            *routingfakes.FakeRouter
+	allocator         *servicefakes.FakeRoomAllocator
+	store             *servicefakes.FakeServiceStore
+	participantClient *rpcfakes.FakeTypedParticipantClient
 }

@@ -23,6 +23,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
+	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 )
 
 func NewMockParticipant(
@@ -54,6 +55,11 @@ func NewMockParticipant(
 		State:       livekit.ParticipantInfo_JOINED,
 		IsPublisher: publisher,
 	}, utils.TimedVersion(0))
+	p.GetConnectionQualityReturns(&livekit.ConnectionQualityInfo{
+		ParticipantSid: sid,
+		Quality:        livekit.ConnectionQuality_EXCELLENT,
+		Score:          connectionquality.MaxMOS,
+	})
 
 	p.SetMetadataCalls(func(m string) {
 		participantListener.OnParticipantUpdate(p)

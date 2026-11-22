@@ -29,7 +29,7 @@ import (
 
 	"github.com/jxskiss/base62"
 	"github.com/pion/sdp/v3"
-	"github.com/pion/stun/v3"
+	"github.com/pion/stun/v4"
 	"github.com/pion/turn/v5"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
@@ -599,6 +599,45 @@ func TestSingleNodeUpdateParticipant(t *testing.T) {
 	})
 }
 
+// each patch fits the attribute limits, but the merged attributes do not
+func TestSingleNodeUpdateParticipantMergedAttributesLimit(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+	_, finish := setupSingleNodeTestWithConfig("TestSingleNodeUpdateParticipantMergedAttributesLimit", func(conf *config.Config) {
+		conf.Limit.MaxAttributesSize = 5
+		// the join sets lk.rtc.joinRequestTime to a 13 digit time, leave room for one more 7 byte attribute
+		conf.Limit.MaxLKAttributesSize = uint32(len(livekit.AttrRTCJoinRequestTime) + 13 + 10)
+	})
+	defer finish()
+
+	c := createRTCClient("c", defaultServerPort, testRTCServicePathv1, nil)
+	waitUntilConnected(t, c)
+	defer stopClients(c)
+
+	adminCtx := contextWithToken(adminRoomToken(testRoom))
+	update := func(attributes map[string]string) error {
+		_, err := roomClient.UpdateParticipant(adminCtx, &livekit.UpdateParticipantRequest{
+			Room:       testRoom,
+			Identity:   "c",
+			Attributes: attributes,
+		})
+		return err
+	}
+	requireInvalidArgument := func(err error) {
+		var twErr twirp.Error
+		require.True(t, errors.As(err, &twErr), "error: %v", err)
+		require.Equal(t, twirp.InvalidArgument, twErr.Code())
+	}
+
+	require.NoError(t, update(map[string]string{"a": "vv"}))
+	requireInvalidArgument(update(map[string]string{"b": "vv"}))
+
+	require.NoError(t, update(map[string]string{"lk.a": "vvv"}))
+	requireInvalidArgument(update(map[string]string{"lk.b": "vvv"}))
+}
+
 // Ensure that CORS headers are returned
 func TestSingleNodeCORS(t *testing.T) {
 	if testing.Short() {
@@ -864,6 +903,7 @@ func TestSingleNodeAttributes(t *testing.T) {
 				if pubRemote == nil {
 					return "could not find remote publisher"
 				}
+				// the server-set join request time is not sent to clients
 				attrs := pubRemote.Attributes
 				if !reflect.DeepEqual(attrs, map[string]string{
 					"a": "0",
@@ -1518,12 +1558,10 @@ func TestTurnAuthFailure(t *testing.T) {
 			_, allocErr := client.Allocate()
 			require.Error(t, allocErr)
 
-			// pion's TURN server replies with 400 Bad Request for any
-			// authenticated-allocate failure (unknown user or integrity check
-			// mismatch); the initial unauthenticated probe is what returns 401.
+			// pion's TURN server replies with 401 Unauthorized for any authenticated-allocate failure (unknown user or integrity mismatch)
 			var turnErr *stun.TurnError
 			require.ErrorAs(t, allocErr, &turnErr)
-			require.Equal(t, stun.CodeBadRequest, turnErr.ErrorCodeAttr.Code)
+			require.Equal(t, stun.CodeUnauthorized, turnErr.ErrorCodeAttr.Code)
 		})
 	}
 }

@@ -19,9 +19,9 @@ import (
 )
 
 type FrameEntity struct {
-	startSeq  *uint64
-	endSeq    *uint64
-	integrity bool
+	startSeq, endSeq       uint64
+	hasStartSeq, hasEndSeq bool
+	integrity              bool
 
 	pktHistory *PacketHistory
 }
@@ -32,15 +32,15 @@ func (fe *FrameEntity) AddPacket(extSeq uint64, ddVal *dd.DependencyDescriptor) 
 		return
 	}
 
-	if fe.startSeq == nil && ddVal.FirstPacketInFrame {
-		fe.startSeq = &extSeq
+	if !fe.hasStartSeq && ddVal.FirstPacketInFrame {
+		fe.startSeq, fe.hasStartSeq = extSeq, true
 	}
-	if fe.endSeq == nil && ddVal.LastPacketInFrame {
-		fe.endSeq = &extSeq
+	if !fe.hasEndSeq && ddVal.LastPacketInFrame {
+		fe.endSeq, fe.hasEndSeq = extSeq, true
 	}
 
-	if fe.startSeq != nil && fe.endSeq != nil {
-		if fe.pktHistory.PacketsConsecutive(*fe.startSeq, *fe.endSeq) {
+	if fe.hasStartSeq && fe.hasEndSeq {
+		if fe.pktHistory.PacketsConsecutive(fe.startSeq, fe.endSeq) {
 			fe.integrity = true
 		}
 	}
@@ -48,7 +48,7 @@ func (fe *FrameEntity) AddPacket(extSeq uint64, ddVal *dd.DependencyDescriptor) 
 
 func (fe *FrameEntity) Reset() {
 	fe.integrity = false
-	fe.startSeq, fe.endSeq = nil, nil
+	fe.hasStartSeq, fe.hasEndSeq = false, false
 }
 
 func (fe *FrameEntity) Integrity() bool {

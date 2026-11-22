@@ -901,3 +901,109 @@ func TestConnectionQuality(t *testing.T) {
 		}
 	})
 }
+
+func TestPacketRateMode(t *testing.T) {
+	type phase struct {
+		minutes float64
+		pps     float64
+	}
+	for name, tc := range map[string]struct {
+		weight    float64
+		histogram map[int]int // bin -> count
+		phases    []phase
+		last      *windowStat
+		mode      int // pps
+		quality   livekit.ConnectionQuality
+	}{
+		// 120 windows on the 250 pps layer, 600 windows on the 40 pps layer
+		"most common bin": {
+			weight:    10.0,
+			histogram: map[int]int{125: 120, 20: 600},
+			last:      &windowStat{packets: 200, packetsLost: 8, duration: 5 * time.Second},
+			mode:      40,
+			quality:   livekit.ConnectionQuality_GOOD,
+		},
+		// 4% loss on the layer now watched is not EXCELLENT
+		"follows a layer switch": {
+			weight:  10.0,
+			phases:  []phase{{10, 250}, {5, 40}},
+			last:    &windowStat{packets: 200, packetsLost: 8, duration: 5 * time.Second},
+			mode:    40,
+			quality: livekit.ConnectionQuality_GOOD,
+		},
+		// idle and DTX rates do not become the reference, so a lost DTX packet counts less
+		"keeps the speech rate through a long silence": {
+			weight:  8.0,
+			phases:  []phase{{5, 50}, {10, 0}, {30, 2.5}},
+			last:    &windowStat{packets: 12, packetsLost: 1, duration: 5 * time.Second},
+			mode:    50,
+			quality: livekit.ConnectionQuality_EXCELLENT,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			q := newQualityScorer(qualityScorerParams{Logger: logger.GetLogger()})
+			// a timeline in the past, the mode must follow update times, not the wall clock
+			at := time.Now().Add(-time.Hour)
+			q.StartAt(tc.weight, at)
+			for bin, count := range tc.histogram {
+				q.ppsHistogram[bin] = count
+				q.numPPSReadings += count
+			}
+			for _, p := range tc.phases {
+				for range int(p.minutes * 12) {
+					at = at.Add(5 * time.Second)
+					q.UpdateAt(&windowStat{packets: uint32(p.pps * 5), duration: 5 * time.Second}, at)
+				}
+			}
+			at = at.Add(tc.last.duration)
+			q.UpdateAt(tc.last, at)
+
+			require.Equal(t, tc.mode, int(float64(q.ppsMode)*cPPSQuantization))
+			_, quality := q.GetScoreAndQuality()
+			require.Equal(t, tc.quality, quality)
+		})
+	}
+}
+
+func TestUpstreamLossAfterRTXRepair(t *testing.T) {
+	// 1000 video packets, 100 lost, RTX repairs 70 in the same window, 30 (3%) never arrive
+	r := rtpstats.NewRTPStatsReceiver(rtpstats.RTPStatsParams{})
+	r.SetClockRate(90000)
+	snapshotID := r.NewSnapshotId()
+
+	packetTime := time.Now().UnixNano()
+	send := func(sn uint16) {
+		packetTime += int64(5 * time.Millisecond)
+		r.Update(packetTime, sn, uint32(sn)*450, false, 12, 1000, 0)
+	}
+	for sn := uint16(0); sn < 1000; sn++ {
+		if sn == 300 {
+			for repaired := uint16(100); repaired < 170; repaired++ {
+				send(repaired)
+			}
+		}
+		if sn < 100 || sn >= 200 {
+			send(sn)
+		}
+	}
+
+	delta := r.DeltaInfo(snapshotID)
+	require.Equal(t, uint32(1000), delta.Packets)
+	require.Equal(t, uint32(30), delta.PacketsLost)
+	require.Equal(t, uint32(70), delta.PacketsOutOfOrder)
+
+	trp := newTestReceiverProvider()
+	trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{1: {RTPStats: delta}})
+	cs := NewConnectionStats(ConnectionStatsParams{
+		ReceiverProvider: trp,
+		Logger:           logger.GetLogger(),
+	})
+	now := time.Now()
+	cs.StartAt(mime.MimeTypeVP8, false, now)
+	cs.updateScoreAt(now.Add(5 * time.Second))
+
+	// packet score 100 - 3% * 10 = 70, smoothed 0.8 * 70 + 0.2 * 100 = 76
+	score, quality := cs.scorer.GetScoreAndQuality()
+	require.InDelta(t, 76.0, score, 0.01)
+	require.Equal(t, livekit.ConnectionQuality_GOOD, quality)
+}

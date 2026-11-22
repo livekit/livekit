@@ -75,19 +75,34 @@ func (f *ddTestFeeder) deltaFrame(frameNumber uint16) (*ExtDependencyDescriptor,
 	return f.feed(frameNumber, f.structure.Templates[1], nil)
 }
 
+// deltaFrameWithMask sends a delta frame that changes the active decode targets
+func (f *ddTestFeeder) deltaFrameWithMask(frameNumber uint16, activeDecodeTargets uint32) (*ExtDependencyDescriptor, error) {
+	return f.feedWithMask(frameNumber, f.structure.Templates[1], nil, &activeDecodeTargets)
+}
+
 func (f *ddTestFeeder) feed(
 	frameNumber uint16,
 	template *dd.FrameDependencyTemplate,
 	attachedStructure *dd.FrameDependencyStructure,
 ) (*ExtDependencyDescriptor, error) {
+	return f.feedWithMask(frameNumber, template, attachedStructure, nil)
+}
+
+func (f *ddTestFeeder) feedWithMask(
+	frameNumber uint16,
+	template *dd.FrameDependencyTemplate,
+	attachedStructure *dd.FrameDependencyStructure,
+	activeDecodeTargets *uint32,
+) (*ExtDependencyDescriptor, error) {
 	f.t.Helper()
 
 	ddVal := &dd.DependencyDescriptor{
-		FirstPacketInFrame: true,
-		LastPacketInFrame:  true,
-		FrameNumber:        frameNumber,
-		FrameDependencies:  template,
-		AttachedStructure:  attachedStructure,
+		FirstPacketInFrame:         true,
+		LastPacketInFrame:          true,
+		FrameNumber:                frameNumber,
+		FrameDependencies:          template,
+		AttachedStructure:          attachedStructure,
+		ActiveDecodeTargetsBitmask: activeDecodeTargets,
 	}
 	buf, err := (&dd.DependencyDescriptorExtension{Descriptor: ddVal, Structure: f.structure}).Marshal()
 	require.NoError(f.t, err)
@@ -185,4 +200,91 @@ func TestDependencyDescriptorParserExtKeyFrameNum(t *testing.T) {
 	extDD, err = f.deltaFrame(5)
 	require.NoError(t, err)
 	require.EqualValues(t, 4, extDD.ExtKeyFrameNum)
+}
+
+// every packet carries the stream's current active decode targets, also after the mask
+// changed on a packet the forwarder dropped
+func TestDependencyDescriptorParserActiveDecodeTargetsMask(t *testing.T) {
+	f := newDDTestFeeder(t)
+	structure := newL1T1Structure(0)
+
+	extDD, err := f.keyFrame(0, structure)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, extDD.ActiveDecodeTargetsMask)
+
+	extDD, err = f.deltaFrameWithMask(1, 0)
+	require.NoError(t, err)
+	require.EqualValues(t, 0, extDD.ActiveDecodeTargetsMask)
+
+	extDD, err = f.deltaFrame(2)
+	require.NoError(t, err)
+	require.EqualValues(t, 0, extDD.ActiveDecodeTargetsMask)
+
+	extDD, err = f.keyFrame(3, structure)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, extDD.ActiveDecodeTargetsMask)
+}
+
+// a first key frame at RTP sequence number 0 still makes its structure's decode targets
+// active
+func TestDependencyDescriptorParserActiveDecodeTargetsMaskAtSequenceZero(t *testing.T) {
+	f := newDDTestFeeder(t)
+	f.seq = 0xffff // the first packet goes out with sequence number 0
+	structure := newL1T1Structure(0)
+
+	extDD, err := f.keyFrame(0, structure)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, extDD.ActiveDecodeTargetsMask)
+
+	extDD, err = f.deltaFrame(1)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, extDD.ActiveDecodeTargetsMask)
+}
+
+// a pooled ExtDependencyDescriptor carries the storage for its descriptor, so parsing a delta
+// frame must not allocate and a reused descriptor must not show the previous packet's values
+func TestDependencyDescriptorParserNoAlloc(t *testing.T) {
+	f := newDDTestFeeder(t)
+	structure := newL1T1Structure(0)
+	structure.Resolutions = []dd.RenderResolution{{Width: 640, Height: 360}}
+	extDD, err := f.keyFrame(0, structure)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(extDD.Descriptor.FrameDependencies.FrameDiffs))
+	require.Equal(t, dd.RenderResolution{Width: 640, Height: 360}, *extDD.Descriptor.Resolution)
+	ReleaseExtDependencyDescriptor(extDD)
+
+	extDD, err = f.deltaFrame(1)
+	require.NoError(t, err)
+	require.Equal(t, []int{1}, extDD.Descriptor.FrameDependencies.FrameDiffs)
+	require.Equal(t, []int{1}, extDD.Descriptor.FrameDependencies.ChainDiffs)
+	require.Nil(t, extDD.Descriptor.AttachedStructure)
+	ReleaseExtDependencyDescriptor(extDD)
+
+	// the parsed template is a copy, the structure's template is untouched
+	require.Equal(t, []int{1}, structure.Templates[1].FrameDiffs)
+
+	// marshal the packets first, only Parse runs under the allocation count
+	bufs := make([][]byte, 128)
+	for i := range bufs {
+		ddVal := &dd.DependencyDescriptor{
+			FirstPacketInFrame: true,
+			LastPacketInFrame:  true,
+			FrameNumber:        uint16(i + 2),
+			FrameDependencies:  structure.Templates[1],
+		}
+		bufs[i], err = (&dd.DependencyDescriptorExtension{Descriptor: ddVal, Structure: structure}).Marshal()
+		require.NoError(t, err)
+	}
+	pkt := &rtp.Packet{Header: rtp.Header{SequenceNumber: f.seq}}
+	require.NoError(t, pkt.SetExtension(ddTestExtID, bufs[0]))
+	i := 0
+	allocs := testing.AllocsPerRun(100, func() {
+		pkt.SequenceNumber++
+		require.NoError(t, pkt.SetExtension(ddTestExtID, bufs[i]))
+		i++
+		extDD, _, err := f.parser.Parse(pkt)
+		require.NoError(t, err)
+		ReleaseExtDependencyDescriptor(extDD)
+	})
+	require.Zero(t, allocs)
 }

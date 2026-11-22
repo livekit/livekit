@@ -16,6 +16,7 @@ package dependencydescriptor
 
 import (
 	"errors"
+	"slices"
 )
 
 var (
@@ -356,8 +357,14 @@ func (r *DependencyDescriptorReader) readFrameDependencyDefinition() error {
 		return ErrDDReaderInvalidTemplateIndex
 	}
 
-	// Copy all the fields from the matching template
-	r.descriptor.FrameDependencies = r.structure.Templates[templateIndex].Clone()
+	// Copy all the fields from the matching template into caller storage,
+	// never into one of the structure's templates, custom fields would change the template
+	dst := r.descriptor.FrameDependencies
+	if dst == nil || slices.Contains(r.structure.Templates, dst) {
+		dst = &FrameDependencyTemplate{}
+		r.descriptor.FrameDependencies = dst
+	}
+	r.structure.Templates[templateIndex].CopyInto(dst)
 
 	if r.customDtisFlag {
 		err := r.readFrameDtis()
@@ -389,8 +396,10 @@ func (r *DependencyDescriptorReader) readFrameDependencyDefinition() error {
 			r.buffer.Invalidate()
 			return ErrDDReaderInvalidSpatialLayer
 		}
-		res := r.structure.Resolutions[r.descriptor.FrameDependencies.SpatialId]
-		r.descriptor.Resolution = &res
+		if r.descriptor.Resolution == nil {
+			r.descriptor.Resolution = &RenderResolution{}
+		}
+		*r.descriptor.Resolution = r.structure.Resolutions[r.descriptor.FrameDependencies.SpatialId]
 	}
 
 	return nil
