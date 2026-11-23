@@ -51,11 +51,14 @@ func (n *delayedObserverRemoval) RemoveObserver(key string) {
 
 func waitForObserverStep(t *testing.T, ch <-chan struct{}) {
 	t.Helper()
-	select {
-	case <-ch:
-	case <-time.After(2 * time.Second):
-		t.Fatal("observer lifecycle step did not finish")
-	}
+	require.Eventually(t, func() bool {
+		select {
+		case <-ch:
+			return true
+		default:
+			return false
+		}
+	}, 2*time.Second, time.Millisecond, "observer lifecycle step did not finish")
 }
 
 func TestDataTrackResubscribeNotifications(t *testing.T) {
@@ -84,9 +87,13 @@ func testResubscribeNotifications(t *testing.T, data bool) {
 				sm := newTestSubscriptionManager()
 				// Drive the same worker reconciliation steps explicitly so periodic retries
 				// cannot hide a lost notification.
+				sm.lock.Lock()
 				close(sm.closeCh)
+				sm.lock.Unlock()
 				<-sm.doneCh
+				sm.lock.Lock()
 				sm.closeCh = make(chan struct{})
+				sm.lock.Unlock()
 				sm.params.Participant = sub
 				t.Cleanup(func() { sm.Close(false) })
 				sub.SubscribeToTrackCalls(sm.SubscribeToTrack)
@@ -105,8 +112,8 @@ func testResubscribeNotifications(t *testing.T, data bool) {
 				release := sync.OnceFunc(func() { close(gate.release) })
 				defer release()
 
-				var getSub func() *trackSubscription
-				var isSubscribed func() bool
+				var downTrackDetached func() bool
+				var getSub func() (*trackSubscription, bool)
 				var reconcile, subscribe, unsubscribe, publish, unpublish, closeDownTrack func()
 				if data {
 					track := NewDataTrack(DataTrackParams{Logger: logger.GetLogger(), ParticipantID: pub.ID, ParticipantIdentity: pub.Identity()}, &livekit.DataTrackInfo{Sid: string(trackID), PubHandle: 1})
@@ -121,14 +128,25 @@ func testResubscribeNotifications(t *testing.T, data bool) {
 						}
 						return res
 					}
-					getSub = func() *trackSubscription {
+					getSub = func() (*trackSubscription, bool) {
+						sm.lock.RLock()
+						defer sm.lock.RUnlock()
 						if s := sm.dataTrackSubscriptions[trackID]; s != nil {
-							return &s.trackSubscription
+							return &s.trackSubscription, s.getDataDownTrack() != nil
 						}
-						return nil
+						return nil, false
 					}
-					isSubscribed = func() bool { return sm.dataTrackSubscriptions[trackID].getDataDownTrack() != nil }
-					closeDownTrack = func() { track.RevokeDisallowedSubscribers(nil) }
+					closeDownTrack = func() {
+						sm.lock.RLock()
+						dt := sm.dataTrackSubscriptions[trackID].getDataDownTrack().(*DataDownTrack)
+						sm.lock.RUnlock()
+						downTrackDetached = func() bool {
+							dt.lock.Lock()
+							defer dt.lock.Unlock()
+							return dt.onClose == nil
+						}
+						track.RevokeDisallowedSubscribers(nil)
+					}
 					reconcile = sm.reconcileDataTrackSubscriptions
 					subscribe = func() { sub.SubscribeToDataTrack(trackID) }
 					unsubscribe = func() { sub.UnsubscribeFromDataTrack(trackID) }
@@ -157,14 +175,22 @@ func testResubscribeNotifications(t *testing.T, data bool) {
 						}
 						return res
 					}
-					getSub = func() *trackSubscription {
+					getSub = func() (*trackSubscription, bool) {
+						sm.lock.RLock()
+						defer sm.lock.RUnlock()
 						if s := sm.subscriptions[trackID]; s != nil {
-							return &s.trackSubscription
+							return &s.trackSubscription, s.getSubscribedTrack() != nil
 						}
-						return nil
+						return nil, false
 					}
-					isSubscribed = func() bool { return sm.subscriptions[trackID].getSubscribedTrack() != nil }
-					closeDownTrack = func() { track.RemoveSubscriber(sub.ID(), false) }
+					closeDownTrack = func() {
+						oldTrack := st
+						downTrackDetached = func() bool {
+							n := oldTrack.OnCloseCallCount()
+							return n > 0 && oldTrack.OnCloseArgsForCall(n-1) == nil
+						}
+						track.RemoveSubscriber(sub.ID(), false)
+					}
 					reconcile = sm.reconcileSubscriptions
 					subscribe = func() { sub.SubscribeToTrack(trackID, false) }
 					unsubscribe = func() { sub.UnsubscribeFromTrack(trackID) }
@@ -174,9 +200,9 @@ func testResubscribeNotifications(t *testing.T, data bool) {
 
 				publish() // the room auto-subscribes the joined participant
 				reconcile()
-				old := getSub()
+				old, subscribed := getSub()
 				require.NotNil(t, old)
-				require.True(t, isSubscribed())
+				require.True(t, subscribed)
 				if history == "fast toggle" {
 					release()
 					unsubscribe()
@@ -192,6 +218,13 @@ func testResubscribeNotifications(t *testing.T, data bool) {
 						waitForObserverStep(t, gate.done)
 					}
 				} else {
+					retiredOnUnsubscribe := false
+					if history == "unsubscribe then subscribe" {
+						unsubscribe()
+						old.lock.RLock()
+						retiredOnUnsubscribe = old.changedNotifier == nil || old.removedNotifier == nil
+						old.lock.RUnlock()
+					}
 					finished := make(chan struct{})
 					// Keep the first retirement pending while reconciliation tries to
 					// establish the replacement. Synchronous retirement holds it off.
@@ -199,7 +232,6 @@ func testResubscribeNotifications(t *testing.T, data bool) {
 						if history == "close while desired" {
 							closeDownTrack()
 						} else {
-							unsubscribe()
 							reconcile()
 						}
 						close(finished)
@@ -217,18 +249,19 @@ func testResubscribeNotifications(t *testing.T, data bool) {
 						reconcile()
 						close(replaced)
 					}()
-					select {
-					case <-replaced:
-					case <-time.After(100 * time.Millisecond):
-						// Retirement may have to complete before teardown can return.
+					// If teardown already exposed an empty slot (or unsubscribe retired
+					// the observers), let the replacement finish before releasing cleanup.
+					// Otherwise retirement must finish first, so do not wait on a blocked replacement.
+					if retiredOnUnsubscribe || (downTrackDetached != nil && downTrackDetached()) {
+						waitForObserverStep(t, replaced)
 					}
 					release()
 					waitForObserverStep(t, gate.done)
 					waitForObserverStep(t, replaced)
 				}
-				replacement := getSub()
+				replacement, subscribed := getSub()
 				require.NotNil(t, replacement)
-				require.True(t, isSubscribed())
+				require.True(t, subscribed)
 
 				// Drain requests from setup; only the next notification may queue work.
 				for len(sm.reconcileCh) > 0 {
