@@ -94,7 +94,7 @@ func TestDataTrackCloseBeforePublisherMark(t *testing.T) {
 	var once sync.Once
 	sub.params.ParticipantHelper.(*typesfakes.FakeLocalParticipantHelper).ResolveDataTrackCalls(func(p types.LocalParticipant, id livekit.TrackID) types.DataResolverResult {
 		res := room.ResolveDataTrackForSubscriber(p, id)
-		if res.DataTrack != nil && res.HasPermission && res.DataTrack.IsSubscriber(sub.ID()) {
+		if res.DataTrack != nil && res.HasPermission && res.DataTrack.IsSubscriber(sub.ID()) && !sub.IsSubscribedTo(pub.ID()) {
 			// Keep the permitted snapshot, but close the real downtrack before the
 			// subscription manager consumes it and marks the publisher.
 			once.Do(func() {
@@ -106,10 +106,8 @@ func TestDataTrackCloseBeforePublisherMark(t *testing.T) {
 	pub.HandlePublishDataTrackRequest(&livekit.PublishDataTrackRequest{PubHandle: 1, Name: "test"})
 	track := pub.GetPublishedDataTrack(1)
 	require.NotNil(t, track)
-	// A denied permission update comes from the next subscription attempt,
-	// after the attempt that closed the downtrack has finished.
 	sink := sub.params.Sink.(*routingfakes.FakeMessageSink)
-	require.Eventually(t, func() bool {
+	deniedUpdateSent := func() bool {
 		for i := 0; i < sink.WriteMessageCallCount(); i++ {
 			update := sink.WriteMessageArgsForCall(i).(*livekit.SignalResponse).GetSubscriptionPermissionUpdate()
 			if update != nil && update.TrackSid == string(track.ID()) && !update.Allowed {
@@ -117,11 +115,14 @@ func TestDataTrackCloseBeforePublisherMark(t *testing.T) {
 			}
 		}
 		return false
-	}, time.Second, time.Millisecond, "closed subscription must retry and report denied permission")
-	require.False(t, track.IsSubscriber(sub.ID()))
-	require.Empty(t, sub.GetSubscribedDataTracks())
-	assert.False(t, sub.IsSubscribedTo(pub.ID()), "closed subscription must not mark the publisher")
-	assert.NotContains(t, sub.GetSubscribedParticipants(), pub.ID(), "closed subscription must not list the publisher")
+	}
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		assert.True(c, deniedUpdateSent(), "closed subscription must retry and report denied permission")
+		assert.False(c, track.IsSubscriber(sub.ID()))
+		assert.Empty(c, sub.GetSubscribedDataTracks())
+		assert.False(c, sub.IsSubscribedTo(pub.ID()), "closed subscription must not mark the publisher")
+		assert.NotContains(c, sub.GetSubscribedParticipants(), pub.ID(), "closed subscription must not list the publisher")
+	}, time.Second, time.Millisecond)
 	require.NoError(t, pub.HandleUpdateSubscriptionPermission(&livekit.SubscriptionPermission{AllParticipants: true}))
 	require.Eventually(t, func() bool {
 		return track.IsSubscriber(sub.ID()) && len(sub.GetSubscribedDataTracks()) == 1 && sub.IsSubscribedTo(pub.ID())

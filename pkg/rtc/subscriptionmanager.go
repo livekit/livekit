@@ -1186,10 +1186,7 @@ func (m *SubscriptionManager) subscribeDataTrack(sub *dataTrackSubscription) err
 		sub.logger.Debugw("already subscribed to data track")
 	}
 	if err == nil && dataDownTrack != nil { // subTrack could be nil if already subscribed
-		// Install the close callback after both the downtrack and publisher mark.
-		// OnClose also delivers an earlier close synchronously, so it must run
-		// after installation even when a permission recheck returns an error.
-		defer dataDownTrack.OnClose(func() {
+		dataDownTrack.OnClose(func() {
 			m.handleDataDownTrackClose(sub)
 		})
 		sub.setDataDownTrack(dataDownTrack)
