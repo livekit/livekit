@@ -11,7 +11,7 @@ require (
 	github.com/florianl/go-tc v0.4.8
 	github.com/frostbyte73/core v0.1.1
 	github.com/gammazero/deque v1.2.3
-	github.com/gammazero/workerpool v1.2.1
+	github.com/gammazero/workerpool v1.3.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/google/wire v0.7.0
