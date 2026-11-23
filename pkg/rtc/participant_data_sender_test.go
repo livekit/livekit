@@ -92,10 +92,13 @@ func TestDataPacketActualSender(t *testing.T) {
 			expectedSender:   "sender",
 		},
 		{
-			name:             "agent chat message cannot be sent on behalf of another participant",
+			name:             "agent chat message on behalf of another participant",
 			agent:            true,
 			packet:           forge(&livekit.DataPacket{ParticipantIdentity: "user", Value: chatMessage()}),
-			expectedIdentity: "sender",
+			expectedIdentity: "user",
+			expectedOnBehalf: true,
+			expectedSender:   "sender",
+			expectedGenerate: true,
 		},
 		{
 			name:             "hidden agent text stream header on behalf of another participant",
@@ -198,7 +201,7 @@ func TestDataPacketActualSender(t *testing.T) {
 				require.Equal(t, tc.expectedGenerate, textHeader.Generated)
 			}
 			if chatMessage := dp.GetChatMessage(); chatMessage != nil {
-				require.False(t, chatMessage.Generated)
+				require.Equal(t, tc.expectedGenerate, chatMessage.Generated)
 			}
 		})
 	}
