@@ -2626,10 +2626,6 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 		if payload.ChatMessage == nil {
 			return
 		}
-		if p.IsAgent() && dp.ParticipantIdentity != "" && string(p.params.Identity) != dp.ParticipantIdentity {
-			overrideSenderIdentity = false
-			payload.ChatMessage.Generated = true
-		}
 	case *livekit.DataPacket_Metrics:
 		if payload.Metrics == nil {
 			return
@@ -2719,8 +2715,9 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 	}
 
 	// SFU typically asserts the sender's identity. However, agents are able to
-	// publish data on behalf of the participant in case of transcriptions/text streams
-	// in those cases we'd leave the existing identity on the data packet alone.
+	// publish text streams (e.g. transcriptions) on behalf of another participant,
+	// either as a text stream header or as an encrypted packet whose payload can't be
+	// inspected. In those cases we'd leave the existing identity on the data packet alone.
 	//
 	// The data stream actual sender fields are only ever set by the SFU, so all of them
 	// are overwritten on every packet, replacing anything the client sent. They tell
@@ -2732,10 +2729,10 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 		} else {
 			dp.ParticipantIdentity = string(p.params.Identity)
 		}
-		dp.DataStreamSendingOnBehalf = false
+		dp.DataStreamActualSenderDifferent = false
 		dp.DataStreamActualSenderIdentity = ""
 	} else {
-		dp.DataStreamSendingOnBehalf = true
+		dp.DataStreamActualSenderDifferent = true
 		if p.Hidden() {
 			dp.DataStreamActualSenderIdentity = ""
 		} else {
