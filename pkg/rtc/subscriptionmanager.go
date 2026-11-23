@@ -625,14 +625,10 @@ func (m *SubscriptionManager) reconcileSubscription(s *mediaTrackSubscription) {
 	}
 
 	m.lock.Lock()
-	s.lock.Lock()
-	if m.subscriptions[s.trackID] == s && s.needsCleanupLocked() {
+	if m.subscriptions[s.trackID] == s && s.cleanup() {
 		s.logger.Debugw("cleanup removing subscription")
-		s.setChangedNotifierLocked(nil)
-		s.setRemovedNotifierLocked(nil)
 		delete(m.subscriptions, s.trackID)
 	}
-	s.lock.Unlock()
 	m.lock.Unlock()
 }
 
@@ -716,15 +712,11 @@ func (m *SubscriptionManager) reconcileDataTrackSubscription(s *dataTrackSubscri
 	}
 
 	m.lock.Lock()
-	s.lock.Lock()
-	cleanedUp := m.dataTrackSubscriptions[s.trackID] == s && s.needsCleanupLocked()
+	cleanedUp := m.dataTrackSubscriptions[s.trackID] == s && s.cleanup()
 	if cleanedUp {
 		s.logger.Debugw("cleanup removing data track subscription")
-		s.setChangedNotifierLocked(nil)
-		s.setRemovedNotifierLocked(nil)
 		delete(m.dataTrackSubscriptions, s.trackID)
 	}
-	s.lock.Unlock()
 	m.lock.Unlock()
 
 	if cleanedUp {
@@ -1519,6 +1511,17 @@ func (s *trackSubscription) setRemovedNotifierLocked(notifier types.ChangeNotifi
 	return true
 }
 
+func (s *trackSubscription) cleanupObservers(needsCleanupLocked func() bool) bool {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if !needsCleanupLocked() {
+		return false
+	}
+	s.setChangedNotifierLocked(nil)
+	s.setRemovedNotifierLocked(nil)
+	return true
+}
+
 func (s *trackSubscription) handleSourceTrackRemoved() {
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -1710,6 +1713,18 @@ func (s *mediaTrackSubscription) needsCleanupLocked() bool {
 	return !s.desired && s.subscribedTrack == nil && !s.isKeptLocked()
 }
 
+// cleanup is called with the manager lock held, before removing this subscription.
+func (s *mediaTrackSubscription) cleanup() bool {
+	s.lock.RLock()
+	eligible := s.needsCleanupLocked()
+	retire := eligible && (s.changedNotifier != nil || s.removedNotifier != nil)
+	s.lock.RUnlock()
+	if retire {
+		return s.cleanupObservers(s.needsCleanupLocked)
+	}
+	return eligible
+}
+
 // -----------------------------------------------------------------
 
 type dataTrackSubscription struct {
@@ -1753,6 +1768,18 @@ func (s *dataTrackSubscription) needsCleanup() bool {
 
 func (s *dataTrackSubscription) needsCleanupLocked() bool {
 	return !s.desired && s.dataDownTrack == nil && !s.isKeptLocked()
+}
+
+// cleanup is called with the manager lock held, before removing this subscription.
+func (s *dataTrackSubscription) cleanup() bool {
+	s.lock.RLock()
+	eligible := s.needsCleanupLocked()
+	retire := eligible && (s.changedNotifier != nil || s.removedNotifier != nil)
+	s.lock.RUnlock()
+	if retire {
+		return s.cleanupObservers(s.needsCleanupLocked)
+	}
+	return eligible
 }
 
 func (s *dataTrackSubscription) setDataDownTrack(dataDownTrack types.DataDownTrack) {
