@@ -278,7 +278,7 @@ func (r *RoomManager) Stop() {
 }
 
 func (r *RoomManager) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, error) {
-	room, err := r.getOrCreateRoom(ctx, req)
+	room, err := r.getOrCreateRoom(ctx, req, true)
 	if err != nil {
 		return nil, err
 	}
@@ -304,7 +304,7 @@ func (r *RoomManager) StartSession(
 	}
 
 	createRoom := pi.CreateRoom
-	room, err := r.getOrCreateRoom(ctx, createRoom)
+	room, err := r.getOrCreateRoom(ctx, createRoom, pi.Identity == "")
 	if err != nil {
 		if pi.Identity != "" {
 			prometheus.IncrementParticipantRtcCanceled(1, false, pi.Client.GetSdk())
@@ -648,7 +648,7 @@ func (r *RoomManager) StartSession(
 }
 
 // create the actual room object, to be used on RTC node
-func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.CreateRoomRequest) (*rtc.Room, error) {
+func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.CreateRoomRequest, isExplicit bool) (*rtc.Room, error) {
 	roomName := livekit.RoomName(createRoom.Name)
 
 	r.lock.RLock()
@@ -662,7 +662,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 	// create new room, get details first
 	// createRoom is reassigned to the request with the room preset applied, so that a room
 	// composite egress from the preset, which RoomInternal has no field for, is started
-	ri, internal, createRoom, created, err := r.roomAllocator.CreateRoom(ctx, createRoom, true)
+	ri, internal, createRoom, created, err := r.roomAllocator.CreateRoom(ctx, createRoom, isExplicit)
 	if err != nil {
 		return nil, err
 	}
