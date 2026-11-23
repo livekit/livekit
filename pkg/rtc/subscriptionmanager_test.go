@@ -28,6 +28,8 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
+	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/sfufakes"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -259,6 +261,83 @@ func TestUnsubscribe(t *testing.T) {
 
 	tl := sm.params.Participant.GetTelemetryListener().(*typesfakes.FakeParticipantTelemetryListener)
 	require.Equal(t, 1, tl.OnTrackUnsubscribedCallCount())
+}
+
+func TestSubscribedTrackCloseDuringInstall(t *testing.T) {
+	for _, closeOnRecheck := range []bool{false, true} {
+		name := "closed before returned"
+		if closeOnRecheck {
+			name = "closed before publisher mark"
+		}
+		t.Run(name, func(t *testing.T) {
+			sm := newTestSubscriptionManager()
+			defer sm.Close(false)
+			resolver := newTestResolver(true, true, "pub", "pubID")
+
+			var once sync.Once
+			var installing atomic.Pointer[SubscribedTrack]
+			closeAndRevoke := func(st *SubscribedTrack) {
+				once.Do(func() {
+					resolver.SetHasPermission(false)
+					st.Close(false)
+				})
+			}
+			sm.params.TrackResolver = func(sub types.LocalParticipant, trackID livekit.TrackID) types.MediaResolverResult {
+				res := resolver.Resolve(sub, trackID)
+				if mt, ok := res.Track.(*typesfakes.FakeMediaTrack); ok {
+					mt.IDReturns(trackID)
+					mt.KindReturns(livekit.TrackType_AUDIO)
+					mt.AddSubscriberCalls(func(types.LocalParticipant) (types.SubscribedTrack, error) {
+						dt, err := sfu.NewDownTrack(sfu.DownTrackParams{
+							Codecs: []webrtc.RTPCodecParameters{{
+								RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000},
+								PayloadType:        111,
+							}},
+							Receiver: &sfufakes.FakeTrackReceiver{},
+							Logger:   logger.GetLogger(),
+							Listener: &sfufakes.FakeDownTrackListener{},
+						})
+						if err != nil {
+							return nil, err
+						}
+						t.Cleanup(dt.Close)
+						st := &SubscribedTrack{params: SubscribedTrackParams{MediaTrack: mt}, logger: logger.GetLogger(), downTrack: dt}
+						if !closeOnRecheck {
+							closeAndRevoke(st)
+						}
+						installing.Store(st)
+						return st, nil
+					})
+				}
+				return res
+			}
+			p := sm.params.Participant.(*typesfakes.FakeLocalParticipant)
+			if closeOnRecheck {
+				// the recheck after the subscribed track is stored is the first CanSubscribe call that sees it
+				p.CanSubscribeCalls(func() bool {
+					if st := installing.Load(); st != nil {
+						closeAndRevoke(st)
+					}
+					return true
+				})
+			}
+
+			sm.SubscribeToTrack("track", false)
+
+			// a denied permission update comes from the next attempt, after the closed one finished
+			deniedUpdateSent := func() bool {
+				for i := 0; i < p.SendSubscriptionPermissionUpdateCallCount(); i++ {
+					if _, _, allowed := p.SendSubscriptionPermissionUpdateArgsForCall(i); !allowed {
+						return true
+					}
+				}
+				return false
+			}
+			require.Eventually(t, func() bool {
+				return deniedUpdateSent() && len(sm.GetSubscribedTracks()) == 0 && !sm.IsSubscribedTo("pubID")
+			}, subSettleTimeout, subCheckInterval, "closed subscribed track must be cleared and must not mark the publisher")
+		})
+	}
 }
 
 func TestSubscribeStatusChanged(t *testing.T) {
@@ -1118,6 +1197,12 @@ func newTestResolver(hasPermission bool, hasTrack bool, pubIdentity livekit.Part
 		pubIdentity:   pubIdentity,
 		pubID:         pubID,
 	}
+}
+
+func (t *testResolver) SetHasPermission(hasPermission bool) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	t.hasPermission = hasPermission
 }
 
 func (t *testResolver) SetPause(paused bool) {
