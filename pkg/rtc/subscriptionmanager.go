@@ -625,12 +625,14 @@ func (m *SubscriptionManager) reconcileSubscription(s *mediaTrackSubscription) {
 	}
 
 	m.lock.Lock()
-	if m.subscriptions[s.trackID] == s && s.needsCleanup() {
+	s.lock.Lock()
+	if m.subscriptions[s.trackID] == s && s.needsCleanupLocked() {
 		s.logger.Debugw("cleanup removing subscription")
-		s.setChangedNotifier(nil)
-		s.setRemovedNotifier(nil)
+		s.setChangedNotifierLocked(nil)
+		s.setRemovedNotifierLocked(nil)
 		delete(m.subscriptions, s.trackID)
 	}
+	s.lock.Unlock()
 	m.lock.Unlock()
 }
 
@@ -714,13 +716,15 @@ func (m *SubscriptionManager) reconcileDataTrackSubscription(s *dataTrackSubscri
 	}
 
 	m.lock.Lock()
-	cleanedUp := m.dataTrackSubscriptions[s.trackID] == s && s.needsCleanup()
+	s.lock.Lock()
+	cleanedUp := m.dataTrackSubscriptions[s.trackID] == s && s.needsCleanupLocked()
 	if cleanedUp {
 		s.logger.Debugw("cleanup removing data track subscription")
-		s.setChangedNotifier(nil)
-		s.setRemovedNotifier(nil)
+		s.setChangedNotifierLocked(nil)
+		s.setRemovedNotifierLocked(nil)
 		delete(m.dataTrackSubscriptions, s.trackID)
 	}
+	s.lock.Unlock()
 	m.lock.Unlock()
 
 	if cleanedUp {
@@ -1699,6 +1703,10 @@ func (s *mediaTrackSubscription) needsBind() bool {
 func (s *mediaTrackSubscription) needsCleanup() bool {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
+	return s.needsCleanupLocked()
+}
+
+func (s *mediaTrackSubscription) needsCleanupLocked() bool {
 	return !s.desired && s.subscribedTrack == nil && !s.isKeptLocked()
 }
 
@@ -1740,6 +1748,10 @@ func (s *dataTrackSubscription) needsUnsubscribe() bool {
 func (s *dataTrackSubscription) needsCleanup() bool {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
+	return s.needsCleanupLocked()
+}
+
+func (s *dataTrackSubscription) needsCleanupLocked() bool {
 	return !s.desired && s.dataDownTrack == nil && !s.isKeptLocked()
 }
 
