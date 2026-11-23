@@ -264,12 +264,8 @@ func TestUnsubscribe(t *testing.T) {
 }
 
 func TestSubscribedTrackCloseDuringInstall(t *testing.T) {
-	for _, closeOnRecheck := range []bool{false, true} {
-		name := "closed before returned"
-		if closeOnRecheck {
-			name = "closed before publisher mark"
-		}
-		t.Run(name, func(t *testing.T) {
+	for _, closeAt := range []string{"add", "recheck", "recheck rejects"} {
+		t.Run(closeAt, func(t *testing.T) {
 			sm := newTestSubscriptionManager()
 			defer sm.Close(false)
 			resolver := newTestResolver(true, true, "pub", "pubID")
@@ -302,25 +298,42 @@ func TestSubscribedTrackCloseDuringInstall(t *testing.T) {
 						}
 						t.Cleanup(dt.Close)
 						st := &SubscribedTrack{params: SubscribedTrackParams{MediaTrack: mt}, logger: logger.GetLogger(), downTrack: dt}
-						if !closeOnRecheck {
+						if closeAt == "add" {
 							closeAndRevoke(st)
 						}
 						installing.Store(st)
 						return st, nil
 					})
+					// the real track closes the subscribed track it removes
+					mt.RemoveSubscriberCalls(func(livekit.ParticipantID, bool) {
+						if st := installing.Load(); st != nil {
+							st.Close(false)
+						}
+					})
 				}
 				return res
 			}
 			p := sm.params.Participant.(*typesfakes.FakeLocalParticipant)
-			if closeOnRecheck {
-				// the recheck after the subscribed track is stored is the first CanSubscribe call that sees it
-				p.CanSubscribeCalls(func() bool {
-					if st := installing.Load(); st != nil {
-						closeAndRevoke(st)
-					}
+			// the recheck after the subscribed track is stored is the first CanSubscribe call that sees it
+			p.CanSubscribeCalls(func() bool {
+				st := installing.Load()
+				if st == nil {
 					return true
-				})
-			}
+				}
+				switch closeAt {
+				case "recheck":
+					closeAndRevoke(st)
+				case "recheck rejects":
+					// the rejected install removes the subscriber, which closes the track
+					reject := false
+					once.Do(func() {
+						reject = true
+						resolver.SetHasPermission(false)
+					})
+					return !reject
+				}
+				return true
+			})
 
 			sm.SubscribeToTrack("track", false)
 
@@ -1080,6 +1093,11 @@ func TestSubscribeRevokedInFlight(t *testing.T) {
 		sm.lock.RLock()
 		s := sm.subscriptions["track"]
 		sm.lock.RUnlock()
+		// the close callback is installed when addSubscriber returns
+		require.Eventually(t, func() bool {
+			st, ok := s.getSubscribedTrack().(*typesfakes.FakeSubscribedTrack)
+			return ok && st.OnCloseCallCount() == 1
+		}, subSettleTimeout, subCheckInterval, "the close callback should be installed")
 		setTestSubscribedTrackClosed(t, s.getSubscribedTrack(), false)
 		// granted by the first subscribe, denied by this one
 		p := sm.params.Participant.(*typesfakes.FakeLocalParticipant)
