@@ -16,7 +16,7 @@ package types
 
 type ProtocolVersion int
 
-const CurrentProtocol = 20
+const CurrentProtocol = 19
 
 func (v ProtocolVersion) SupportsPackedStreamId() bool {
 	return v > 0
@@ -106,10 +106,4 @@ func (v ProtocolVersion) SupportsPacketTrailer() bool {
 
 func (v ProtocolVersion) SupportsNegotiatedDataChannels() bool {
 	return v > 17
-}
-
-// SupportsDataPacketSenderIdentity reports whether the server sets DataPacket.Sender
-// whenever a packet's ParticipantIdentity names someone other than its real sender.
-func (v ProtocolVersion) SupportsDataPacketSenderIdentity() bool {
-	return v > 19
 }

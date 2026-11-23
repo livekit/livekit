@@ -25,7 +25,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 )
 
-func TestDataPacketSender(t *testing.T) {
+func TestDataPacketActualSender(t *testing.T) {
 	textHeader := func() *livekit.DataPacket_StreamHeader {
 		return &livekit.DataPacket_StreamHeader{StreamHeader: &livekit.DataStream_Header{
 			StreamId:      "s1",
@@ -41,10 +41,28 @@ func TestDataPacketSender(t *testing.T) {
 	chunk := func() *livekit.DataPacket_StreamChunk {
 		return &livekit.DataPacket_StreamChunk{StreamChunk: &livekit.DataStream_Chunk{StreamId: "s1"}}
 	}
+	trailer := func() *livekit.DataPacket_StreamTrailer {
+		return &livekit.DataPacket_StreamTrailer{StreamTrailer: &livekit.DataStream_Trailer{StreamId: "s1"}}
+	}
+	encrypted := func() *livekit.DataPacket_EncryptedPacket {
+		return &livekit.DataPacket_EncryptedPacket{EncryptedPacket: &livekit.EncryptedPacket{EncryptedValue: []byte{1, 2, 3}}}
+	}
 	chatMessage := func() *livekit.DataPacket_ChatMessage {
 		return &livekit.DataPacket_ChatMessage{ChatMessage: &livekit.ChatMessage{Id: "m1"}}
 	}
-	forged := &livekit.DataPacket_SenderIdentity{SenderIdentity: "forged"}
+	userPacket := func() *livekit.DataPacket_User {
+		return &livekit.DataPacket_User{User: &livekit.UserPacket{Payload: []byte("hi")}}
+	}
+	rpcRequest := func() *livekit.DataPacket_RpcRequest {
+		return &livekit.DataPacket_RpcRequest{RpcRequest: &livekit.RpcRequest{Id: "r1", Method: "m"}}
+	}
+	// a client claiming to be an agent sending on someone else's behalf
+	forge := func(dp *livekit.DataPacket) *livekit.DataPacket {
+		dp.DataStreamActualSenderOverwritten = true
+		dp.DataStreamSendingOnBehalf = true
+		dp.DataStreamActualSenderIdentity = "forged"
+		return dp
+	}
 
 	testCases := []struct {
 		name             string
@@ -52,19 +70,34 @@ func TestDataPacketSender(t *testing.T) {
 		hidden           bool
 		packet           *livekit.DataPacket
 		expectedIdentity string
-		expectedSender   any
+		expectedOnBehalf bool
+		expectedSender   string
+		expectedGenerate bool
 	}{
-		{
-			name:             "regular participant cannot claim another identity or forge the sender",
-			packet:           &livekit.DataPacket{ParticipantIdentity: "user", Sender: forged, Value: textHeader()},
-			expectedIdentity: "sender",
-		},
 		{
 			name:             "agent text stream header on behalf of another participant",
 			agent:            true,
-			packet:           &livekit.DataPacket{ParticipantIdentity: "user", Sender: forged, Value: textHeader()},
+			packet:           forge(&livekit.DataPacket{ParticipantIdentity: "user", Value: textHeader()}),
 			expectedIdentity: "user",
-			expectedSender:   &livekit.DataPacket_SenderIdentity{SenderIdentity: "sender"},
+			expectedOnBehalf: true,
+			expectedSender:   "sender",
+			expectedGenerate: true,
+		},
+		{
+			name:             "agent encrypted packet on behalf of another participant",
+			agent:            true,
+			packet:           &livekit.DataPacket{ParticipantIdentity: "user", Value: encrypted()},
+			expectedIdentity: "user",
+			expectedOnBehalf: true,
+			expectedSender:   "sender",
+		},
+		{
+			name:             "agent chat message on behalf of another participant",
+			agent:            true,
+			packet:           &livekit.DataPacket{ParticipantIdentity: "user", Value: chatMessage()},
+			expectedIdentity: "user",
+			expectedOnBehalf: true,
+			expectedSender:   "sender",
 		},
 		{
 			name:             "hidden agent text stream header on behalf of another participant",
@@ -72,43 +105,79 @@ func TestDataPacketSender(t *testing.T) {
 			hidden:           true,
 			packet:           &livekit.DataPacket{ParticipantIdentity: "user", Value: textHeader()},
 			expectedIdentity: "user",
-			expectedSender:   &livekit.DataPacket_SenderHidden{SenderHidden: true},
+			expectedOnBehalf: true,
+			expectedSender:   "",
+			expectedGenerate: true,
 		},
 		{
-			name:             "agent chat message on behalf of another participant",
+			name:             "hidden agent encrypted packet on behalf of another participant",
 			agent:            true,
-			packet:           &livekit.DataPacket{ParticipantIdentity: "user", Value: chatMessage()},
+			hidden:           true,
+			packet:           &livekit.DataPacket{ParticipantIdentity: "user", Value: encrypted()},
 			expectedIdentity: "user",
-			expectedSender:   &livekit.DataPacket_SenderIdentity{SenderIdentity: "sender"},
+			expectedOnBehalf: true,
+			expectedSender:   "",
 		},
 		{
 			name:             "agent byte stream header cannot be sent on behalf of another participant",
 			agent:            true,
-			packet:           &livekit.DataPacket{ParticipantIdentity: "user", Sender: forged, Value: byteHeader()},
+			packet:           forge(&livekit.DataPacket{ParticipantIdentity: "user", Value: byteHeader()}),
 			expectedIdentity: "sender",
 		},
 		{
-			name:             "agent stream chunk always carries the agent identity",
+			name:             "agent stream chunk keeps the agent identity",
 			agent:            true,
-			packet:           &livekit.DataPacket{ParticipantIdentity: "user", Sender: forged, Value: chunk()},
+			packet:           forge(&livekit.DataPacket{ParticipantIdentity: "user", Value: chunk()}),
+			expectedIdentity: "sender",
+		},
+		{
+			name:             "agent stream trailer keeps the agent identity",
+			agent:            true,
+			packet:           forge(&livekit.DataPacket{ParticipantIdentity: "user", Value: trailer()}),
+			expectedIdentity: "sender",
+		},
+		{
+			name:             "agent user packet cannot be sent on behalf of another participant",
+			agent:            true,
+			packet:           forge(&livekit.DataPacket{ParticipantIdentity: "user", Value: userPacket()}),
 			expectedIdentity: "sender",
 		},
 		{
 			name:             "agent text stream header under its own identity",
 			agent:            true,
-			packet:           &livekit.DataPacket{ParticipantIdentity: "sender", Sender: forged, Value: textHeader()},
+			packet:           forge(&livekit.DataPacket{ParticipantIdentity: "sender", Value: textHeader()}),
 			expectedIdentity: "sender",
 		},
 		{
-			name:             "agent text stream header without an identity",
+			name:             "agent encrypted packet without an identity",
 			agent:            true,
-			packet:           &livekit.DataPacket{Value: textHeader()},
+			packet:           forge(&livekit.DataPacket{Value: encrypted()}),
 			expectedIdentity: "sender",
 		},
 		{
-			name:             "hidden participant's own packets carry neither identity nor sender",
+			name:             "regular participant text stream header cannot claim another identity",
+			packet:           forge(&livekit.DataPacket{ParticipantIdentity: "user", Value: textHeader()}),
+			expectedIdentity: "sender",
+		},
+		{
+			name:             "regular participant encrypted packet cannot claim another identity",
+			packet:           forge(&livekit.DataPacket{ParticipantIdentity: "user", Value: encrypted()}),
+			expectedIdentity: "sender",
+		},
+		{
+			name:             "regular participant rpc request",
+			packet:           forge(&livekit.DataPacket{Value: rpcRequest()}),
+			expectedIdentity: "sender",
+		},
+		{
+			name:             "regular participant stream chunk",
+			packet:           forge(&livekit.DataPacket{Value: chunk()}),
+			expectedIdentity: "sender",
+		},
+		{
+			name:             "hidden participant's own packets carry no identity",
 			hidden:           true,
-			packet:           &livekit.DataPacket{ParticipantIdentity: "user", Sender: forged, Value: textHeader()},
+			packet:           forge(&livekit.DataPacket{ParticipantIdentity: "user", Value: textHeader()}),
 			expectedIdentity: "",
 		},
 	}
@@ -124,7 +193,12 @@ func TestDataPacketSender(t *testing.T) {
 			require.Equal(t, 1, listener.OnDataMessageCallCount())
 			_, _, dp := listener.OnDataMessageArgsForCall(0)
 			require.Equal(t, tc.expectedIdentity, dp.ParticipantIdentity)
-			require.Equal(t, tc.expectedSender, any(dp.GetSender()))
+			require.True(t, dp.DataStreamActualSenderOverwritten)
+			require.Equal(t, tc.expectedOnBehalf, dp.DataStreamSendingOnBehalf)
+			require.Equal(t, tc.expectedSender, dp.DataStreamActualSenderIdentity)
+			if textHeader := dp.GetStreamHeader().GetTextHeader(); textHeader != nil {
+				require.Equal(t, tc.expectedGenerate, textHeader.Generated)
+			}
 		})
 	}
 }

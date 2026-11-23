@@ -2708,6 +2708,12 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 		if payload.EncryptedPacket == nil {
 			return
 		}
+		// The payload can't be inspected, so an agent's encrypted packet sent on another
+		// participant's behalf (an end-to-end encrypted transcription stream) keeps that
+		// identity, with the agent recorded as the actual sender below.
+		if p.IsAgent() && dp.ParticipantIdentity != "" && string(p.params.Identity) != dp.ParticipantIdentity {
+			overrideSenderIdentity = false
+		}
 	default:
 		p.pubLogger.Warnw("received unsupported data packet", nil, "payload", payload)
 	}
@@ -2716,20 +2722,25 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 	// publish data on behalf of the participant in case of transcriptions/text streams
 	// in those cases we'd leave the existing identity on the data packet alone.
 	//
-	// Sender is only ever set by the SFU, so any value the client sent is replaced.
-	// It is set only when ParticipantIdentity names someone else, so receivers can
-	// tell which participant sent the packet (and the rest of its stream).
+	// The data stream actual sender fields are only ever set by the SFU, so all of them
+	// are overwritten on every packet, replacing anything the client sent. They tell
+	// receivers which participant really sent a packet that is attributed to someone else.
+	dp.DataStreamActualSenderOverwritten = true
 	if overrideSenderIdentity {
 		if p.Hidden() {
 			dp.ParticipantIdentity = ""
 		} else {
 			dp.ParticipantIdentity = string(p.params.Identity)
 		}
-		dp.Sender = nil
-	} else if p.Hidden() {
-		dp.Sender = &livekit.DataPacket_SenderHidden{SenderHidden: true}
+		dp.DataStreamSendingOnBehalf = false
+		dp.DataStreamActualSenderIdentity = ""
 	} else {
-		dp.Sender = &livekit.DataPacket_SenderIdentity{SenderIdentity: string(p.params.Identity)}
+		dp.DataStreamSendingOnBehalf = true
+		if p.Hidden() {
+			dp.DataStreamActualSenderIdentity = ""
+		} else {
+			dp.DataStreamActualSenderIdentity = string(p.params.Identity)
+		}
 	}
 
 	if shouldForwardData {
