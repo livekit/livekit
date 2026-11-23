@@ -94,7 +94,8 @@ rtc:
   # # port_range_start & end must not be set for this config to take effect
   # udp_port: 7882-7892
   # # when set to true, server will use a lite ice agent, that will speed up ice connection, but
-  # # might cause connect issue if server running behind NAT.
+  # # might cause connect issue if server running behind NAT. Only work on subscriber peerconnection
+  # # of dual-pc mode.
   # use_ice_lite: true
   # # optional STUN servers for LiveKit clients to use. Clients will be configured to use these STUN servers automatically.
   # # by default LiveKit clients use Google's public STUN servers
