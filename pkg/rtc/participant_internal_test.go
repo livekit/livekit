@@ -2087,3 +2087,44 @@ func TestPerformRpcForwardedResponseTimeout(t *testing.T) {
 		})
 	}
 }
+
+func TestSynthesizeAddTrackRequestsStereo(t *testing.T) {
+	offer := func(fmtp string) *sdp.SessionDescription {
+		raw := "v=0\r\n" +
+			"o=- 0 0 IN IP4 127.0.0.1\r\n" +
+			"s=-\r\n" +
+			"t=0 0\r\n" +
+			"m=audio 9 UDP/TLS/RTP/SAVPF 111\r\n" +
+			"c=IN IP4 0.0.0.0\r\n" +
+			"a=mid:0\r\n" +
+			"a=sendonly\r\n" +
+			"a=msid:stream audio-cid\r\n" +
+			"a=rtpmap:111 opus/48000/2\r\n" +
+			"a=fmtp:111 " + fmtp + "\r\n"
+		parsed := &sdp.SessionDescription{}
+		require.NoError(t, parsed.UnmarshalString(raw))
+		return parsed
+	}
+
+	cases := []struct {
+		name   string
+		fmtp   string
+		stereo bool
+	}{
+		{"sprop-stereo", "minptime=10;maxaveragebitrate=96000;stereo=1;sprop-stereo=1;useinbandfec=1", true},
+		{"no sprop-stereo", "minptime=10;useinbandfec=1", false},
+		{"sprop-stereo=0", "minptime=10;sprop-stereo=0;useinbandfec=1", false},
+		// stereo=1 is the receive preference, not what the sender transmits
+		{"receive-only stereo", "minptime=10;stereo=1;useinbandfec=1", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p := newParticipantForTest("whip")
+			require.NoError(t, p.synthesizeAddTrackRequests(offer(c.fmtp)))
+
+			pti := p.pendingTracks["audio-cid"]
+			require.NotNil(t, pti)
+			require.Equal(t, c.stereo, slices.Contains(pti.trackInfos[0].AudioFeatures, livekit.AudioTrackFeature_TF_STEREO))
+		})
+	}
+}
