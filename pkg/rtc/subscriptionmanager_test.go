@@ -353,6 +353,43 @@ func TestSubscribedTrackCloseDuringInstall(t *testing.T) {
 	}
 }
 
+func TestSubscriptionCleanupRemovesObservers(t *testing.T) {
+	for _, kind := range []string{"media", "data"} {
+		t.Run(kind, func(t *testing.T) {
+			sm := newTestSubscriptionManager()
+			defer sm.Close(false)
+			changed, removed := utils.NewChangeNotifier(), utils.NewChangeNotifier()
+			const trackID livekit.TrackID = "unavailable"
+			if kind == "media" {
+				sm.params.TrackResolver = func(types.LocalParticipant, livekit.TrackID) types.MediaResolverResult {
+					return types.MediaResolverResult{TrackChangedNotifier: changed, TrackRemovedNotifier: removed}
+				}
+				sm.SubscribeToTrack(trackID, false)
+			} else {
+				sm.params.DataTrackResolver = func(types.LocalParticipant, livekit.TrackID) types.DataResolverResult {
+					return types.DataResolverResult{TrackChangedNotifier: changed, TrackRemovedNotifier: removed}
+				}
+				sm.SubscribeToDataTrack(trackID)
+			}
+			require.Eventually(t, func() bool {
+				return changed.HasObservers() && removed.HasObservers()
+			}, subSettleTimeout, subCheckInterval)
+
+			if kind == "media" {
+				sm.UnsubscribeFromTrack(trackID)
+			} else {
+				sm.UnsubscribeFromDataTrack(trackID)
+			}
+			require.Eventually(t, func() bool {
+				sm.lock.RLock()
+				defer sm.lock.RUnlock()
+				return sm.subscriptions[trackID] == nil && sm.dataTrackSubscriptions[trackID] == nil &&
+					!changed.HasObservers() && !removed.HasObservers()
+			}, subSettleTimeout, subCheckInterval, "subscription cleanup retained observers")
+		})
+	}
+}
+
 func TestSubscribeStatusChanged(t *testing.T) {
 	sm := newTestSubscriptionManager()
 	defer sm.Close(false)
