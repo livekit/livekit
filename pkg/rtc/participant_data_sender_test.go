@@ -59,37 +59,37 @@ func TestDataPacketActualSender(t *testing.T) {
 	// a client forging the fields as if an agent sent the packet on someone else's behalf
 	forge := func(dp *livekit.DataPacket) *livekit.DataPacket {
 		dp.DataStreamActualSenderOverwritten = true
-		dp.DataStreamActualSenderDifferent = true
+		dp.DataStreamSendingOnBehalf = true
 		dp.DataStreamActualSenderIdentity = "forged"
 		return dp
 	}
 
 	testCases := []struct {
-		name              string
-		agent             bool
-		hidden            bool
-		packet            *livekit.DataPacket
-		expectedIdentity  string
-		expectedDifferent bool
-		expectedSender    string
-		expectedGenerate  bool
+		name             string
+		agent            bool
+		hidden           bool
+		packet           *livekit.DataPacket
+		expectedIdentity string
+		expectedOnBehalf bool
+		expectedSender   string
+		expectedGenerate bool
 	}{
 		{
-			name:              "agent text stream header on behalf of another participant",
-			agent:             true,
-			packet:            forge(&livekit.DataPacket{ParticipantIdentity: "user", Value: textHeader()}),
-			expectedIdentity:  "user",
-			expectedDifferent: true,
-			expectedSender:    "sender",
-			expectedGenerate:  true,
+			name:             "agent text stream header on behalf of another participant",
+			agent:            true,
+			packet:           forge(&livekit.DataPacket{ParticipantIdentity: "user", Value: textHeader()}),
+			expectedIdentity: "user",
+			expectedOnBehalf: true,
+			expectedSender:   "sender",
+			expectedGenerate: true,
 		},
 		{
-			name:              "agent encrypted packet on behalf of another participant",
-			agent:             true,
-			packet:            &livekit.DataPacket{ParticipantIdentity: "user", Value: encrypted()},
-			expectedIdentity:  "user",
-			expectedDifferent: true,
-			expectedSender:    "sender",
+			name:             "agent encrypted packet on behalf of another participant",
+			agent:            true,
+			packet:           &livekit.DataPacket{ParticipantIdentity: "user", Value: encrypted()},
+			expectedIdentity: "user",
+			expectedOnBehalf: true,
+			expectedSender:   "sender",
 		},
 		{
 			name:             "agent chat message cannot be sent on behalf of another participant",
@@ -98,23 +98,23 @@ func TestDataPacketActualSender(t *testing.T) {
 			expectedIdentity: "sender",
 		},
 		{
-			name:              "hidden agent text stream header on behalf of another participant",
-			agent:             true,
-			hidden:            true,
-			packet:            &livekit.DataPacket{ParticipantIdentity: "user", Value: textHeader()},
-			expectedIdentity:  "user",
-			expectedDifferent: true,
-			expectedSender:    "",
-			expectedGenerate:  true,
+			name:             "hidden agent text stream header on behalf of another participant",
+			agent:            true,
+			hidden:           true,
+			packet:           &livekit.DataPacket{ParticipantIdentity: "user", Value: textHeader()},
+			expectedIdentity: "user",
+			expectedOnBehalf: true,
+			expectedSender:   "",
+			expectedGenerate: true,
 		},
 		{
-			name:              "hidden agent encrypted packet on behalf of another participant",
-			agent:             true,
-			hidden:            true,
-			packet:            &livekit.DataPacket{ParticipantIdentity: "user", Value: encrypted()},
-			expectedIdentity:  "user",
-			expectedDifferent: true,
-			expectedSender:    "",
+			name:             "hidden agent encrypted packet on behalf of another participant",
+			agent:            true,
+			hidden:           true,
+			packet:           &livekit.DataPacket{ParticipantIdentity: "user", Value: encrypted()},
+			expectedIdentity: "user",
+			expectedOnBehalf: true,
+			expectedSender:   "",
 		},
 		{
 			name:             "agent byte stream header cannot be sent on behalf of another participant",
@@ -192,7 +192,7 @@ func TestDataPacketActualSender(t *testing.T) {
 			_, _, dp := listener.OnDataMessageArgsForCall(0)
 			require.Equal(t, tc.expectedIdentity, dp.ParticipantIdentity)
 			require.True(t, dp.DataStreamActualSenderOverwritten)
-			require.Equal(t, tc.expectedDifferent, dp.DataStreamActualSenderDifferent)
+			require.Equal(t, tc.expectedOnBehalf, dp.DataStreamSendingOnBehalf)
 			require.Equal(t, tc.expectedSender, dp.DataStreamActualSenderIdentity)
 			if textHeader := dp.GetStreamHeader().GetTextHeader(); textHeader != nil {
 				require.Equal(t, tc.expectedGenerate, textHeader.Generated)

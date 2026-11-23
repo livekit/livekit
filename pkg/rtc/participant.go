@@ -2729,10 +2729,10 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 		} else {
 			dp.ParticipantIdentity = string(p.params.Identity)
 		}
-		dp.DataStreamActualSenderDifferent = false
+		dp.DataStreamSendingOnBehalf = false
 		dp.DataStreamActualSenderIdentity = ""
 	} else {
-		dp.DataStreamActualSenderDifferent = true
+		dp.DataStreamSendingOnBehalf = true
 		if p.Hidden() {
 			dp.DataStreamActualSenderIdentity = ""
 		} else {
