@@ -2089,38 +2089,47 @@ func TestPerformRpcForwardedResponseTimeout(t *testing.T) {
 }
 
 func TestSynthesizeAddTrackRequestsStereo(t *testing.T) {
-	offer := func(fmtp string) *sdp.SessionDescription {
+	offer := func(formats string, payloads ...string) *sdp.SessionDescription {
 		raw := "v=0\r\n" +
 			"o=- 0 0 IN IP4 127.0.0.1\r\n" +
 			"s=-\r\n" +
 			"t=0 0\r\n" +
-			"m=audio 9 UDP/TLS/RTP/SAVPF 111\r\n" +
+			"m=audio 9 UDP/TLS/RTP/SAVPF " + formats + "\r\n" +
 			"c=IN IP4 0.0.0.0\r\n" +
 			"a=mid:0\r\n" +
 			"a=sendonly\r\n" +
-			"a=msid:stream audio-cid\r\n" +
-			"a=rtpmap:111 opus/48000/2\r\n" +
-			"a=fmtp:111 " + fmtp + "\r\n"
+			"a=msid:stream audio-cid\r\n"
+		for _, p := range payloads {
+			raw += p
+		}
 		parsed := &sdp.SessionDescription{}
 		require.NoError(t, parsed.UnmarshalString(raw))
 		return parsed
 	}
+	opus := func(pt, fmtp string) string {
+		return "a=rtpmap:" + pt + " opus/48000/2\r\na=fmtp:" + pt + " " + fmtp + "\r\n"
+	}
 
+	stereo := "minptime=10;maxaveragebitrate=96000;stereo=1;sprop-stereo=1;useinbandfec=1"
+	mono := "minptime=10;useinbandfec=1"
 	cases := []struct {
 		name   string
-		fmtp   string
+		offer  *sdp.SessionDescription
 		stereo bool
 	}{
-		{"sprop-stereo", "minptime=10;maxaveragebitrate=96000;stereo=1;sprop-stereo=1;useinbandfec=1", true},
-		{"no sprop-stereo", "minptime=10;useinbandfec=1", false},
-		{"sprop-stereo=0", "minptime=10;sprop-stereo=0;useinbandfec=1", false},
+		{"sprop-stereo", offer("111", opus("111", stereo)), true},
+		{"no sprop-stereo", offer("111", opus("111", mono)), false},
+		{"sprop-stereo=0", offer("111", opus("111", "minptime=10;sprop-stereo=0;useinbandfec=1")), false},
 		// stereo=1 is the receive preference, not what the sender transmits
-		{"receive-only stereo", "minptime=10;stereo=1;useinbandfec=1", false},
+		{"receive-only stereo", offer("111", opus("111", "minptime=10;stereo=1;useinbandfec=1")), false},
+		// the preferred payload is the first in the format list, not the first rtpmap
+		{"preferred stereo payload", offer("111 112", opus("112", mono), opus("111", stereo)), true},
+		{"preferred mono payload", offer("112 111", opus("111", stereo), opus("112", mono)), false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			p := newParticipantForTest("whip")
-			require.NoError(t, p.synthesizeAddTrackRequests(offer(c.fmtp)))
+			require.NoError(t, p.synthesizeAddTrackRequests(c.offer))
 
 			pti := p.pendingTracks["audio-cid"]
 			require.NotNil(t, pti)

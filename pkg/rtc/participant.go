@@ -1161,13 +1161,20 @@ func (p *ParticipantImpl) synthesizeAddTrackRequests(parsedOffer *sdp.SessionDes
 // sender (sprop-stereo=1, RFC 7587). There is no AddTrackRequest in one-shot
 // mode, so the offer is the only place the publisher can signal stereo.
 func isOpusStereo(m *sdp.MediaDescription) bool {
-	opusPT := ""
+	opusPTs := map[string]bool{}
 	for _, a := range m.Attributes {
 		if a.Key != "rtpmap" {
 			continue
 		}
 		pt, encoding, ok := strings.Cut(a.Value, " ")
 		if ok && strings.HasPrefix(strings.ToLower(encoding), "opus/") {
+			opusPTs[pt] = true
+		}
+	}
+	// the format list is in preference order (RFC 3264), rtpmap order is not
+	opusPT := ""
+	for _, pt := range m.MediaName.Formats {
+		if opusPTs[pt] {
 			opusPT = pt
 			break
 		}
