@@ -1158,13 +1158,13 @@ func TestAnsweringDTLSRole(t *testing.T) {
 		expected   sdp.ConnectionRole
 	}{
 		{name: "ice lite", iceLite: true, clientInfo: sdkInfo(livekit.ClientInfo_JS), expected: sdp.ConnectionRolePassive},
-		{name: "no ice lite", clientInfo: sdkInfo(livekit.ClientInfo_JS), expected: sdp.ConnectionRoleActive},
+		{name: "no ice lite", clientInfo: sdkInfo(livekit.ClientInfo_JS), expected: sdp.ConnectionRolePassive},
 		{name: "unknown sdk", iceLite: true, clientInfo: ClientInfo{}, expected: sdp.ConnectionRoleActive},
 		{name: "esp32", iceLite: true, clientInfo: sdkInfo(livekit.ClientInfo_ESP32), expected: sdp.ConnectionRoleActive},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			conf := &WebRTCConfig{ICELite: c.iceLite}
+			conf := &WebRTCConfig{}
 			conf.SettingEngine.SetLite(c.iceLite)
 			answerer, err := NewPCTransport(TransportParams{
 				Config:          conf,
