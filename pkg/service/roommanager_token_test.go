@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -132,6 +133,43 @@ func TestIceServersForParticipantTLSOnly(t *testing.T) {
 		"turns:tls.example.com:443?transport=tcp",
 	}, urls(false))
 	require.Equal(t, []string{"turns:tls.example.com:443?transport=tcp"}, urls(true))
+}
+
+func TestResumeICEUsesLearnedFallback(t *testing.T) {
+	conf := &config.Config{}
+	conf.RTC.TURNServers = []config.TURNServer{
+		{Host: "udp.example.com", Port: 3478, Protocol: "udp"},
+		{Host: "tls.example.com", Port: 443, Protocol: "tls"},
+	}
+	r := &RoomManager{config: conf, iceConfigCache: sutils.NewIceConfigCache[iceConfigCacheKey](0)}
+	t.Cleanup(r.iceConfigCache.Stop)
+	p := &typesfakes.FakeLocalParticipant{}
+	p.IdentityReturns("p")
+	p.IDReturns("PA_test")
+
+	urls := func(iceServers []*livekit.ICEServer) []string {
+		var out []string
+		for _, s := range iceServers {
+			out = append(out, s.Urls...)
+		}
+		return out
+	}
+
+	iceConfig, iceServers := r.resumeICE("room", p, "key", livekit.CandidateProtocol_UDP)
+	require.Equal(t, livekit.ICECandidateType_ICT_NONE, iceConfig.PreferenceSubscriber)
+	require.Equal(t, []string{
+		"turn:udp.example.com:3478?transport=udp",
+		"turns:tls.example.com:443?transport=tcp",
+	}, urls(iceServers))
+
+	// the participant reports a TLS fallback that it learned from a failure
+	tls := &livekit.ICEConfig{PreferenceSubscriber: livekit.ICECandidateType_ICT_TLS, PreferencePublisher: livekit.ICECandidateType_ICT_TLS}
+	r.iceConfigCache.Put(iceConfigCacheKey{"room", "p"}, tls)
+
+	iceConfig, iceServers = r.resumeICE("room", p, "key", livekit.CandidateProtocol_UDP)
+	require.True(t, proto.Equal(tls, iceConfig))
+	require.True(t, proto.Equal(tls, p.SetICEConfigArgsForCall(1)))
+	require.Equal(t, []string{"turns:tls.example.com:443?transport=tcp"}, urls(iceServers))
 }
 
 func TestResumeCandidateProtocol(t *testing.T) {
