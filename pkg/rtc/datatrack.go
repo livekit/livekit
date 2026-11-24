@@ -16,7 +16,6 @@ package rtc
 
 import (
 	"errors"
-	"slices"
 	"sync"
 
 	"github.com/frostbyte73/core"
@@ -170,21 +169,37 @@ func (d *DataTrack) IsSubscriber(subID livekit.ParticipantID) bool {
 }
 
 func (d *DataTrack) RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity {
-	var revokedSubscriberIdentities []livekit.ParticipantIdentity
-
 	d.lock.Lock()
-	disallowed := make(map[livekit.ParticipantID]livekit.ParticipantIdentity)
+	if len(d.subscribedTracks) == 0 {
+		d.lock.Unlock()
+		return nil
+	}
+
+	var allowedSet map[livekit.ParticipantIdentity]struct{}
+	if shouldBuildAllowedSubscriberSet(len(d.subscribedTracks), allowedSubscriberIdentities) {
+		// Release d.lock while allocating and populating the lookup set, then re-scan under lock.
+		d.lock.Unlock()
+		allowedSet = buildAllowedSubscriberSet(allowedSubscriberIdentities)
+		d.lock.Lock()
+	}
+
+	var disallowed map[livekit.ParticipantID]livekit.ParticipantIdentity
 	for subID, subscribedTrack := range d.subscribedTracks {
 		if IsParticipantExemptFromTrackPermissionsRestrictions(subscribedTrack.subscriber) {
 			continue
 		}
 
-		if !slices.Contains(allowedSubscriberIdentities, subscribedTrack.subscriber.Identity()) {
-			disallowed[subID] = subscribedTrack.subscriber.Identity()
+		subIdentity := subscribedTrack.subscriber.Identity()
+		if !isSubscriberAllowed(allowedSubscriberIdentities, allowedSet, subIdentity) {
+			if disallowed == nil {
+				disallowed = make(map[livekit.ParticipantID]livekit.ParticipantIdentity)
+			}
+			disallowed[subID] = subIdentity
 		}
 	}
 	d.lock.Unlock()
 
+	var revokedSubscriberIdentities []livekit.ParticipantIdentity
 	for subID, subIdentity := range disallowed {
 		d.logger.Infow("revoking data track subscription",
 			"subscriber", subIdentity,

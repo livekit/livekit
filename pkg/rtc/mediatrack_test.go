@@ -15,10 +15,13 @@
 package rtc
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -194,4 +197,107 @@ func TestGetQualityForDimension(t *testing.T) {
 		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(mime.MimeTypeH264, 1200, 800))
 	})
 
+}
+
+type revokeTestParticipant struct {
+	types.LocalParticipant
+	id         livekit.ParticipantID
+	identity   livekit.ParticipantIdentity
+	isRecorder bool
+}
+
+func (p *revokeTestParticipant) ID() livekit.ParticipantID { return p.id }
+func (p *revokeTestParticipant) Identity() livekit.ParticipantIdentity {
+	return p.identity
+}
+func (p *revokeTestParticipant) IsRecorder() bool { return p.isRecorder }
+
+type revokeTestSubscribedTrack struct {
+	types.SubscribedTrack
+	subscriber *revokeTestParticipant
+}
+
+func (s *revokeTestSubscribedTrack) Subscriber() types.LocalParticipant { return s.subscriber }
+func (s *revokeTestSubscribedTrack) SubscriberID() livekit.ParticipantID {
+	return s.subscriber.id
+}
+func (s *revokeTestSubscribedTrack) SubscriberIdentity() livekit.ParticipantIdentity {
+	return s.subscriber.identity
+}
+func (s *revokeTestSubscribedTrack) DownTrack() *sfu.DownTrack { return nil }
+
+func newTestMediaTrackReceiverWithSubscribers(n int) *MediaTrackReceiver {
+	mtr := NewMediaTrackReceiver(MediaTrackReceiverParams{
+		MediaTrack: NewMediaTrack(MediaTrackParams{Logger: logger.GetLogger()}, &livekit.TrackInfo{
+			Sid:  "TR_test",
+			Type: livekit.TrackType_VIDEO,
+		}),
+		Logger: logger.GetLogger(),
+	}, &livekit.TrackInfo{
+		Sid:  "TR_test",
+		Type: livekit.TrackType_VIDEO,
+	})
+	for i := range n {
+		id := livekit.ParticipantID(fmt.Sprintf("PA_%04d", i))
+		identity := livekit.ParticipantIdentity(fmt.Sprintf("sub_%04d", i))
+		mtr.MediaTrackSubscriptions.subscribedTracks[id] = &revokeTestSubscribedTrack{
+			subscriber: &revokeTestParticipant{id: id, identity: identity},
+		}
+	}
+	return mtr
+}
+
+func newTestAllowedSubscriberIdentities(n int) []livekit.ParticipantIdentity {
+	allowed := make([]livekit.ParticipantIdentity, 0, n)
+	for i := range n {
+		allowed = append(allowed, livekit.ParticipantIdentity(fmt.Sprintf("sub_%04d", i)))
+	}
+	return allowed
+}
+
+func TestMediaTrackReceiverRevokeDisallowedSubscribers(t *testing.T) {
+	t.Run("empty subscribers", func(t *testing.T) {
+		mtr := newTestMediaTrackReceiverWithSubscribers(0)
+		revoked := mtr.RevokeDisallowedSubscribers([]livekit.ParticipantIdentity{"sub_0000"})
+		require.Empty(t, revoked)
+	})
+
+	t.Run("single subscriber with large allowlist", func(t *testing.T) {
+		mtr := newTestMediaTrackReceiverWithSubscribers(1)
+		revoked := mtr.RevokeDisallowedSubscribers(newTestAllowedSubscriberIdentities(15))
+		require.Empty(t, revoked)
+	})
+
+	t.Run("small allowlist and exempt recorder", func(t *testing.T) {
+		mtr := newTestMediaTrackReceiverWithSubscribers(2)
+		mtr.MediaTrackSubscriptions.subscribedTracks["PA_rec"] = &revokeTestSubscribedTrack{
+			subscriber: &revokeTestParticipant{id: "PA_rec", identity: "rec", isRecorder: true},
+		}
+		revoked := mtr.RevokeDisallowedSubscribers([]livekit.ParticipantIdentity{"sub_0000"})
+		require.Equal(t, []livekit.ParticipantIdentity{"sub_0001"}, revoked)
+	})
+
+	t.Run("large allowlist above map threshold", func(t *testing.T) {
+		mtr := newTestMediaTrackReceiverWithSubscribers(20)
+		mtr.MediaTrackSubscriptions.subscribedTracks["PA_rec"] = &revokeTestSubscribedTrack{
+			subscriber: &revokeTestParticipant{id: "PA_rec", identity: "rec", isRecorder: true},
+		}
+		revoked := mtr.RevokeDisallowedSubscribers(newTestAllowedSubscriberIdentities(15))
+		expected := []livekit.ParticipantIdentity{"sub_0015", "sub_0016", "sub_0017", "sub_0018", "sub_0019"}
+		require.ElementsMatch(t, expected, revoked)
+	})
+}
+
+func BenchmarkMediaTrackReceiverRevokeDisallowedSubscribers(b *testing.B) {
+	for _, size := range []int{100, 500, 1000} {
+		b.Run(fmt.Sprintf("subscribers_%d", size), func(b *testing.B) {
+			mtr := newTestMediaTrackReceiverWithSubscribers(size)
+			allowed := newTestAllowedSubscriberIdentities(size)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				_ = mtr.RevokeDisallowedSubscribers(allowed)
+			}
+		})
+	}
 }
