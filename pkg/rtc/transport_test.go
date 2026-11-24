@@ -1153,19 +1153,16 @@ func TestAnsweringDTLSRole(t *testing.T) {
 	}
 	cases := []struct {
 		name       string
-		iceLite    bool
 		clientInfo ClientInfo
 		expected   sdp.ConnectionRole
 	}{
-		{name: "ice lite", iceLite: true, clientInfo: sdkInfo(livekit.ClientInfo_JS), expected: sdp.ConnectionRolePassive},
-		{name: "no ice lite", clientInfo: sdkInfo(livekit.ClientInfo_JS), expected: sdp.ConnectionRoleActive},
-		{name: "unknown sdk", iceLite: true, clientInfo: ClientInfo{}, expected: sdp.ConnectionRoleActive},
-		{name: "esp32", iceLite: true, clientInfo: sdkInfo(livekit.ClientInfo_ESP32), expected: sdp.ConnectionRoleActive},
+		{name: "js", clientInfo: sdkInfo(livekit.ClientInfo_JS), expected: sdp.ConnectionRolePassive},
+		{name: "unknown sdk", clientInfo: ClientInfo{}, expected: sdp.ConnectionRoleActive},
+		{name: "esp32", clientInfo: sdkInfo(livekit.ClientInfo_ESP32), expected: sdp.ConnectionRoleActive},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			conf := &WebRTCConfig{ICELite: c.iceLite}
-			conf.SettingEngine.SetLite(c.iceLite)
+			conf := &WebRTCConfig{}
 			answerer, err := NewPCTransport(TransportParams{
 				Config:          conf,
 				ProtocolVersion: 16,
@@ -1192,6 +1189,60 @@ func TestAnsweringDTLSRole(t *testing.T) {
 			setup, ok := parsed.MediaDescriptions[0].Attribute(sdp.AttrKeyConnectionSetup)
 			require.True(t, ok)
 			require.Equal(t, c.expected.String(), setup)
+		})
+	}
+}
+
+func TestICELitePlacement(t *testing.T) {
+	js := ClientInfo{ClientInfo: &livekit.ClientInfo{Sdk: livekit.ClientInfo_JS}}
+	cases := []struct {
+		name       string
+		configLite bool // server use_ice_lite
+		isOfferer  bool // true = subscriber (SFU offers); false = publisher (SFU answers)
+		expectLite bool
+	}{
+		{name: "subscriber honors lite", configLite: true, isOfferer: true, expectLite: true},
+		{name: "subscriber full when off", configLite: false, isOfferer: true, expectLite: false},
+		{name: "publisher stays full despite lite", configLite: true, isOfferer: false, expectLite: false},
+		{name: "publisher full when off", configLite: false, isOfferer: false, expectLite: false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			conf := &WebRTCConfig{}
+			conf.SettingEngine.SetLite(c.configLite)
+			tr, err := NewPCTransport(TransportParams{
+				Config:          conf,
+				ProtocolVersion: 16,
+				ClientInfo:      js,
+				IsOfferer:       c.isOfferer,
+				Handler:         &transportfakes.FakeHandler{},
+			})
+			require.NoError(t, err)
+			defer tr.Close()
+
+			var desc webrtc.SessionDescription
+			if c.isOfferer {
+				_, err = tr.pc.CreateDataChannel("test", nil)
+				require.NoError(t, err)
+				desc, err = tr.pc.CreateOffer(nil)
+				require.NoError(t, err)
+			} else {
+				offerer, err2 := webrtc.NewPeerConnection(webrtc.Configuration{})
+				require.NoError(t, err2)
+				defer offerer.Close()
+				_, err2 = offerer.CreateDataChannel("test", nil)
+				require.NoError(t, err2)
+				offer, err2 := offerer.CreateOffer(nil)
+				require.NoError(t, err2)
+				require.NoError(t, tr.pc.SetRemoteDescription(offer))
+				desc, err = tr.pc.CreateAnswer(nil)
+				require.NoError(t, err)
+			}
+
+			parsed, err := desc.Unmarshal()
+			require.NoError(t, err)
+			_, hasLite := parsed.Attribute(sdp.AttrKeyICELite)
+			require.Equal(t, c.expectLite, hasLite, "a=ice-lite presence")
 		})
 	}
 }

@@ -410,7 +410,6 @@ func newPeerConnection(
 	//
 	se.DisableSRTPReplayProtection(true)
 	se.DisableSRTCPReplayProtection(true)
-	iceLite := params.Config.ICELite
 	if !params.ProtocolVersion.SupportsICELite() || !params.ClientInfo.SupportsPrflxOverRelay() {
 		// if client don't support prflx over relay which is only Firefox, disable ICE Lite to ensure that
 		// aggressive nomination is handled properly. Firefox does aggressive nomination even if peer is
@@ -420,9 +419,8 @@ func newPeerConnection(
 		// ending up with different candidates.
 		// As Firefox does not support migration, ICE Lite can be disabled.
 		se.SetLite(false)
-		iceLite = false
 	}
-	if iceLite && params.ClientInfo.SupportsAnswerDTLSRoleServer() {
+	if params.ClientInfo.SupportsAnswerDTLSRoleServer() {
 		_ = se.SetAnsweringDTLSRole(webrtc.DTLSRoleServer)
 	}
 	// ICE checks already prove the remote address, so the HelloVerifyRequest cookie only adds a round trip.
@@ -492,6 +490,7 @@ func newPeerConnection(
 		// sfu only use interceptor to send XR but don't read response from it (use buffer instead),
 		// so use a empty callback here
 		ir.Add(lkinterceptor.NewRTTFromXRFactory(func(rtt uint32) {}))
+		se.SetLite(false)
 	}
 	if len(params.SimTracks) > 0 {
 		f, err := sfuinterceptor.NewUnhandleSimulcastInterceptorFactory(sfuinterceptor.UnhandleSimulcastTracks(params.Logger, params.SimTracks))

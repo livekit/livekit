@@ -240,6 +240,7 @@ type ParticipantParams struct {
 	Country                           string
 	PreferVideoSizeFromMedia          bool
 	UseSinglePeerConnection           bool
+	CandidateProtocol                 livekit.CandidateProtocol
 	EnableDataTracks                  bool
 	EnableRTPStreamRestartDetection   bool
 	ForceBackupCodecPolicySimulcast   bool
@@ -1907,6 +1908,36 @@ func (p *ParticipantImpl) ICERestart(iceConfig *livekit.ICEConfig) {
 	}
 }
 
+// SimulateICEFallback restarts ICE with the config and reports it like a learned fallback, so the rejoin that follows keeps it.
+func (p *ParticipantImpl) SimulateICEFallback(iceConfig *livekit.ICEConfig) {
+	if p.params.UseOneShotSignallingMode {
+		return
+	}
+
+	p.ICERestart(iceConfig)
+
+	// only a transport the node offers stays for the rejoin
+	switch iceConfig.GetPreferenceSubscriber() {
+	case livekit.ICECandidateType_ICT_TCP:
+		if p.params.Config.TCPMuxListener == nil {
+			return
+		}
+	case livekit.ICECandidateType_ICT_TLS:
+		if !p.params.TURNSEnabled {
+			return
+		}
+	default:
+		return
+	}
+
+	p.lock.RLock()
+	onICEConfigChanged := p.onICEConfigChanged
+	p.lock.RUnlock()
+	if onICEConfigChanged != nil {
+		onICEConfigChanged(p, iceConfig)
+	}
+}
+
 func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig)) {
 	p.lock.Lock()
 	p.onICEConfigChanged = f
@@ -2241,7 +2272,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		return err
 	}
 
-	tm.OnICEConfigChanged(func(iceConfig *livekit.ICEConfig) {
+	tm.OnICEConfigChanged(func(iceConfig *livekit.ICEConfig, learned bool) {
 		p.lock.Lock()
 		onICEConfigChanged := p.onICEConfigChanged
 
@@ -2256,7 +2287,8 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		}
 		p.lock.Unlock()
 
-		if onICEConfigChanged != nil {
+		// only learned fallbacks are reported, an explicit config comes from the client preference
+		if learned && onICEConfigChanged != nil {
 			onICEConfigChanged(p, iceConfig)
 		}
 	})
@@ -4720,6 +4752,10 @@ func (p *ParticipantImpl) HandleSignalMessage(msg proto.Message) error {
 
 func (p *ParticipantImpl) IsUsingSinglePeerConnection() bool {
 	return p.params.UseSinglePeerConnection
+}
+
+func (p *ParticipantImpl) GetCandidateProtocol() livekit.CandidateProtocol {
+	return p.params.CandidateProtocol
 }
 
 func (p *ParticipantImpl) AddTrackLocal(

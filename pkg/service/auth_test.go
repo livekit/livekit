@@ -33,7 +33,7 @@ func TestAuthMiddleware(t *testing.T) {
 	provider := &authfakes.FakeKeyProvider{}
 	provider.GetSecretReturns(secret)
 
-	m := service.NewAPIKeyAuthMiddleware(provider)
+	m := service.NewAPIKeyAuthMiddleware(provider, nil)
 	var grants *auth.ClaimGrants
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		grants = service.GetGrants(r.Context())
