@@ -1916,6 +1916,20 @@ func (p *ParticipantImpl) SimulateICEFallback(iceConfig *livekit.ICEConfig) {
 
 	p.ICERestart(iceConfig)
 
+	// only a transport the node offers stays for the rejoin
+	switch iceConfig.GetPreferenceSubscriber() {
+	case livekit.ICECandidateType_ICT_TCP:
+		if p.params.Config.TCPMuxListener == nil {
+			return
+		}
+	case livekit.ICECandidateType_ICT_TLS:
+		if !p.params.TURNSEnabled {
+			return
+		}
+	default:
+		return
+	}
+
 	p.lock.RLock()
 	onICEConfigChanged := p.onICEConfigChanged
 	p.lock.RUnlock()

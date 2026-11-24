@@ -16,6 +16,7 @@ package rtc
 
 import (
 	"fmt"
+	"net"
 	"regexp"
 	"runtime"
 	"slices"
@@ -2103,10 +2104,31 @@ func TestICEConfigChangedReportsOnlyLearned(t *testing.T) {
 	require.True(t, proto.Equal(tcp, reported[0]))
 	require.Equal(t, livekit.ClientConfigSetting_UNSET, p.GetClientConfiguration().GetForceRelay())
 
+	// a simulated transport that the node does not offer is not kept for the rejoin
+	p.SimulateICEFallback(tls)
+	require.True(t, proto.Equal(tls, p.GetICEConfig()))
+	p.SimulateICEFallback(tcp)
+	require.True(t, proto.Equal(tcp, p.GetICEConfig()))
+	require.Len(t, reported, 1)
+
 	// the client rejoins after the simulate, so its config is kept like a learned fallback
+	p.params.TURNSEnabled = true
 	p.SimulateICEFallback(tls)
 	require.Len(t, reported, 2)
 	require.True(t, proto.Equal(tls, reported[1]))
-	require.True(t, proto.Equal(tls, p.GetICEConfig()))
 	require.Equal(t, livekit.ClientConfigSetting_ENABLED, p.GetClientConfiguration().GetForceRelay())
+
+	p.params.Config.TCPMuxListener = &net.TCPListener{}
+	p.SimulateICEFallback(tcp)
+	require.Len(t, reported, 3)
+	require.True(t, proto.Equal(tcp, reported[2]))
+
+	// a config equal to the current one is reported too, the cache can be empty
+	p.SimulateICEFallback(tcp)
+	require.Len(t, reported, 4)
+
+	// no preference and an unknown value do not replace a cached fallback
+	p.SimulateICEFallback(&livekit.ICEConfig{})
+	p.SimulateICEFallback(&livekit.ICEConfig{PreferenceSubscriber: 99, PreferencePublisher: 99})
+	require.Len(t, reported, 4)
 }
