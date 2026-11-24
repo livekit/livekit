@@ -125,7 +125,7 @@ type TransportManager struct {
 	udpLossUnstableCount uint32
 	signalingRTT, udpRTT uint32
 
-	onICEConfigChanged func(iceConfig *livekit.ICEConfig)
+	onICEConfigChanged func(iceConfig *livekit.ICEConfig, learned bool)
 
 	dataChannelSendErrorDroppedBySlowReaderCount atomic.Uint32
 	dataChannelSendErrorCount                    atomic.Uint32
@@ -702,7 +702,8 @@ func (t *TransportManager) ICERestart(iceConfig *livekit.ICEConfig) error {
 	return nil
 }
 
-func (t *TransportManager) OnICEConfigChanged(f func(iceConfig *livekit.ICEConfig)) {
+// OnICEConfigChanged reports each change, learned is true for a fallback the transport chose after a failure.
+func (t *TransportManager) OnICEConfigChanged(f func(iceConfig *livekit.ICEConfig, learned bool)) {
 	t.lock.Lock()
 	t.onICEConfigChanged = f
 	t.lock.Unlock()
@@ -759,7 +760,7 @@ func (t *TransportManager) configureICE(iceConfig *livekit.ICEConfig, reset bool
 	}
 
 	if onICEConfigChanged != nil {
-		onICEConfigChanged(iceConfig)
+		onICEConfigChanged(iceConfig, !reset)
 	}
 }
 

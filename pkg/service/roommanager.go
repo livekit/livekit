@@ -370,7 +370,8 @@ func (r *RoomManager) StartSession(
 				"participantInit", &pi,
 				"numParticipants", room.GetParticipantCount(),
 			)
-			iceConfig := r.getIceConfig(room.Name(), participant)
+			// applied before the resume response, so it carries the matching client configuration
+			iceConfig := r.setIceConfig(room.Name(), participant, resumeCandidateProtocol(r.supportedCandidateProtocol(pi.CandidateProtocol), participant.GetCandidateProtocol()))
 			if err = room.ResumeParticipant(
 				participant,
 				requestSource,
@@ -543,6 +544,7 @@ func (r *RoomManager) StartSession(
 		DatachannelDataTrackTargetLatency: r.config.RTC.DatachannelDataTrackTargetLatency,
 		FireOnTrackBySdp:                  true,
 		UseSinglePeerConnection:           pi.UseSinglePeerConnection,
+		CandidateProtocol:                 pi.CandidateProtocol,
 		EnableDataTracks:                  r.config.EnableDataTracks,
 		EnableParticipantDataBlob:         r.config.EnableParticipantDataBlob,
 		EnableRTPStreamRestartDetection:   r.config.RTC.EnableRTPStreamRestartDetection,
@@ -555,7 +557,7 @@ func (r *RoomManager) StartSession(
 		prometheus.IncrementParticipantRtcCanceled(1, enableWarp, pi.Client.GetSdk())
 		return err
 	}
-	iceConfig := r.setIceConfig(room.Name(), participant)
+	iceConfig := r.setIceConfig(room.Name(), participant, pi.CandidateProtocol)
 
 	// join room
 	opts := rtc.ParticipantOptions{
@@ -1078,7 +1080,7 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 	var iceServers []*livekit.ICEServer
 	rtcConf := r.config.RTC
 
-	if tlsOnly && r.config.TURN.TLSPort == 0 {
+	if tlsOnly && !r.config.IsTURNSEnabled() {
 		logger.Warnw("tls only enabled but no turn tls config", nil)
 		tlsOnly = false
 	}
@@ -1115,6 +1117,9 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 	if len(rtcConf.TURNServers) > 0 {
 		hasSTUN = true
 		for _, s := range r.config.RTC.TURNServers {
+			if tlsOnly && s.Protocol != "tls" {
+				continue
+			}
 			scheme := "turn"
 			transport := "tcp"
 			switch s.Protocol {
@@ -1208,14 +1213,37 @@ func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {
 	return nil
 }
 
-func (r *RoomManager) setIceConfig(roomName livekit.RoomName, participant types.LocalParticipant) *livekit.ICEConfig {
-	iceConfig := r.getIceConfig(roomName, participant)
+func (r *RoomManager) setIceConfig(roomName livekit.RoomName, participant types.LocalParticipant, clientPreference livekit.CandidateProtocol) *livekit.ICEConfig {
+	iceConfig := r.getIceConfig(roomName, participant, clientPreference)
 	participant.SetICEConfig(iceConfig)
 	return iceConfig
 }
 
-func (r *RoomManager) getIceConfig(roomName livekit.RoomName, participant types.LocalParticipant) *livekit.ICEConfig {
-	return r.iceConfigCache.Get(iceConfigCacheKey{roomName, participant.Identity()})
+// getIceConfig returns the stronger of the learned fallback and the client preference (NONE < TCP < TLS).
+func (r *RoomManager) getIceConfig(roomName livekit.RoomName, participant types.LocalParticipant, clientPreference livekit.CandidateProtocol) *livekit.ICEConfig {
+	iceConfig := r.iceConfigCache.Get(iceConfigCacheKey{roomName, participant.Identity()})
+
+	// CandidateProtocol and ICECandidateType share values (UDP/NONE, TCP, TLS)
+	preferred := livekit.ICECandidateType(r.supportedCandidateProtocol(clientPreference))
+	if preferred <= iceConfig.PreferenceSubscriber {
+		return iceConfig
+	}
+	return &livekit.ICEConfig{
+		PreferenceSubscriber: preferred,
+		PreferencePublisher:  preferred,
+	}
+}
+
+// supportedCandidateProtocol lowers a preference to a transport the server offers, as TCP mode drops UDP candidates.
+func (r *RoomManager) supportedCandidateProtocol(cp livekit.CandidateProtocol) livekit.CandidateProtocol {
+	tcpEnabled := r.config.RTC.TCPPort != 0
+	switch {
+	case cp == livekit.CandidateProtocol_TLS && r.config.IsTURNSEnabled():
+		return livekit.CandidateProtocol_TLS
+	case (cp == livekit.CandidateProtocol_TCP || cp == livekit.CandidateProtocol_TLS) && tcpEnabled:
+		return livekit.CandidateProtocol_TCP
+	}
+	return livekit.CandidateProtocol_UDP
 }
 
 // getSigningKeyPair prefers the key that signed the join token so refreshed tokens stay valid when other keys are rotated.
@@ -1279,4 +1307,12 @@ func (h *roomManagerParticipantHelper) ShouldRegressCodec() bool {
 
 func (h *roomManagerParticipantHelper) GetCachedReliableDataMessage(seqs map[livekit.ParticipantID]uint32) []*types.DataMessageCache {
 	return h.room.GetCachedReliableDataMessage(seqs)
+}
+
+// resumeCandidateProtocol uses the preference sent on resume, and the one from join when none was sent.
+func resumeCandidateProtocol(requested, joined livekit.CandidateProtocol) livekit.CandidateProtocol {
+	if requested != livekit.CandidateProtocol_UDP {
+		return requested
+	}
+	return joined
 }

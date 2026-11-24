@@ -2087,3 +2087,24 @@ func TestPerformRpcForwardedResponseTimeout(t *testing.T) {
 		})
 	}
 }
+
+func TestICEConfigChangedReportsOnlyLearned(t *testing.T) {
+	p := newParticipantForTest("test")
+	defer p.Close(false, types.ParticipantCloseReasonNone, false)
+
+	var reported []*livekit.ICEConfig
+	p.OnICEConfigChanged(func(_ types.LocalParticipant, iceConfig *livekit.ICEConfig) {
+		reported = append(reported, iceConfig)
+	})
+
+	tls := &livekit.ICEConfig{PreferenceSubscriber: livekit.ICECandidateType_ICT_TLS, PreferencePublisher: livekit.ICECandidateType_ICT_TLS}
+	p.SetICEConfig(tls)
+	require.Empty(t, reported, "explicit config must not be reported as learned")
+	require.Equal(t, livekit.ClientConfigSetting_ENABLED, p.GetClientConfiguration().GetForceRelay())
+
+	tcp := &livekit.ICEConfig{PreferenceSubscriber: livekit.ICECandidateType_ICT_TCP, PreferencePublisher: livekit.ICECandidateType_ICT_TCP}
+	p.TransportManager.configureICE(tcp, false)
+	require.Len(t, reported, 1)
+	require.True(t, proto.Equal(tcp, reported[0]))
+	require.Equal(t, livekit.ClientConfigSetting_UNSET, p.GetClientConfiguration().GetForceRelay())
+}

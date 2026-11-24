@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -252,6 +253,9 @@ func (s *RTCService) validateInternal(
 
 		pi.AdaptiveStream = boolValue(r.FormValue("adaptive_stream"))
 		pi.DisableICELite = boolValue(r.FormValue("disable_ice_lite"))
+		if cp, ok := livekit.CandidateProtocol_value[strings.ToUpper(r.FormValue("candidate_protocol"))]; ok {
+			pi.CandidateProtocol = livekit.CandidateProtocol(cp)
+		}
 
 		reconnectReason, _ := strconv.Atoi(r.FormValue("reconnect_reason")) // 0 means unknown reason
 		pi.ReconnectReason = livekit.ReconnectReason(reconnectReason)
@@ -280,6 +284,9 @@ func (s *RTCService) validateInternal(
 
 		pi.AdaptiveStream = joinRequest.GetConnectionSettings().GetAdaptiveStream()
 		pi.DisableICELite = joinRequest.GetConnectionSettings().GetDisableIceLite()
+		if cp := joinRequest.GetConnectionSettings().GetCandidateProtocol(); livekit.CandidateProtocol_name[int32(cp)] != "" {
+			pi.CandidateProtocol = cp
+		}
 
 		if cs := joinRequest.GetConnectionSettings(); cs != nil && cs.SubscriberAllowPause != nil {
 			v := cs.GetSubscriberAllowPause()

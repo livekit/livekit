@@ -240,6 +240,7 @@ type ParticipantParams struct {
 	Country                           string
 	PreferVideoSizeFromMedia          bool
 	UseSinglePeerConnection           bool
+	CandidateProtocol                 livekit.CandidateProtocol
 	EnableDataTracks                  bool
 	EnableRTPStreamRestartDetection   bool
 	ForceBackupCodecPolicySimulcast   bool
@@ -2241,7 +2242,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		return err
 	}
 
-	tm.OnICEConfigChanged(func(iceConfig *livekit.ICEConfig) {
+	tm.OnICEConfigChanged(func(iceConfig *livekit.ICEConfig, learned bool) {
 		p.lock.Lock()
 		onICEConfigChanged := p.onICEConfigChanged
 
@@ -2256,7 +2257,8 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		}
 		p.lock.Unlock()
 
-		if onICEConfigChanged != nil {
+		// only learned fallbacks are reported, an explicit config comes from the client preference
+		if learned && onICEConfigChanged != nil {
 			onICEConfigChanged(p, iceConfig)
 		}
 	})
@@ -4720,6 +4722,10 @@ func (p *ParticipantImpl) HandleSignalMessage(msg proto.Message) error {
 
 func (p *ParticipantImpl) IsUsingSinglePeerConnection() bool {
 	return p.params.UseSinglePeerConnection
+}
+
+func (p *ParticipantImpl) GetCandidateProtocol() livekit.CandidateProtocol {
+	return p.params.CandidateProtocol
 }
 
 func (p *ParticipantImpl) AddTrackLocal(
