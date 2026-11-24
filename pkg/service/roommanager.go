@@ -371,7 +371,7 @@ func (r *RoomManager) StartSession(
 				"numParticipants", room.GetParticipantCount(),
 			)
 			// applied before the resume response, so it carries the matching client configuration
-			iceConfig := r.setIceConfig(room.Name(), participant, max(pi.CandidateProtocol, participant.GetCandidateProtocol()))
+			iceConfig := r.setIceConfig(room.Name(), participant, resumeCandidateProtocol(pi.CandidateProtocol, participant.GetCandidateProtocol()))
 			if err = room.ResumeParticipant(
 				participant,
 				requestSource,
@@ -1302,4 +1302,12 @@ func (h *roomManagerParticipantHelper) ShouldRegressCodec() bool {
 
 func (h *roomManagerParticipantHelper) GetCachedReliableDataMessage(seqs map[livekit.ParticipantID]uint32) []*types.DataMessageCache {
 	return h.room.GetCachedReliableDataMessage(seqs)
+}
+
+// resumeCandidateProtocol uses the preference sent on resume, and the one from join when none was sent.
+func resumeCandidateProtocol(requested, joined livekit.CandidateProtocol) livekit.CandidateProtocol {
+	if requested != livekit.CandidateProtocol_UDP {
+		return requested
+	}
+	return joined
 }

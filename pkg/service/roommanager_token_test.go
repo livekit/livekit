@@ -133,3 +133,11 @@ func TestIceServersForParticipantTLSOnly(t *testing.T) {
 	}, urls(false))
 	require.Equal(t, []string{"turns:tls.example.com:443?transport=tcp"}, urls(true))
 }
+
+func TestResumeCandidateProtocol(t *testing.T) {
+	udp, tcp, tls := livekit.CandidateProtocol_UDP, livekit.CandidateProtocol_TCP, livekit.CandidateProtocol_TLS
+	require.Equal(t, tls, resumeCandidateProtocol(udp, tls), "no preference on resume keeps join")
+	require.Equal(t, tcp, resumeCandidateProtocol(tcp, tls), "tcp on resume replaces tls from join")
+	require.Equal(t, tls, resumeCandidateProtocol(tls, udp), "tls on resume replaces no preference")
+	require.Equal(t, udp, resumeCandidateProtocol(udp, udp))
+}
