@@ -65,28 +65,30 @@ func TestGetIceConfigClientPreference(t *testing.T) {
 		tcp  = livekit.ICECandidateType_ICT_TCP
 		tls  = livekit.ICECandidateType_ICT_TLS
 	)
-	turnsConf := &config.Config{}
-	turnsConf.TURN.Enabled = true
-	turnsConf.TURN.TLSPort = 5349
+	fullConf := &config.Config{}
+	fullConf.RTC.TCPPort = 7881
+	fullConf.TURN.Enabled = true
+	fullConf.TURN.TLSPort = 5349
+	tcpOnlyConf := &config.Config{}
+	tcpOnlyConf.RTC.TCPPort = 7881
+	udpOnlyConf := &config.Config{}
 
-	udp, tcpPref, tlsPref := livekit.CandidateProtocol_UDP, livekit.CandidateProtocol_TCP, livekit.CandidateProtocol_TLS
 	cases := []struct {
-		name    string
-		conf    *config.Config
-		cached  livekit.ICECandidateType
-		clients []livekit.CandidateProtocol
-		want    livekit.ICECandidateType
+		name   string
+		conf   *config.Config
+		cached livekit.ICECandidateType
+		client livekit.CandidateProtocol
+		want   livekit.ICECandidateType
 	}{
-		{"no preference", turnsConf, none, []livekit.CandidateProtocol{udp}, none},
-		{"client tcp", turnsConf, none, []livekit.CandidateProtocol{tcpPref}, tcp},
-		{"client tls", turnsConf, none, []livekit.CandidateProtocol{tlsPref}, tls},
-		{"client tls without turns", &config.Config{}, none, []livekit.CandidateProtocol{tlsPref}, tcp},
-		{"cached tls beats client tcp", turnsConf, tls, []livekit.CandidateProtocol{tcpPref}, tls},
-		{"client tls beats cached tcp", turnsConf, tcp, []livekit.CandidateProtocol{tlsPref}, tls},
-		{"unknown value ignored", turnsConf, none, []livekit.CandidateProtocol{7}, none},
-		{"resume without preference keeps join preference", turnsConf, none, []livekit.CandidateProtocol{udp, tcpPref}, tcp},
-		{"resume takes stronger of request and join", turnsConf, none, []livekit.CandidateProtocol{tlsPref, tcpPref}, tls},
-		{"unknown resume value keeps join preference", turnsConf, none, []livekit.CandidateProtocol{7, tcpPref}, tcp},
+		{"no preference", fullConf, none, livekit.CandidateProtocol_UDP, none},
+		{"client tcp", fullConf, none, livekit.CandidateProtocol_TCP, tcp},
+		{"client tls", fullConf, none, livekit.CandidateProtocol_TLS, tls},
+		{"client tls without turns", tcpOnlyConf, none, livekit.CandidateProtocol_TLS, tcp},
+		{"client tcp without ice/tcp", udpOnlyConf, none, livekit.CandidateProtocol_TCP, none},
+		{"client tls without turns or ice/tcp", udpOnlyConf, none, livekit.CandidateProtocol_TLS, none},
+		{"cached tls beats client tcp", fullConf, tls, livekit.CandidateProtocol_TCP, tls},
+		{"client tls beats cached tcp", fullConf, tcp, livekit.CandidateProtocol_TLS, tls},
+		{"unknown value ignored", fullConf, none, livekit.CandidateProtocol(7), none},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -98,7 +100,7 @@ func TestGetIceConfigClientPreference(t *testing.T) {
 				r.iceConfigCache.Put(iceConfigCacheKey{"room", "p"}, &livekit.ICEConfig{PreferenceSubscriber: c.cached, PreferencePublisher: c.cached})
 			}
 
-			ic := r.getIceConfig("room", p, c.clients...)
+			ic := r.getIceConfig("room", p, c.client)
 			require.Equal(t, c.want, ic.PreferenceSubscriber)
 			require.Equal(t, c.want, ic.PreferencePublisher)
 		})

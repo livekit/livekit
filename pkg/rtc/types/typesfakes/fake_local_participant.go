@@ -300,16 +300,6 @@ type FakeLocalParticipant struct {
 		result1 *webrtc.RTPTransceiver
 		result2 sfu.DownTrackState
 	}
-	GetCandidateProtocolStub        func() livekit.CandidateProtocol
-	getCandidateProtocolMutex       sync.RWMutex
-	getCandidateProtocolArgsForCall []struct {
-	}
-	getCandidateProtocolReturns struct {
-		result1 livekit.CandidateProtocol
-	}
-	getCandidateProtocolReturnsOnCall map[int]struct {
-		result1 livekit.CandidateProtocol
-	}
 	GetClientConfigurationStub        func() *livekit.ClientConfiguration
 	getClientConfigurationMutex       sync.RWMutex
 	getClientConfigurationArgsForCall []struct {
@@ -3103,59 +3093,6 @@ func (fake *FakeLocalParticipant) GetCachedDownTrackReturnsOnCall(i int, result1
 		result1 *webrtc.RTPTransceiver
 		result2 sfu.DownTrackState
 	}{result1, result2}
-}
-
-func (fake *FakeLocalParticipant) GetCandidateProtocol() livekit.CandidateProtocol {
-	fake.getCandidateProtocolMutex.Lock()
-	ret, specificReturn := fake.getCandidateProtocolReturnsOnCall[len(fake.getCandidateProtocolArgsForCall)]
-	fake.getCandidateProtocolArgsForCall = append(fake.getCandidateProtocolArgsForCall, struct {
-	}{})
-	stub := fake.GetCandidateProtocolStub
-	fakeReturns := fake.getCandidateProtocolReturns
-	fake.recordInvocation("GetCandidateProtocol", []interface{}{})
-	fake.getCandidateProtocolMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeLocalParticipant) GetCandidateProtocolCallCount() int {
-	fake.getCandidateProtocolMutex.RLock()
-	defer fake.getCandidateProtocolMutex.RUnlock()
-	return len(fake.getCandidateProtocolArgsForCall)
-}
-
-func (fake *FakeLocalParticipant) GetCandidateProtocolCalls(stub func() livekit.CandidateProtocol) {
-	fake.getCandidateProtocolMutex.Lock()
-	defer fake.getCandidateProtocolMutex.Unlock()
-	fake.GetCandidateProtocolStub = stub
-}
-
-func (fake *FakeLocalParticipant) GetCandidateProtocolReturns(result1 livekit.CandidateProtocol) {
-	fake.getCandidateProtocolMutex.Lock()
-	defer fake.getCandidateProtocolMutex.Unlock()
-	fake.GetCandidateProtocolStub = nil
-	fake.getCandidateProtocolReturns = struct {
-		result1 livekit.CandidateProtocol
-	}{result1}
-}
-
-func (fake *FakeLocalParticipant) GetCandidateProtocolReturnsOnCall(i int, result1 livekit.CandidateProtocol) {
-	fake.getCandidateProtocolMutex.Lock()
-	defer fake.getCandidateProtocolMutex.Unlock()
-	fake.GetCandidateProtocolStub = nil
-	if fake.getCandidateProtocolReturnsOnCall == nil {
-		fake.getCandidateProtocolReturnsOnCall = make(map[int]struct {
-			result1 livekit.CandidateProtocol
-		})
-	}
-	fake.getCandidateProtocolReturnsOnCall[i] = struct {
-		result1 livekit.CandidateProtocol
-	}{result1}
 }
 
 func (fake *FakeLocalParticipant) GetClientConfiguration() *livekit.ClientConfiguration {

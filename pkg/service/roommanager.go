@@ -370,7 +370,7 @@ func (r *RoomManager) StartSession(
 				"participantInit", &pi,
 				"numParticipants", room.GetParticipantCount(),
 			)
-			iceConfig := r.getIceConfig(room.Name(), participant, pi.CandidateProtocol, participant.GetCandidateProtocol())
+			iceConfig := r.getIceConfig(room.Name(), participant, pi.CandidateProtocol)
 			if err = room.ResumeParticipant(
 				participant,
 				requestSource,
@@ -543,7 +543,6 @@ func (r *RoomManager) StartSession(
 		DatachannelDataTrackTargetLatency: r.config.RTC.DatachannelDataTrackTargetLatency,
 		FireOnTrackBySdp:                  true,
 		UseSinglePeerConnection:           pi.UseSinglePeerConnection,
-		CandidateProtocol:                 pi.CandidateProtocol,
 		EnableDataTracks:                  r.config.EnableDataTracks,
 		EnableParticipantDataBlob:         r.config.EnableParticipantDataBlob,
 		EnableRTPStreamRestartDetection:   r.config.RTC.EnableRTPStreamRestartDetection,
@@ -1215,22 +1214,18 @@ func (r *RoomManager) setIceConfig(roomName livekit.RoomName, participant types.
 	return iceConfig
 }
 
-// getIceConfig returns the strongest of the cached fallback and the client preferences (NONE < TCP < TLS).
-func (r *RoomManager) getIceConfig(roomName livekit.RoomName, participant types.LocalParticipant, clientPreferences ...livekit.CandidateProtocol) *livekit.ICEConfig {
+// getIceConfig returns the stronger of the cached fallback and the client preference (NONE < TCP < TLS).
+// A preference for a transport the server does not offer is ignored, as TCP mode drops UDP candidates.
+func (r *RoomManager) getIceConfig(roomName livekit.RoomName, participant types.LocalParticipant, clientPreference livekit.CandidateProtocol) *livekit.ICEConfig {
 	iceConfig := r.iceConfigCache.Get(iceConfigCacheKey{roomName, participant.Identity()})
 
+	tcpEnabled := r.config.RTC.TCPPort != 0
 	var preferred livekit.ICECandidateType
-	for _, cp := range clientPreferences {
-		switch cp {
-		case livekit.CandidateProtocol_TCP:
-			preferred = max(preferred, livekit.ICECandidateType_ICT_TCP)
-		case livekit.CandidateProtocol_TLS:
-			if r.config.IsTURNSEnabled() {
-				preferred = livekit.ICECandidateType_ICT_TLS
-			} else {
-				preferred = max(preferred, livekit.ICECandidateType_ICT_TCP)
-			}
-		}
+	switch {
+	case clientPreference == livekit.CandidateProtocol_TLS && r.config.IsTURNSEnabled():
+		preferred = livekit.ICECandidateType_ICT_TLS
+	case (clientPreference == livekit.CandidateProtocol_TCP || clientPreference == livekit.CandidateProtocol_TLS) && tcpEnabled:
+		preferred = livekit.ICECandidateType_ICT_TCP
 	}
 	if preferred <= iceConfig.PreferenceSubscriber {
 		return iceConfig
