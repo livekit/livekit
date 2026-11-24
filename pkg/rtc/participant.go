@@ -1136,7 +1136,7 @@ func (p *ParticipantImpl) synthesizeAddTrackRequests(parsedOffer *sdp.SessionDes
 			Source:     trackSource,
 			Type:       trackType,
 			DisableDtx: true,
-			Stereo:     false,
+			Stereo:     trackType == livekit.TrackType_AUDIO && isOpusStereo(m),
 			Stream:     "camera",
 		}
 		if strings.EqualFold(m.MediaName.Media, "video") {
@@ -1155,6 +1155,50 @@ func (p *ParticipantImpl) synthesizeAddTrackRequests(parsedOffer *sdp.SessionDes
 		p.AddTrack(req)
 	}
 	return nil
+}
+
+// isOpusStereo reports whether the Opus payload of an m-line announces a stereo
+// sender (sprop-stereo=1, RFC 7587). There is no AddTrackRequest in one-shot
+// mode, so the offer is the only place the publisher can signal stereo.
+func isOpusStereo(m *sdp.MediaDescription) bool {
+	opusPTs := map[string]bool{}
+	for _, a := range m.Attributes {
+		if a.Key != "rtpmap" {
+			continue
+		}
+		pt, encoding, ok := strings.Cut(a.Value, " ")
+		if ok && strings.HasPrefix(strings.ToLower(encoding), "opus/") {
+			opusPTs[pt] = true
+		}
+	}
+	// the format list is in preference order (RFC 3264), rtpmap order is not
+	opusPT := ""
+	for _, pt := range m.MediaName.Formats {
+		if opusPTs[pt] {
+			opusPT = pt
+			break
+		}
+	}
+	if opusPT == "" {
+		return false
+	}
+
+	for _, a := range m.Attributes {
+		if a.Key != "fmtp" {
+			continue
+		}
+		pt, params, ok := strings.Cut(a.Value, " ")
+		if !ok || pt != opusPT {
+			continue
+		}
+		for _, param := range strings.Split(params, ";") {
+			key, value, _ := strings.Cut(strings.TrimSpace(param), "=")
+			if strings.EqualFold(key, "sprop-stereo") && strings.TrimSpace(value) == "1" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription, unmatchVideos []*sdp.MediaDescription) {
