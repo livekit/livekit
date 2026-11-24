@@ -1068,6 +1068,21 @@ func TestParticipantEgressGuardOnRemove(t *testing.T) {
 	})
 }
 
+func TestSimulateSwitchCandidateProtocolKeepsConfig(t *testing.T) {
+	rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
+	p := rm.GetParticipants()[0].(*typesfakes.FakeLocalParticipant)
+
+	require.NoError(t, rm.onSimulateScenario(p, &livekit.SimulateScenario{
+		Scenario: &livekit.SimulateScenario_SwitchCandidateProtocol{SwitchCandidateProtocol: livekit.CandidateProtocol_TLS},
+	}))
+
+	// the client rejoins after the simulate, so the config must be reported for that join
+	require.Equal(t, 1, p.SimulateICEFallbackCallCount())
+	iceConfig := p.SimulateICEFallbackArgsForCall(0)
+	require.Equal(t, livekit.ICECandidateType_ICT_TLS, iceConfig.PreferenceSubscriber)
+	require.Equal(t, livekit.ICECandidateType_ICT_TLS, iceConfig.PreferencePublisher)
+}
+
 func TestResumeUsesFallbackLearnedOnReconnect(t *testing.T) {
 	const (
 		none = livekit.ICECandidateType_ICT_NONE

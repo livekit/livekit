@@ -1908,6 +1908,36 @@ func (p *ParticipantImpl) ICERestart(iceConfig *livekit.ICEConfig) {
 	}
 }
 
+// SimulateICEFallback restarts ICE with the config and reports it like a learned fallback, so the rejoin that follows keeps it.
+func (p *ParticipantImpl) SimulateICEFallback(iceConfig *livekit.ICEConfig) {
+	if p.params.UseOneShotSignallingMode {
+		return
+	}
+
+	p.ICERestart(iceConfig)
+
+	// only a transport the node offers stays for the rejoin
+	switch iceConfig.GetPreferenceSubscriber() {
+	case livekit.ICECandidateType_ICT_TCP:
+		if p.params.Config.TCPMuxListener == nil {
+			return
+		}
+	case livekit.ICECandidateType_ICT_TLS:
+		if !p.params.TURNSEnabled {
+			return
+		}
+	default:
+		return
+	}
+
+	p.lock.RLock()
+	onICEConfigChanged := p.onICEConfigChanged
+	p.lock.RUnlock()
+	if onICEConfigChanged != nil {
+		onICEConfigChanged(p, iceConfig)
+	}
+}
+
 func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig)) {
 	p.lock.Lock()
 	p.onICEConfigChanged = f
