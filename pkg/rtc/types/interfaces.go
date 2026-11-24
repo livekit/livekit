@@ -623,6 +623,9 @@ type LocalParticipant interface {
 
 	SetICEConfig(iceConfig *livekit.ICEConfig)
 	GetICEConfig() *livekit.ICEConfig
+	// client preferred candidate protocol from join
+	GetCandidateProtocol() livekit.CandidateProtocol
+	// called when the transport learns a fallback ICE config after a failure
 	OnICEConfigChanged(callback func(participant LocalParticipant, iceConfig *livekit.ICEConfig))
 
 	UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []SubscribedCodecQuality) error

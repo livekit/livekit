@@ -370,7 +370,8 @@ func (r *RoomManager) StartSession(
 				"participantInit", &pi,
 				"numParticipants", room.GetParticipantCount(),
 			)
-			iceConfig := r.getIceConfig(room.Name(), participant, pi.CandidateProtocol)
+			// applied before the resume response, so it carries the matching client configuration
+			iceConfig := r.setIceConfig(room.Name(), participant, max(pi.CandidateProtocol, participant.GetCandidateProtocol()))
 			if err = room.ResumeParticipant(
 				participant,
 				requestSource,
@@ -543,6 +544,7 @@ func (r *RoomManager) StartSession(
 		DatachannelDataTrackTargetLatency: r.config.RTC.DatachannelDataTrackTargetLatency,
 		FireOnTrackBySdp:                  true,
 		UseSinglePeerConnection:           pi.UseSinglePeerConnection,
+		CandidateProtocol:                 pi.CandidateProtocol,
 		EnableDataTracks:                  r.config.EnableDataTracks,
 		EnableParticipantDataBlob:         r.config.EnableParticipantDataBlob,
 		EnableRTPStreamRestartDetection:   r.config.RTC.EnableRTPStreamRestartDetection,
@@ -1078,7 +1080,7 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 	var iceServers []*livekit.ICEServer
 	rtcConf := r.config.RTC
 
-	if tlsOnly && r.config.TURN.TLSPort == 0 {
+	if tlsOnly && !r.config.IsTURNSEnabled() {
 		logger.Warnw("tls only enabled but no turn tls config", nil)
 		tlsOnly = false
 	}
@@ -1115,6 +1117,9 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 	if len(rtcConf.TURNServers) > 0 {
 		hasSTUN = true
 		for _, s := range r.config.RTC.TURNServers {
+			if tlsOnly && s.Protocol != "tls" {
+				continue
+			}
 			scheme := "turn"
 			transport := "tcp"
 			switch s.Protocol {
@@ -1214,7 +1219,7 @@ func (r *RoomManager) setIceConfig(roomName livekit.RoomName, participant types.
 	return iceConfig
 }
 
-// getIceConfig returns the stronger of the cached fallback and the client preference (NONE < TCP < TLS).
+// getIceConfig returns the stronger of the learned fallback and the client preference (NONE < TCP < TLS).
 // A preference for a transport the server does not offer is ignored, as TCP mode drops UDP candidates.
 func (r *RoomManager) getIceConfig(roomName livekit.RoomName, participant types.LocalParticipant, clientPreference livekit.CandidateProtocol) *livekit.ICEConfig {
 	iceConfig := r.iceConfigCache.Get(iceConfigCacheKey{roomName, participant.Identity()})

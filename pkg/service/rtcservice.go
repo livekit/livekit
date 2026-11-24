@@ -284,7 +284,9 @@ func (s *RTCService) validateInternal(
 
 		pi.AdaptiveStream = joinRequest.GetConnectionSettings().GetAdaptiveStream()
 		pi.DisableICELite = joinRequest.GetConnectionSettings().GetDisableIceLite()
-		pi.CandidateProtocol = joinRequest.GetConnectionSettings().GetCandidateProtocol()
+		if cp := joinRequest.GetConnectionSettings().GetCandidateProtocol(); livekit.CandidateProtocol_name[int32(cp)] != "" {
+			pi.CandidateProtocol = cp
+		}
 
 		if cs := joinRequest.GetConnectionSettings(); cs != nil && cs.SubscriberAllowPause != nil {
 			v := cs.GetSubscriberAllowPause()

@@ -106,3 +106,30 @@ func TestGetIceConfigClientPreference(t *testing.T) {
 		})
 	}
 }
+
+func TestIceServersForParticipantTLSOnly(t *testing.T) {
+	conf := &config.Config{}
+	conf.RTC.TURNServers = []config.TURNServer{
+		{Host: "udp.example.com", Port: 3478, Protocol: "udp"},
+		{Host: "tcp.example.com", Port: 3478, Protocol: "tcp"},
+		{Host: "tls.example.com", Port: 443, Protocol: "tls"},
+	}
+	r := &RoomManager{config: conf}
+	p := &typesfakes.FakeLocalParticipant{}
+	p.IDReturns("PA_test")
+
+	urls := func(tlsOnly bool) []string {
+		var out []string
+		for _, s := range r.iceServersForParticipant("key", p, tlsOnly) {
+			out = append(out, s.Urls...)
+		}
+		return out
+	}
+
+	require.Equal(t, []string{
+		"turn:udp.example.com:3478?transport=udp",
+		"turn:tcp.example.com:3478?transport=tcp",
+		"turns:tls.example.com:443?transport=tcp",
+	}, urls(false))
+	require.Equal(t, []string{"turns:tls.example.com:443?transport=tcp"}, urls(true))
+}
