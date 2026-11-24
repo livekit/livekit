@@ -553,8 +553,7 @@ func (r *Room) ResumeParticipant(
 	p types.LocalParticipant,
 	requestSource routing.MessageSource,
 	responseSink routing.MessageSink,
-	iceConfig *livekit.ICEConfig,
-	iceServers []*livekit.ICEServer,
+	resolveICE func() (*livekit.ICEConfig, []*livekit.ICEServer),
 	reason livekit.ReconnectReason,
 ) error {
 	r.ReplaceParticipantRequestSource(p.Identity(), requestSource)
@@ -583,7 +582,11 @@ func (r *Room) ResumeParticipant(
 	}
 	r.simulationLock.Unlock()
 
-	if err := p.HandleReconnectAndSendResponse(reason, &livekit.ReconnectResponse{
+	// learn a fallback from a short connection first, so the response and the ICE restart use it
+	p.HandleClientReconnect(reason)
+	iceConfig, iceServers := resolveICE()
+
+	if err := p.HandleReconnectAndSendResponse(&livekit.ReconnectResponse{
 		IceServers:          iceServers,
 		ClientConfiguration: p.GetClientConfiguration(),
 		ServerInfo:          r.serverInfo,

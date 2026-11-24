@@ -370,18 +370,14 @@ func (r *RoomManager) StartSession(
 				"participantInit", &pi,
 				"numParticipants", room.GetParticipantCount(),
 			)
-			// applied before the resume response, so it carries the matching client configuration
-			iceConfig := r.setIceConfig(room.Name(), participant, resumeCandidateProtocol(r.supportedCandidateProtocol(pi.CandidateProtocol), participant.GetCandidateProtocol()))
 			if err = room.ResumeParticipant(
 				participant,
 				requestSource,
 				responseSink,
-				iceConfig,
-				r.iceServersForParticipant(
-					apiKey,
-					participant,
-					iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS,
-				),
+				// applied before the resume response, so it carries the matching client configuration
+				func() (*livekit.ICEConfig, []*livekit.ICEServer) {
+					return r.resumeICE(room.Name(), participant, apiKey, pi.CandidateProtocol)
+				},
 				pi.ReconnectReason,
 			); err != nil {
 				participant.GetLogger().Warnw("could not resume participant", err)
@@ -1217,6 +1213,12 @@ func (r *RoomManager) setIceConfig(roomName livekit.RoomName, participant types.
 	iceConfig := r.getIceConfig(roomName, participant, clientPreference)
 	participant.SetICEConfig(iceConfig)
 	return iceConfig
+}
+
+// resumeICE applies the ICE config for a resume and returns it with the ICE servers that match it.
+func (r *RoomManager) resumeICE(roomName livekit.RoomName, participant types.LocalParticipant, apiKey string, requested livekit.CandidateProtocol) (*livekit.ICEConfig, []*livekit.ICEServer) {
+	iceConfig := r.setIceConfig(roomName, participant, resumeCandidateProtocol(r.supportedCandidateProtocol(requested), participant.GetCandidateProtocol()))
+	return iceConfig, r.iceServersForParticipant(apiKey, participant, iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS)
 }
 
 // getIceConfig returns the stronger of the learned fallback and the client preference (NONE < TCP < TLS).

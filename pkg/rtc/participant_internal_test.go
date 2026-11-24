@@ -1590,7 +1590,6 @@ func TestMigratingInParticipantWaitsForReconnectResponse(t *testing.T) {
 		require.False(t, p.IsReady())
 
 		require.NoError(t, p.HandleReconnectAndSendResponse(
-			livekit.ReconnectReason_RR_UNKNOWN,
 			&livekit.ReconnectResponse{LastMessageSeq: 21},
 			nil,
 		))
@@ -1616,7 +1615,6 @@ func TestMigratingInParticipantWaitsForReconnectResponse(t *testing.T) {
 		require.Zero(t, sink.WriteMessageCallCount())
 
 		require.NoError(t, p.HandleReconnectAndSendResponse(
-			livekit.ReconnectReason_RR_UNKNOWN,
 			&livekit.ReconnectResponse{},
 			nil,
 		))
@@ -1639,7 +1637,6 @@ func TestMigratingInParticipantWaitsForReconnectResponse(t *testing.T) {
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 
 		require.NoError(t, p.HandleReconnectAndSendResponse(
-			livekit.ReconnectReason_RR_UNKNOWN,
 			&livekit.ReconnectResponse{},
 			nil,
 		))
@@ -1680,7 +1677,6 @@ func TestResumedParticipantWaitsForReconnectResponse(t *testing.T) {
 		require.Zero(t, sink.WriteMessageCallCount())
 
 		require.NoError(t, p.HandleReconnectAndSendResponse(
-			livekit.ReconnectReason_RR_SIGNAL_DISCONNECTED,
 			&livekit.ReconnectResponse{LastMessageSeq: 7},
 			nil,
 		))
@@ -1717,7 +1713,6 @@ func TestResumedParticipantWaitsForReconnectResponse(t *testing.T) {
 		p, sink := newResumedParticipant("1.6.2")
 
 		require.NoError(t, p.HandleReconnectAndSendResponse(
-			livekit.ReconnectReason_RR_SIGNAL_DISCONNECTED,
 			&livekit.ReconnectResponse{},
 			nil,
 		))
