@@ -240,6 +240,7 @@ type ParticipantParams struct {
 	Country                           string
 	PreferVideoSizeFromMedia          bool
 	UseSinglePeerConnection           bool
+	CandidateProtocol                 livekit.CandidateProtocol
 	EnableDataTracks                  bool
 	EnableRTPStreamRestartDetection   bool
 	ForceBackupCodecPolicySimulcast   bool
@@ -4720,6 +4721,10 @@ func (p *ParticipantImpl) HandleSignalMessage(msg proto.Message) error {
 
 func (p *ParticipantImpl) IsUsingSinglePeerConnection() bool {
 	return p.params.UseSinglePeerConnection
+}
+
+func (p *ParticipantImpl) GetCandidateProtocol() livekit.CandidateProtocol {
+	return p.params.CandidateProtocol
 }
 
 func (p *ParticipantImpl) AddTrackLocal(

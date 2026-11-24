@@ -20,9 +20,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
+	sutils "github.com/livekit/livekit-server/pkg/utils"
 )
 
 func TestRefreshTokenSigningKey(t *testing.T) {
@@ -55,4 +57,50 @@ func TestRefreshTokenSigningKey(t *testing.T) {
 	t.Run("unknown key falls back", func(t *testing.T) {
 		require.Contains(t, keys, refresh(t, "unknown").APIKey())
 	})
+}
+
+func TestGetIceConfigClientPreference(t *testing.T) {
+	const (
+		none = livekit.ICECandidateType_ICT_NONE
+		tcp  = livekit.ICECandidateType_ICT_TCP
+		tls  = livekit.ICECandidateType_ICT_TLS
+	)
+	turnsConf := &config.Config{}
+	turnsConf.TURN.Enabled = true
+	turnsConf.TURN.TLSPort = 5349
+
+	udp, tcpPref, tlsPref := livekit.CandidateProtocol_UDP, livekit.CandidateProtocol_TCP, livekit.CandidateProtocol_TLS
+	cases := []struct {
+		name    string
+		conf    *config.Config
+		cached  livekit.ICECandidateType
+		clients []livekit.CandidateProtocol
+		want    livekit.ICECandidateType
+	}{
+		{"no preference", turnsConf, none, []livekit.CandidateProtocol{udp}, none},
+		{"client tcp", turnsConf, none, []livekit.CandidateProtocol{tcpPref}, tcp},
+		{"client tls", turnsConf, none, []livekit.CandidateProtocol{tlsPref}, tls},
+		{"client tls without turns", &config.Config{}, none, []livekit.CandidateProtocol{tlsPref}, tcp},
+		{"cached tls beats client tcp", turnsConf, tls, []livekit.CandidateProtocol{tcpPref}, tls},
+		{"client tls beats cached tcp", turnsConf, tcp, []livekit.CandidateProtocol{tlsPref}, tls},
+		{"unknown value ignored", turnsConf, none, []livekit.CandidateProtocol{7}, none},
+		{"resume without preference keeps join preference", turnsConf, none, []livekit.CandidateProtocol{udp, tcpPref}, tcp},
+		{"resume takes stronger of request and join", turnsConf, none, []livekit.CandidateProtocol{tlsPref, tcpPref}, tls},
+		{"unknown resume value keeps join preference", turnsConf, none, []livekit.CandidateProtocol{7, tcpPref}, tcp},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := &RoomManager{config: c.conf, iceConfigCache: sutils.NewIceConfigCache[iceConfigCacheKey](0)}
+			t.Cleanup(r.iceConfigCache.Stop)
+			p := &typesfakes.FakeLocalParticipant{}
+			p.IdentityReturns("p")
+			if c.cached != none {
+				r.iceConfigCache.Put(iceConfigCacheKey{"room", "p"}, &livekit.ICEConfig{PreferenceSubscriber: c.cached, PreferencePublisher: c.cached})
+			}
+
+			ic := r.getIceConfig("room", p, c.clients...)
+			require.Equal(t, c.want, ic.PreferenceSubscriber)
+			require.Equal(t, c.want, ic.PreferencePublisher)
+		})
+	}
 }

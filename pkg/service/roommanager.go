@@ -370,7 +370,7 @@ func (r *RoomManager) StartSession(
 				"participantInit", &pi,
 				"numParticipants", room.GetParticipantCount(),
 			)
-			iceConfig := r.getIceConfig(room.Name(), participant)
+			iceConfig := r.getIceConfig(room.Name(), participant, pi.CandidateProtocol, participant.GetCandidateProtocol())
 			if err = room.ResumeParticipant(
 				participant,
 				requestSource,
@@ -543,6 +543,7 @@ func (r *RoomManager) StartSession(
 		DatachannelDataTrackTargetLatency: r.config.RTC.DatachannelDataTrackTargetLatency,
 		FireOnTrackBySdp:                  true,
 		UseSinglePeerConnection:           pi.UseSinglePeerConnection,
+		CandidateProtocol:                 pi.CandidateProtocol,
 		EnableDataTracks:                  r.config.EnableDataTracks,
 		EnableParticipantDataBlob:         r.config.EnableParticipantDataBlob,
 		EnableRTPStreamRestartDetection:   r.config.RTC.EnableRTPStreamRestartDetection,
@@ -555,7 +556,7 @@ func (r *RoomManager) StartSession(
 		prometheus.IncrementParticipantRtcCanceled(1, enableWarp, pi.Client.GetSdk())
 		return err
 	}
-	iceConfig := r.setIceConfig(room.Name(), participant)
+	iceConfig := r.setIceConfig(room.Name(), participant, pi.CandidateProtocol)
 
 	// join room
 	opts := rtc.ParticipantOptions{
@@ -1208,14 +1209,36 @@ func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {
 	return nil
 }
 
-func (r *RoomManager) setIceConfig(roomName livekit.RoomName, participant types.LocalParticipant) *livekit.ICEConfig {
-	iceConfig := r.getIceConfig(roomName, participant)
+func (r *RoomManager) setIceConfig(roomName livekit.RoomName, participant types.LocalParticipant, clientPreference livekit.CandidateProtocol) *livekit.ICEConfig {
+	iceConfig := r.getIceConfig(roomName, participant, clientPreference)
 	participant.SetICEConfig(iceConfig)
 	return iceConfig
 }
 
-func (r *RoomManager) getIceConfig(roomName livekit.RoomName, participant types.LocalParticipant) *livekit.ICEConfig {
-	return r.iceConfigCache.Get(iceConfigCacheKey{roomName, participant.Identity()})
+// getIceConfig returns the strongest of the cached fallback and the client preferences (NONE < TCP < TLS).
+func (r *RoomManager) getIceConfig(roomName livekit.RoomName, participant types.LocalParticipant, clientPreferences ...livekit.CandidateProtocol) *livekit.ICEConfig {
+	iceConfig := r.iceConfigCache.Get(iceConfigCacheKey{roomName, participant.Identity()})
+
+	var preferred livekit.ICECandidateType
+	for _, cp := range clientPreferences {
+		switch cp {
+		case livekit.CandidateProtocol_TCP:
+			preferred = max(preferred, livekit.ICECandidateType_ICT_TCP)
+		case livekit.CandidateProtocol_TLS:
+			if r.config.IsTURNSEnabled() {
+				preferred = livekit.ICECandidateType_ICT_TLS
+			} else {
+				preferred = max(preferred, livekit.ICECandidateType_ICT_TCP)
+			}
+		}
+	}
+	if preferred <= iceConfig.PreferenceSubscriber {
+		return iceConfig
+	}
+	return &livekit.ICEConfig{
+		PreferenceSubscriber: preferred,
+		PreferencePublisher:  preferred,
+	}
 }
 
 // getSigningKeyPair prefers the key that signed the join token so refreshed tokens stay valid when other keys are rotated.
