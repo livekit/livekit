@@ -65,7 +65,7 @@ func (h TransportManagerTransportHandler) OnFailed(isShortLived bool, iceConnect
 	if isShortLived {
 		h.logger.Infow("short ice connection", connectionDetailsFields([]*types.ICEConnectionInfo{iceConnectionInfo})...)
 	}
-	h.t.handleConnectionFailed(isShortLived)
+	h.t.handleConnectionFailed(isShortLived, iceConnectionInfo.Type)
 	h.Handler.OnFailed(isShortLived, iceConnectionInfo)
 }
 
@@ -659,25 +659,28 @@ func (t *TransportManager) HandleClientReconnect(reason livekit.ReconnectReason)
 		isShort              bool
 		duration             time.Duration
 		resetShortConnection bool
+		failed               types.ICEConnectionType
 	)
 	switch reason {
 	case livekit.ReconnectReason_RR_PUBLISHER_FAILED:
 		if t.publisher != nil {
 			resetShortConnection = true
 			isShort, duration = t.publisher.IsShortConnection(time.Now())
+			failed = t.publisher.GetICEConnectionType()
 		}
 
 	case livekit.ReconnectReason_RR_SUBSCRIBER_FAILED:
 		if t.subscriber != nil {
 			resetShortConnection = true
 			isShort, duration = t.subscriber.IsShortConnection(time.Now())
+			failed = t.subscriber.GetICEConnectionType()
 		}
 	}
 
 	if isShort {
 		t.params.Logger.Infow("short connection by client ice restart", "duration", duration, "reason", reason)
 		// does nothing when the server chose a fallback for this failure already
-		t.handleConnectionFailed(isShort)
+		t.handleConnectionFailed(isShort, failed)
 	}
 
 	if resetShortConnection {
@@ -820,7 +823,8 @@ func (t *TransportManager) getLowestPriorityConnectionType() types.ICEConnection
 	}
 }
 
-func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
+// handleConnectionFailed picks the next ICE preference, failed is the connection type of the transport that failed.
+func (t *TransportManager) handleConnectionFailed(isShortLived bool, failed types.ICEConnectionType) {
 	if !t.params.AllowTCPFallback || t.params.UseOneShotSignallingMode {
 		return
 	}
@@ -848,6 +852,11 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 
 	lowestPriorityConnectionType := t.getLowestPriorityConnectionType()
 
+	// a transport that did not connect with the preference in use cannot fail any earlier
+	if failed == types.ICEConnectionTypeUnknown && t.iceConfig.PreferenceSubscriber != livekit.ICECandidateType_ICT_NONE {
+		isShortLived = true
+	}
+
 	//
 	// Checking only `PreferenceSubscriber` field although any connection failure (PUBLISHER OR SUBSCRIBER) will
 	// flow through here.
@@ -855,6 +864,16 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 	// As both transports are switched to the same type on any failure, checking just subscriber should be fine.
 	//
 	getNext := func(ic *livekit.ICEConfig) livekit.ICECandidateType {
+		switch {
+		case failed == types.ICEConnectionTypeUDP && ic.PreferenceSubscriber != livekit.ICECandidateType_ICT_NONE:
+			// the UDP pair is older than the preference, which the ICE restart of this transport applies
+			return ic.PreferenceSubscriber
+
+		case failed == types.ICEConnectionTypeUnknown && ic.PreferenceSubscriber == livekit.ICECandidateType_ICT_TCP && t.params.TURNSEnabled:
+			// the transport did not connect in TCP mode, try TURN/TLS as for a failed ICE/TCP connection
+			return livekit.ICECandidateType_ICT_TLS
+		}
+
 		switch lowestPriorityConnectionType {
 		case types.ICEConnectionTypeUDP:
 			// try ICE/TCP if ICE/UDP failed
@@ -1036,7 +1055,7 @@ func (t *TransportManager) onMediaLossUpdate(loss uint8) {
 				// the raw params handler only sends a leave request and does not
 				// reconfigure the transport, so the client would reconnect over UDP
 				// again and this path would keep firing
-				t.handleConnectionFailed(true)
+				t.handleConnectionFailed(true, types.ICEConnectionTypeUDP)
 				if t.params.UseSinglePeerConnection {
 					t.params.PublisherHandler.OnFailed(true, t.publisher.GetICEConnectionInfo())
 				} else {

@@ -16,6 +16,7 @@ package rtc
 
 import (
 	"fmt"
+	"net"
 	"runtime"
 	"strings"
 	"sync"
@@ -1070,21 +1071,25 @@ func TestParticipantEgressGuardOnRemove(t *testing.T) {
 func TestResumeUsesFallbackLearnedOnReconnect(t *testing.T) {
 	const (
 		none = livekit.ICECandidateType_ICT_NONE
+		tcp  = livekit.ICECandidateType_ICT_TCP
 		tls  = livekit.ICECandidateType_ICT_TLS
 	)
 	cases := []struct {
 		name string
 		// connection type of the pair that failed right after it connected
-		failed types.ICEConnectionType
-		turns  bool
+		failed      types.ICEConnectionType
+		tcpListener bool
+		turns       bool
 		// the server saw the failure and chose the fallback before the client resumed
 		serverSawFailure bool
 		expected         livekit.ICECandidateType
 	}{
-		{"TCP failure reported by the client", types.ICEConnectionTypeTCP, true, false, tls},
-		{"UDP failure reported by the client", types.ICEConnectionTypeUDP, true, false, tls},
-		{"UDP failure reported by the client, no TURN/TLS", types.ICEConnectionTypeUDP, false, false, none},
-		{"UDP failure seen by the server before the resume", types.ICEConnectionTypeUDP, true, true, tls},
+		{"TCP failure reported by the client", types.ICEConnectionTypeTCP, true, true, false, tls},
+		{"UDP failure reported by the client", types.ICEConnectionTypeUDP, true, true, false, tcp},
+		{"UDP failure reported by the client, no ICE/TCP", types.ICEConnectionTypeUDP, false, true, false, tls},
+		{"UDP failure reported by the client, no ICE/TCP, no TURN/TLS", types.ICEConnectionTypeUDP, false, false, false, none},
+		{"UDP failure seen by the server before the resume", types.ICEConnectionTypeUDP, true, true, true, tcp},
+		{"UDP failure seen by the server before the resume, no ICE/TCP", types.ICEConnectionTypeUDP, false, true, true, tls},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -1095,10 +1100,12 @@ func TestResumeUsesFallbackLearnedOnReconnect(t *testing.T) {
 			})
 			t.Cleanup(func() { p.Close(false, types.ParticipantCloseReasonNone, false) })
 
-			// the node has no ICE/TCP listener
 			tm := p.TransportManager
 			tm.params.AllowTCPFallback = true
 			tm.params.TURNSEnabled = c.turns
+			if c.tcpListener {
+				tm.params.Config.TCPMuxListener = &net.TCPListener{}
+			}
 			for _, pc := range []*PCTransport{tm.publisher, tm.subscriber} {
 				pc.connectionDetails.Type = c.failed
 			}
@@ -1122,7 +1129,7 @@ func TestResumeUsesFallbackLearnedOnReconnect(t *testing.T) {
 			}
 
 			if c.serverSawFailure {
-				tm.handleConnectionFailed(true)
+				tm.handleConnectionFailed(true, c.failed)
 				require.Equal(t, c.expected, learned.GetPreferenceSubscriber())
 			}
 			// the previous signal connection closed before the client resumed
@@ -1147,6 +1154,11 @@ func TestResumeUsesFallbackLearnedOnReconnect(t *testing.T) {
 				require.Equal(t, iceServersForRoom, res.IceServers)
 			}
 			require.Equal(t, c.expected, p.GetICEConfig().GetPreferenceSubscriber())
+
+			// the publisher has the pair from before the resume, a late failure of it keeps the fallback
+			tm.handleConnectionFailed(true, c.failed)
+			require.Equal(t, c.expected, p.GetICEConfig().GetPreferenceSubscriber())
+			require.Equal(t, c.expected, learned.GetPreferenceSubscriber())
 		})
 	}
 }
