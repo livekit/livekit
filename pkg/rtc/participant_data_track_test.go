@@ -144,3 +144,21 @@ func TestDataTrackRemovedFromRoomWhenPublisherCloses(t *testing.T) {
 		})
 	}
 }
+
+func TestPublishDataTrackKeepsPriority(t *testing.T) {
+	p := newParticipantForTest("test")
+	p.params.EnableDataTracks = true
+
+	priority := uint32(70)
+	p.HandlePublishDataTrackRequest(&livekit.PublishDataTrackRequest{PubHandle: 1, Name: "with-priority", Priority: &priority})
+	p.HandlePublishDataTrackRequest(&livekit.PublishDataTrackRequest{PubHandle: 2, Name: "without-priority"})
+
+	withPriority := p.UpDataTrackManager.GetPublishedDataTrack(1)
+	require.NotNil(t, withPriority)
+	require.NotNil(t, withPriority.ToProto().Priority)
+	require.Equal(t, uint32(70), withPriority.ToProto().GetPriority())
+
+	withoutPriority := p.UpDataTrackManager.GetPublishedDataTrack(2)
+	require.NotNil(t, withoutPriority)
+	require.Nil(t, withoutPriority.ToProto().Priority)
+}

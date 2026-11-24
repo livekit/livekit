@@ -116,6 +116,10 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 	}
 	dti.FrameEncoding = proto.CloneOf(req.GetFrameEncoding())
 	dti.Schema = proto.CloneOf(req.GetSchema())
+	if req.Priority != nil {
+		priority := req.GetPriority()
+		dti.Priority = &priority
+	}
 	dt := NewDataTrack(
 		DataTrackParams{
 			Logger:              p.params.Logger.WithValues("trackID", dti.Sid),

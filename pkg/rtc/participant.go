@@ -3232,6 +3232,10 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 		AudioFeatures:         sutils.DedupeSlice(req.AudioFeatures),
 		PacketTrailerFeatures: sutils.DedupeSlice(req.PacketTrailerFeatures),
 	}
+	if req.Priority != nil {
+		priority := req.GetPriority()
+		ti.Priority = &priority
+	}
 	if req.Stereo && !slices.Contains(ti.AudioFeatures, livekit.AudioTrackFeature_TF_STEREO) {
 		ti.AudioFeatures = append(ti.AudioFeatures, livekit.AudioTrackFeature_TF_STEREO)
 	}
