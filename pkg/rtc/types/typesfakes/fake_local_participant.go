@@ -652,6 +652,11 @@ type FakeLocalParticipant struct {
 	handleAnswerArgsForCall []struct {
 		arg1 *livekit.SessionDescription
 	}
+	HandleClientReconnectStub        func(livekit.ReconnectReason)
+	handleClientReconnectMutex       sync.RWMutex
+	handleClientReconnectArgsForCall []struct {
+		arg1 livekit.ReconnectReason
+	}
 	HandleGetDataBlobRequestStub        func(*livekit.GetDataBlobRequest)
 	handleGetDataBlobRequestMutex       sync.RWMutex
 	handleGetDataBlobRequestArgsForCall []struct {
@@ -732,12 +737,11 @@ type FakeLocalParticipant struct {
 		arg1 *sfu.DownTrack
 		arg2 *rtcp.ReceiverReport
 	}
-	HandleReconnectAndSendResponseStub        func(livekit.ReconnectReason, *livekit.ReconnectResponse, []*livekit.ParticipantInfo) error
+	HandleReconnectAndSendResponseStub        func(*livekit.ReconnectResponse, []*livekit.ParticipantInfo) error
 	handleReconnectAndSendResponseMutex       sync.RWMutex
 	handleReconnectAndSendResponseArgsForCall []struct {
-		arg1 livekit.ReconnectReason
-		arg2 *livekit.ReconnectResponse
-		arg3 []*livekit.ParticipantInfo
+		arg1 *livekit.ReconnectResponse
+		arg2 []*livekit.ParticipantInfo
 	}
 	handleReconnectAndSendResponseReturns struct {
 		result1 error
@@ -4982,6 +4986,38 @@ func (fake *FakeLocalParticipant) HandleAnswerArgsForCall(i int) *livekit.Sessio
 	return argsForCall.arg1
 }
 
+func (fake *FakeLocalParticipant) HandleClientReconnect(arg1 livekit.ReconnectReason) {
+	fake.handleClientReconnectMutex.Lock()
+	fake.handleClientReconnectArgsForCall = append(fake.handleClientReconnectArgsForCall, struct {
+		arg1 livekit.ReconnectReason
+	}{arg1})
+	stub := fake.HandleClientReconnectStub
+	fake.recordInvocation("HandleClientReconnect", []interface{}{arg1})
+	fake.handleClientReconnectMutex.Unlock()
+	if stub != nil {
+		fake.HandleClientReconnectStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) HandleClientReconnectCallCount() int {
+	fake.handleClientReconnectMutex.RLock()
+	defer fake.handleClientReconnectMutex.RUnlock()
+	return len(fake.handleClientReconnectArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) HandleClientReconnectCalls(stub func(livekit.ReconnectReason)) {
+	fake.handleClientReconnectMutex.Lock()
+	defer fake.handleClientReconnectMutex.Unlock()
+	fake.HandleClientReconnectStub = stub
+}
+
+func (fake *FakeLocalParticipant) HandleClientReconnectArgsForCall(i int) livekit.ReconnectReason {
+	fake.handleClientReconnectMutex.RLock()
+	defer fake.handleClientReconnectMutex.RUnlock()
+	argsForCall := fake.handleClientReconnectArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeLocalParticipant) HandleGetDataBlobRequest(arg1 *livekit.GetDataBlobRequest) {
 	fake.handleGetDataBlobRequestMutex.Lock()
 	fake.handleGetDataBlobRequestArgsForCall = append(fake.handleGetDataBlobRequestArgsForCall, struct {
@@ -5430,25 +5466,24 @@ func (fake *FakeLocalParticipant) HandleReceiverReportArgsForCall(i int) (*sfu.D
 	return argsForCall.arg1, argsForCall.arg2
 }
 
-func (fake *FakeLocalParticipant) HandleReconnectAndSendResponse(arg1 livekit.ReconnectReason, arg2 *livekit.ReconnectResponse, arg3 []*livekit.ParticipantInfo) error {
-	var arg3Copy []*livekit.ParticipantInfo
-	if arg3 != nil {
-		arg3Copy = make([]*livekit.ParticipantInfo, len(arg3))
-		copy(arg3Copy, arg3)
+func (fake *FakeLocalParticipant) HandleReconnectAndSendResponse(arg1 *livekit.ReconnectResponse, arg2 []*livekit.ParticipantInfo) error {
+	var arg2Copy []*livekit.ParticipantInfo
+	if arg2 != nil {
+		arg2Copy = make([]*livekit.ParticipantInfo, len(arg2))
+		copy(arg2Copy, arg2)
 	}
 	fake.handleReconnectAndSendResponseMutex.Lock()
 	ret, specificReturn := fake.handleReconnectAndSendResponseReturnsOnCall[len(fake.handleReconnectAndSendResponseArgsForCall)]
 	fake.handleReconnectAndSendResponseArgsForCall = append(fake.handleReconnectAndSendResponseArgsForCall, struct {
-		arg1 livekit.ReconnectReason
-		arg2 *livekit.ReconnectResponse
-		arg3 []*livekit.ParticipantInfo
-	}{arg1, arg2, arg3Copy})
+		arg1 *livekit.ReconnectResponse
+		arg2 []*livekit.ParticipantInfo
+	}{arg1, arg2Copy})
 	stub := fake.HandleReconnectAndSendResponseStub
 	fakeReturns := fake.handleReconnectAndSendResponseReturns
-	fake.recordInvocation("HandleReconnectAndSendResponse", []interface{}{arg1, arg2, arg3Copy})
+	fake.recordInvocation("HandleReconnectAndSendResponse", []interface{}{arg1, arg2Copy})
 	fake.handleReconnectAndSendResponseMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2, arg3)
+		return stub(arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1
@@ -5462,17 +5497,17 @@ func (fake *FakeLocalParticipant) HandleReconnectAndSendResponseCallCount() int 
 	return len(fake.handleReconnectAndSendResponseArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) HandleReconnectAndSendResponseCalls(stub func(livekit.ReconnectReason, *livekit.ReconnectResponse, []*livekit.ParticipantInfo) error) {
+func (fake *FakeLocalParticipant) HandleReconnectAndSendResponseCalls(stub func(*livekit.ReconnectResponse, []*livekit.ParticipantInfo) error) {
 	fake.handleReconnectAndSendResponseMutex.Lock()
 	defer fake.handleReconnectAndSendResponseMutex.Unlock()
 	fake.HandleReconnectAndSendResponseStub = stub
 }
 
-func (fake *FakeLocalParticipant) HandleReconnectAndSendResponseArgsForCall(i int) (livekit.ReconnectReason, *livekit.ReconnectResponse, []*livekit.ParticipantInfo) {
+func (fake *FakeLocalParticipant) HandleReconnectAndSendResponseArgsForCall(i int) (*livekit.ReconnectResponse, []*livekit.ParticipantInfo) {
 	fake.handleReconnectAndSendResponseMutex.RLock()
 	defer fake.handleReconnectAndSendResponseMutex.RUnlock()
 	argsForCall := fake.handleReconnectAndSendResponseArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) HandleReconnectAndSendResponseReturns(result1 error) {

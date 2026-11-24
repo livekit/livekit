@@ -33,6 +33,7 @@ import (
 	"github.com/livekit/livekit-server/version"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -1064,4 +1065,56 @@ func TestParticipantEgressGuardOnRemove(t *testing.T) {
 		require.False(t, rm.launchedParticipantEgress[p.Identity()])
 		require.False(t, rm.hasPublished[p.Identity()])
 	})
+}
+
+func TestResumeUsesFallbackLearnedOnReconnect(t *testing.T) {
+	room := newRoomWithParticipants(t, testRoomOpts{})
+	p := newParticipantForTestWithOpts("resumer", &participantOpts{
+		protocolVersion: 17,
+		clientInfo:      &livekit.ClientInfo{Sdk: livekit.ClientInfo_JS, Version: "2.15.2"},
+	})
+	t.Cleanup(func() { p.Close(false, types.ParticipantCloseReasonNone, false) })
+
+	// ICE/TCP failed right after it connected, and TURN/TLS is there to fall back to
+	tm := p.TransportManager
+	tm.params.AllowTCPFallback = true
+	tm.params.TURNSEnabled = true
+	for _, pc := range []*PCTransport{tm.publisher, tm.subscriber} {
+		pc.connectionDetails.Type = types.ICEConnectionTypeTCP
+	}
+	tm.subscriber.iceFirstConnectedAt = time.Now()
+	p.UpdateLastSeenSignal()
+	// the previous signal connection closed before the client resumed
+	p.SetSignalSourceValid(false)
+
+	// resolves the config like the room manager: the learned fallback, else no preference
+	var learned *livekit.ICEConfig
+	p.OnICEConfigChanged(func(_ types.LocalParticipant, iceConfig *livekit.ICEConfig) { learned = iceConfig })
+	tlsServers := []*livekit.ICEServer{{Urls: []string{"turns:turn.example.com:443?transport=tcp"}}}
+	resolveICE := func() (*livekit.ICEConfig, []*livekit.ICEServer) {
+		iceConfig := &livekit.ICEConfig{}
+		if learned != nil {
+			iceConfig = learned
+		}
+		p.SetICEConfig(iceConfig)
+		if iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS {
+			return iceConfig, tlsServers
+		}
+		return iceConfig, iceServersForRoom
+	}
+
+	sink := &routingfakes.FakeMessageSink{}
+	require.NoError(t, room.ResumeParticipant(p, &routingfakes.FakeMessageSource{}, sink, resolveICE, livekit.ReconnectReason_RR_SUBSCRIBER_FAILED))
+
+	var res *livekit.ReconnectResponse
+	for i := range sink.WriteMessageCallCount() {
+		if r := sink.WriteMessageArgsForCall(i).(*livekit.SignalResponse).GetReconnect(); r != nil {
+			res = r
+			break
+		}
+	}
+	require.NotNil(t, res)
+	require.Equal(t, livekit.ClientConfigSetting_ENABLED, res.GetClientConfiguration().GetForceRelay())
+	require.Equal(t, tlsServers, res.IceServers)
+	require.Equal(t, livekit.ICECandidateType_ICT_TLS, p.GetICEConfig().GetPreferenceSubscriber())
 }

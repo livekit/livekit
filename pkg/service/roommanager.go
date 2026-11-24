@@ -370,18 +370,15 @@ func (r *RoomManager) StartSession(
 				"participantInit", &pi,
 				"numParticipants", room.GetParticipantCount(),
 			)
-			// applied before the resume response, so it carries the matching client configuration
-			iceConfig := r.setIceConfig(room.Name(), participant, resumeCandidateProtocol(r.supportedCandidateProtocol(pi.CandidateProtocol), participant.GetCandidateProtocol()))
 			if err = room.ResumeParticipant(
 				participant,
 				requestSource,
 				responseSink,
-				iceConfig,
-				r.iceServersForParticipant(
-					apiKey,
-					participant,
-					iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS,
-				),
+				// applied before the resume response, so it carries the matching client configuration
+				func() (*livekit.ICEConfig, []*livekit.ICEServer) {
+					iceConfig := r.setIceConfig(room.Name(), participant, resumeCandidateProtocol(r.supportedCandidateProtocol(pi.CandidateProtocol), participant.GetCandidateProtocol()))
+					return iceConfig, r.iceServersForParticipant(apiKey, participant, iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS)
+				},
 				pi.ReconnectReason,
 			); err != nil {
 				participant.GetLogger().Warnw("could not resume participant", err)
