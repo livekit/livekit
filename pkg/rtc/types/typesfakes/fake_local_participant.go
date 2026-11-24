@@ -1368,6 +1368,11 @@ type FakeLocalParticipant struct {
 	setTrackMutedReturnsOnCall map[int]struct {
 		result1 *livekit.TrackInfo
 	}
+	SimulateICEFallbackStub        func(*livekit.ICEConfig)
+	simulateICEFallbackMutex       sync.RWMutex
+	simulateICEFallbackArgsForCall []struct {
+		arg1 *livekit.ICEConfig
+	}
 	StateStub        func() livekit.ParticipantInfo_State
 	stateMutex       sync.RWMutex
 	stateArgsForCall []struct {
@@ -8968,6 +8973,38 @@ func (fake *FakeLocalParticipant) SetTrackMutedReturnsOnCall(i int, result1 *liv
 	fake.setTrackMutedReturnsOnCall[i] = struct {
 		result1 *livekit.TrackInfo
 	}{result1}
+}
+
+func (fake *FakeLocalParticipant) SimulateICEFallback(arg1 *livekit.ICEConfig) {
+	fake.simulateICEFallbackMutex.Lock()
+	fake.simulateICEFallbackArgsForCall = append(fake.simulateICEFallbackArgsForCall, struct {
+		arg1 *livekit.ICEConfig
+	}{arg1})
+	stub := fake.SimulateICEFallbackStub
+	fake.recordInvocation("SimulateICEFallback", []interface{}{arg1})
+	fake.simulateICEFallbackMutex.Unlock()
+	if stub != nil {
+		fake.SimulateICEFallbackStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) SimulateICEFallbackCallCount() int {
+	fake.simulateICEFallbackMutex.RLock()
+	defer fake.simulateICEFallbackMutex.RUnlock()
+	return len(fake.simulateICEFallbackArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) SimulateICEFallbackCalls(stub func(*livekit.ICEConfig)) {
+	fake.simulateICEFallbackMutex.Lock()
+	defer fake.simulateICEFallbackMutex.Unlock()
+	fake.SimulateICEFallbackStub = stub
+}
+
+func (fake *FakeLocalParticipant) SimulateICEFallbackArgsForCall(i int) *livekit.ICEConfig {
+	fake.simulateICEFallbackMutex.RLock()
+	defer fake.simulateICEFallbackMutex.RUnlock()
+	argsForCall := fake.simulateICEFallbackArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeLocalParticipant) State() livekit.ParticipantInfo_State {

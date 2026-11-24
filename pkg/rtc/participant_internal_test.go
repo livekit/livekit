@@ -2102,4 +2102,11 @@ func TestICEConfigChangedReportsOnlyLearned(t *testing.T) {
 	require.Len(t, reported, 1)
 	require.True(t, proto.Equal(tcp, reported[0]))
 	require.Equal(t, livekit.ClientConfigSetting_UNSET, p.GetClientConfiguration().GetForceRelay())
+
+	// the client rejoins after the simulate, so its config is kept like a learned fallback
+	p.SimulateICEFallback(tls)
+	require.Len(t, reported, 2)
+	require.True(t, proto.Equal(tls, reported[1]))
+	require.True(t, proto.Equal(tls, p.GetICEConfig()))
+	require.Equal(t, livekit.ClientConfigSetting_ENABLED, p.GetClientConfiguration().GetForceRelay())
 }

@@ -989,7 +989,7 @@ func (r *Room) onSimulateScenario(participant types.LocalParticipant, simulateSc
 		}
 	case *livekit.SimulateScenario_SwitchCandidateProtocol:
 		r.logger.Infow("simulating switch candidate protocol", "participant", participant.Identity())
-		participant.ICERestart(&livekit.ICEConfig{
+		participant.SimulateICEFallback(&livekit.ICEConfig{
 			PreferenceSubscriber: livekit.ICECandidateType(scenario.SwitchCandidateProtocol),
 			PreferencePublisher:  livekit.ICECandidateType(scenario.SwitchCandidateProtocol),
 		})
