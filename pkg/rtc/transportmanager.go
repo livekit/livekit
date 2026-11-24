@@ -859,14 +859,17 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 	getNext := func(ic *livekit.ICEConfig) livekit.ICECandidateType {
 		switch lowestPriorityConnectionType {
 		case types.ICEConnectionTypeUDP:
+			// a preference set after ICE/UDP connected is not in use yet, keep it for the ICE restart
+			if ic.PreferenceSubscriber != livekit.ICECandidateType_ICT_NONE {
+				return ic.PreferenceSubscriber
+			}
+
 			// try ICE/TCP if ICE/UDP failed
-			if ic.PreferenceSubscriber == livekit.ICECandidateType_ICT_NONE {
-				if t.params.ClientInfo.SupportsICETCP() && t.canUseICETCP() {
-					return livekit.ICECandidateType_ICT_TCP
-				} else if t.params.TURNSEnabled {
-					// fallback to TURN/TLS if TCP is not supported
-					return livekit.ICECandidateType_ICT_TLS
-				}
+			if t.params.ClientInfo.SupportsICETCP() && t.canUseICETCP() {
+				return livekit.ICECandidateType_ICT_TCP
+			} else if t.params.TURNSEnabled {
+				// fallback to TURN/TLS if TCP is not supported
+				return livekit.ICECandidateType_ICT_TLS
 			}
 
 		case types.ICEConnectionTypeTCP:
@@ -1096,6 +1099,10 @@ func (t *TransportManager) LastSeenSignalAt() time.Time {
 }
 
 func (t *TransportManager) canUseICETCP() bool {
+	// TCP mode drops UDP candidates, so the node must offer ICE/TCP
+	if t.params.Config.TCPMuxListener == nil {
+		return false
+	}
 	return t.params.TCPFallbackRTTThreshold == 0 || int(t.signalingRTT) < t.params.TCPFallbackRTTThreshold
 }
 
