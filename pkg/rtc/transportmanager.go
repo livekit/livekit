@@ -675,10 +675,8 @@ func (t *TransportManager) HandleClientReconnect(reason livekit.ReconnectReason)
 	}
 
 	if isShort {
-		t.lock.Lock()
-		t.resetTransportConfigureLocked(false)
-		t.lock.Unlock()
 		t.params.Logger.Infow("short connection by client ice restart", "duration", duration, "reason", reason)
+		// does nothing when the server chose a fallback for this failure already
 		t.handleConnectionFailed(isShort)
 	}
 
@@ -859,17 +857,14 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 	getNext := func(ic *livekit.ICEConfig) livekit.ICECandidateType {
 		switch lowestPriorityConnectionType {
 		case types.ICEConnectionTypeUDP:
-			// a preference set after ICE/UDP connected is not in use yet, keep it for the ICE restart
-			if ic.PreferenceSubscriber != livekit.ICECandidateType_ICT_NONE {
-				return ic.PreferenceSubscriber
-			}
-
 			// try ICE/TCP if ICE/UDP failed
-			if t.params.ClientInfo.SupportsICETCP() && t.canUseICETCP() {
-				return livekit.ICECandidateType_ICT_TCP
-			} else if t.params.TURNSEnabled {
-				// fallback to TURN/TLS if TCP is not supported
-				return livekit.ICECandidateType_ICT_TLS
+			if ic.PreferenceSubscriber == livekit.ICECandidateType_ICT_NONE {
+				if t.params.ClientInfo.SupportsICETCP() && t.canUseICETCP() {
+					return livekit.ICECandidateType_ICT_TCP
+				} else if t.params.TURNSEnabled {
+					// fallback to TURN/TLS if TCP is not supported
+					return livekit.ICECandidateType_ICT_TLS
+				}
 			}
 
 		case types.ICEConnectionTypeTCP:

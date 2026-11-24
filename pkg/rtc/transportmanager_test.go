@@ -30,22 +30,27 @@ func TestShortFailureFallback(t *testing.T) {
 		none = livekit.ICECandidateType_ICT_NONE
 		tcp  = livekit.ICECandidateType_ICT_TCP
 		tls  = livekit.ICECandidateType_ICT_TLS
+
+		unknown = types.ICEConnectionTypeUnknown
+		udpPair = types.ICEConnectionTypeUDP
+		tcpPair = types.ICEConnectionTypeTCP
 	)
 	cases := []struct {
 		name        string
 		tcpListener bool
 		turns       bool
-		failed      types.ICEConnectionType
+		publisher   types.ICEConnectionType
+		subscriber  types.ICEConnectionType
 		current     livekit.ICECandidateType
 		expected    livekit.ICECandidateType
 	}{
-		{"UDP failed, node offers ICE/TCP", true, true, types.ICEConnectionTypeUDP, none, tcp},
-		{"UDP failed, no ICE/TCP, TURN/TLS on", false, true, types.ICEConnectionTypeUDP, none, tls},
-		{"UDP failed, no ICE/TCP, no TURN/TLS", false, false, types.ICEConnectionTypeUDP, none, none},
-		{"UDP pair reported again after a TCP fallback", true, true, types.ICEConnectionTypeUDP, tcp, tcp},
-		{"UDP pair reported again after a TLS fallback", false, true, types.ICEConnectionTypeUDP, tls, tls},
-		{"TCP failed, TURN/TLS on", true, true, types.ICEConnectionTypeTCP, tcp, tls},
-		{"TCP failed, no TURN/TLS", true, false, types.ICEConnectionTypeTCP, tcp, tcp},
+		{"UDP failed, node offers ICE/TCP", true, true, udpPair, udpPair, none, tcp},
+		{"UDP failed, no ICE/TCP, TURN/TLS on", false, true, udpPair, udpPair, none, tls},
+		{"UDP failed, no ICE/TCP, no TURN/TLS", false, false, udpPair, udpPair, none, none},
+		{"TCP failed, TURN/TLS on", true, true, tcpPair, tcpPair, tcp, tls},
+		{"TCP failed, no TURN/TLS", true, false, tcpPair, tcpPair, tcp, tcp},
+		// the subscriber restarted in TCP mode and never connected, the publisher still has its UDP pair
+		{"TCP restart failed, other transport on UDP", true, true, udpPair, unknown, tcp, none},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -61,9 +66,8 @@ func TestShortFailureFallback(t *testing.T) {
 			if c.tcpListener {
 				tm.params.Config.TCPMuxListener = &net.TCPListener{}
 			}
-			for _, pc := range []*PCTransport{tm.publisher, tm.subscriber} {
-				pc.connectionDetails.Type = c.failed
-			}
+			tm.publisher.connectionDetails.Type = c.publisher
+			tm.subscriber.connectionDetails.Type = c.subscriber
 			p.UpdateLastSeenSignal()
 			p.SetSignalSourceValid(true)
 			p.SetICEConfig(&livekit.ICEConfig{PreferenceSubscriber: c.current, PreferencePublisher: c.current})

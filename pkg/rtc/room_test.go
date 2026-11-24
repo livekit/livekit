@@ -1068,15 +1068,23 @@ func TestParticipantEgressGuardOnRemove(t *testing.T) {
 }
 
 func TestResumeUsesFallbackLearnedOnReconnect(t *testing.T) {
+	const (
+		none = livekit.ICECandidateType_ICT_NONE
+		tls  = livekit.ICECandidateType_ICT_TLS
+	)
 	cases := []struct {
 		name string
 		// connection type of the pair that failed right after it connected
 		failed types.ICEConnectionType
+		turns  bool
 		// the server saw the failure and chose the fallback before the client resumed
 		serverSawFailure bool
+		expected         livekit.ICECandidateType
 	}{
-		{"learned from the client report", types.ICEConnectionTypeTCP, false},
-		{"learned by the server before the resume", types.ICEConnectionTypeUDP, true},
+		{"TCP failure reported by the client", types.ICEConnectionTypeTCP, true, false, tls},
+		{"UDP failure reported by the client", types.ICEConnectionTypeUDP, true, false, tls},
+		{"UDP failure reported by the client, no TURN/TLS", types.ICEConnectionTypeUDP, false, false, none},
+		{"UDP failure seen by the server before the resume", types.ICEConnectionTypeUDP, true, true, tls},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -1087,10 +1095,10 @@ func TestResumeUsesFallbackLearnedOnReconnect(t *testing.T) {
 			})
 			t.Cleanup(func() { p.Close(false, types.ParticipantCloseReasonNone, false) })
 
-			// the node has no ICE/TCP listener, and TURN/TLS is there to fall back to
+			// the node has no ICE/TCP listener
 			tm := p.TransportManager
 			tm.params.AllowTCPFallback = true
-			tm.params.TURNSEnabled = true
+			tm.params.TURNSEnabled = c.turns
 			for _, pc := range []*PCTransport{tm.publisher, tm.subscriber} {
 				pc.connectionDetails.Type = c.failed
 			}
@@ -1107,7 +1115,7 @@ func TestResumeUsesFallbackLearnedOnReconnect(t *testing.T) {
 					iceConfig = learned
 				}
 				p.SetICEConfig(iceConfig)
-				if iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS {
+				if iceConfig.PreferenceSubscriber == tls {
 					return iceConfig, tlsServers
 				}
 				return iceConfig, iceServersForRoom
@@ -1115,7 +1123,7 @@ func TestResumeUsesFallbackLearnedOnReconnect(t *testing.T) {
 
 			if c.serverSawFailure {
 				tm.handleConnectionFailed(true)
-				require.Equal(t, livekit.ICECandidateType_ICT_TLS, learned.GetPreferenceSubscriber())
+				require.Equal(t, c.expected, learned.GetPreferenceSubscriber())
 			}
 			// the previous signal connection closed before the client resumed
 			p.SetSignalSourceValid(false)
@@ -1131,9 +1139,14 @@ func TestResumeUsesFallbackLearnedOnReconnect(t *testing.T) {
 				}
 			}
 			require.NotNil(t, res)
-			require.Equal(t, livekit.ClientConfigSetting_ENABLED, res.GetClientConfiguration().GetForceRelay())
-			require.Equal(t, tlsServers, res.IceServers)
-			require.Equal(t, livekit.ICECandidateType_ICT_TLS, p.GetICEConfig().GetPreferenceSubscriber())
+			if c.expected == tls {
+				require.Equal(t, livekit.ClientConfigSetting_ENABLED, res.GetClientConfiguration().GetForceRelay())
+				require.Equal(t, tlsServers, res.IceServers)
+			} else {
+				require.Equal(t, livekit.ClientConfigSetting_UNSET, res.GetClientConfiguration().GetForceRelay())
+				require.Equal(t, iceServersForRoom, res.IceServers)
+			}
+			require.Equal(t, c.expected, p.GetICEConfig().GetPreferenceSubscriber())
 		})
 	}
 }
