@@ -371,7 +371,7 @@ func (r *RoomManager) StartSession(
 				"numParticipants", room.GetParticipantCount(),
 			)
 			// applied before the resume response, so it carries the matching client configuration
-			iceConfig := r.setIceConfig(room.Name(), participant, resumeCandidateProtocol(pi.CandidateProtocol, participant.GetCandidateProtocol()))
+			iceConfig := r.setIceConfig(room.Name(), participant, resumeCandidateProtocol(r.supportedCandidateProtocol(pi.CandidateProtocol), participant.GetCandidateProtocol()))
 			if err = room.ResumeParticipant(
 				participant,
 				requestSource,
@@ -1220,18 +1220,11 @@ func (r *RoomManager) setIceConfig(roomName livekit.RoomName, participant types.
 }
 
 // getIceConfig returns the stronger of the learned fallback and the client preference (NONE < TCP < TLS).
-// A preference for a transport the server does not offer is ignored, as TCP mode drops UDP candidates.
 func (r *RoomManager) getIceConfig(roomName livekit.RoomName, participant types.LocalParticipant, clientPreference livekit.CandidateProtocol) *livekit.ICEConfig {
 	iceConfig := r.iceConfigCache.Get(iceConfigCacheKey{roomName, participant.Identity()})
 
-	tcpEnabled := r.config.RTC.TCPPort != 0
-	var preferred livekit.ICECandidateType
-	switch {
-	case clientPreference == livekit.CandidateProtocol_TLS && r.config.IsTURNSEnabled():
-		preferred = livekit.ICECandidateType_ICT_TLS
-	case (clientPreference == livekit.CandidateProtocol_TCP || clientPreference == livekit.CandidateProtocol_TLS) && tcpEnabled:
-		preferred = livekit.ICECandidateType_ICT_TCP
-	}
+	// CandidateProtocol and ICECandidateType share values (UDP/NONE, TCP, TLS)
+	preferred := livekit.ICECandidateType(r.supportedCandidateProtocol(clientPreference))
 	if preferred <= iceConfig.PreferenceSubscriber {
 		return iceConfig
 	}
@@ -1239,6 +1232,18 @@ func (r *RoomManager) getIceConfig(roomName livekit.RoomName, participant types.
 		PreferenceSubscriber: preferred,
 		PreferencePublisher:  preferred,
 	}
+}
+
+// supportedCandidateProtocol lowers a preference to a transport the server offers, as TCP mode drops UDP candidates.
+func (r *RoomManager) supportedCandidateProtocol(cp livekit.CandidateProtocol) livekit.CandidateProtocol {
+	tcpEnabled := r.config.RTC.TCPPort != 0
+	switch {
+	case cp == livekit.CandidateProtocol_TLS && r.config.IsTURNSEnabled():
+		return livekit.CandidateProtocol_TLS
+	case (cp == livekit.CandidateProtocol_TCP || cp == livekit.CandidateProtocol_TLS) && tcpEnabled:
+		return livekit.CandidateProtocol_TCP
+	}
+	return livekit.CandidateProtocol_UDP
 }
 
 // getSigningKeyPair prefers the key that signed the join token so refreshed tokens stay valid when other keys are rotated.

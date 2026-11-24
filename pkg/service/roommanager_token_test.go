@@ -141,3 +141,17 @@ func TestResumeCandidateProtocol(t *testing.T) {
 	require.Equal(t, tls, resumeCandidateProtocol(tls, udp), "tls on resume replaces no preference")
 	require.Equal(t, udp, resumeCandidateProtocol(udp, udp))
 }
+
+func TestResumeUnsupportedPreferenceKeepsJoin(t *testing.T) {
+	// TURN/TLS configured, ICE/TCP off
+	conf := &config.Config{}
+	conf.TURN.Enabled = true
+	conf.TURN.TLSPort = 5349
+	r := &RoomManager{config: conf, iceConfigCache: sutils.NewIceConfigCache[iceConfigCacheKey](0)}
+	t.Cleanup(r.iceConfigCache.Stop)
+	p := &typesfakes.FakeLocalParticipant{}
+	p.IdentityReturns("p")
+
+	cp := resumeCandidateProtocol(r.supportedCandidateProtocol(livekit.CandidateProtocol_TCP), livekit.CandidateProtocol_TLS)
+	require.Equal(t, livekit.ICECandidateType_ICT_TLS, r.getIceConfig("room", p, cp).PreferenceSubscriber)
+}
