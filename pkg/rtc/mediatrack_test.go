@@ -226,7 +226,7 @@ func (s *revokeTestSubscribedTrack) SubscriberIdentity() livekit.ParticipantIden
 }
 func (s *revokeTestSubscribedTrack) DownTrack() *sfu.DownTrack { return nil }
 
-func newTestMediaTrackReceiverWithSubscribers(n int) *MediaTrackReceiver {
+func newTestMediaTrackReceiverWithSubscribers(n int, includeRecorder bool) *MediaTrackReceiver {
 	mtr := NewMediaTrackReceiver(MediaTrackReceiverParams{
 		MediaTrack: NewMediaTrack(MediaTrackParams{Logger: logger.GetLogger()}, &livekit.TrackInfo{
 			Sid:  "TR_test",
@@ -244,6 +244,11 @@ func newTestMediaTrackReceiverWithSubscribers(n int) *MediaTrackReceiver {
 			subscriber: &revokeTestParticipant{id: id, identity: identity},
 		}
 	}
+	if includeRecorder {
+		mtr.MediaTrackSubscriptions.subscribedTracks["PA_rec"] = &revokeTestSubscribedTrack{
+			subscriber: &revokeTestParticipant{id: "PA_rec", identity: "rec", isRecorder: true},
+		}
+	}
 	return mtr
 }
 
@@ -257,41 +262,65 @@ func newTestAllowedSubscriberIdentities(n int) []livekit.ParticipantIdentity {
 
 func TestMediaTrackReceiverRevokeDisallowedSubscribers(t *testing.T) {
 	t.Run("empty subscribers", func(t *testing.T) {
-		mtr := newTestMediaTrackReceiverWithSubscribers(0)
+		mtr := newTestMediaTrackReceiverWithSubscribers(0, false)
 		revoked := mtr.RevokeDisallowedSubscribers([]livekit.ParticipantIdentity{"sub_0000"})
 		require.Empty(t, revoked)
 	})
 
 	t.Run("single subscriber with large allowlist", func(t *testing.T) {
-		mtr := newTestMediaTrackReceiverWithSubscribers(1)
-		revoked := mtr.RevokeDisallowedSubscribers(newTestAllowedSubscriberIdentities(15))
-		require.Empty(t, revoked)
+		allowed := newTestAllowedSubscriberIdentities(15)
+		mtr := newTestMediaTrackReceiverWithSubscribers(1, false)
+		require.Empty(t, mtr.RevokeDisallowedSubscribers(allowed))
+
+		disallowedMTR := newTestMediaTrackReceiverWithSubscribers(0, false)
+		disallowedMTR.MediaTrackSubscriptions.subscribedTracks["PA_9999"] = &revokeTestSubscribedTrack{
+			subscriber: &revokeTestParticipant{id: "PA_9999", identity: "sub_9999"},
+		}
+		require.Equal(t, []livekit.ParticipantIdentity{"sub_9999"}, disallowedMTR.RevokeDisallowedSubscribers(allowed))
 	})
 
 	t.Run("small allowlist and exempt recorder", func(t *testing.T) {
-		mtr := newTestMediaTrackReceiverWithSubscribers(2)
-		mtr.MediaTrackSubscriptions.subscribedTracks["PA_rec"] = &revokeTestSubscribedTrack{
-			subscriber: &revokeTestParticipant{id: "PA_rec", identity: "rec", isRecorder: true},
-		}
+		mtr := newTestMediaTrackReceiverWithSubscribers(2, true)
 		revoked := mtr.RevokeDisallowedSubscribers([]livekit.ParticipantIdentity{"sub_0000"})
 		require.Equal(t, []livekit.ParticipantIdentity{"sub_0001"}, revoked)
 	})
 
-	t.Run("large allowlist above map threshold", func(t *testing.T) {
-		mtr := newTestMediaTrackReceiverWithSubscribers(20)
-		mtr.MediaTrackSubscriptions.subscribedTracks["PA_rec"] = &revokeTestSubscribedTrack{
-			subscriber: &revokeTestParticipant{id: "PA_rec", identity: "rec", isRecorder: true},
-		}
+	t.Run("non-nil empty allowlist revokes all non-exempt", func(t *testing.T) {
+		mtr := newTestMediaTrackReceiverWithSubscribers(3, true)
+		revoked := mtr.RevokeDisallowedSubscribers([]livekit.ParticipantIdentity{})
+		require.ElementsMatch(t, []livekit.ParticipantIdentity{"sub_0000", "sub_0001", "sub_0002"}, revoked)
+	})
+
+	t.Run("threshold boundary and duplicate allowlist entries", func(t *testing.T) {
+		require.False(t, shouldBuildAllowedSubscriberSet(0, newTestAllowedSubscriberIdentities(allowedSubscribersMapThreshold+1)))
+		require.False(t, shouldBuildAllowedSubscriberSet(1, newTestAllowedSubscriberIdentities(allowedSubscribersMapThreshold+1)))
+		require.False(t, shouldBuildAllowedSubscriberSet(2, newTestAllowedSubscriberIdentities(allowedSubscribersMapThreshold)))
+		require.True(t, shouldBuildAllowedSubscriberSet(2, newTestAllowedSubscriberIdentities(allowedSubscribersMapThreshold+1)))
+
+		mtr := newTestMediaTrackReceiverWithSubscribers(10, true)
+		atThreshold := append(newTestAllowedSubscriberIdentities(allowedSubscribersMapThreshold-1), "sub_0000")
+		require.Len(t, atThreshold, allowedSubscribersMapThreshold)
+		require.ElementsMatch(t, []livekit.ParticipantIdentity{"sub_0007", "sub_0008", "sub_0009"}, mtr.RevokeDisallowedSubscribers(atThreshold))
+
+		aboveThreshold := newTestAllowedSubscriberIdentities(allowedSubscribersMapThreshold + 1)
+		require.Equal(t, []livekit.ParticipantIdentity{"sub_0009"}, mtr.RevokeDisallowedSubscribers(aboveThreshold))
+	})
+
+	t.Run("large allowlist above map threshold and all allowed", func(t *testing.T) {
+		mtr := newTestMediaTrackReceiverWithSubscribers(20, true)
 		revoked := mtr.RevokeDisallowedSubscribers(newTestAllowedSubscriberIdentities(15))
 		expected := []livekit.ParticipantIdentity{"sub_0015", "sub_0016", "sub_0017", "sub_0018", "sub_0019"}
 		require.ElementsMatch(t, expected, revoked)
+
+		noOpMTR := newTestMediaTrackReceiverWithSubscribers(15, true)
+		require.Empty(t, noOpMTR.RevokeDisallowedSubscribers(newTestAllowedSubscriberIdentities(15)))
 	})
 }
 
 func BenchmarkMediaTrackReceiverRevokeDisallowedSubscribers(b *testing.B) {
 	for _, size := range []int{100, 500, 1000} {
 		b.Run(fmt.Sprintf("subscribers_%d", size), func(b *testing.B) {
-			mtr := newTestMediaTrackReceiverWithSubscribers(size)
+			mtr := newTestMediaTrackReceiverWithSubscribers(size, false)
 			allowed := newTestAllowedSubscriberIdentities(size)
 			b.ReportAllocs()
 			b.ResetTimer()

@@ -16,6 +16,7 @@ package rtc
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -105,34 +106,117 @@ func newTestDataTrackAllowedIdentities(n int) []livekit.ParticipantIdentity {
 	return allowed
 }
 
-func TestDataTrackRevokeDisallowedSubscribersLargeAllowlist(t *testing.T) {
-	dt := newTestRevokeDataTrack("DTR_test", "test")
-	defer dt.Close()
-
-	// Empty subscribers returns empty without allocating
-	require.Empty(t, dt.RevokeDisallowedSubscribers([]livekit.ParticipantIdentity{"sub_0000"}))
-
-	for i := range 20 {
+func addTestDataTrackSubscribers(t *testing.T, dt *DataTrack, n int, includeRecorder bool) {
+	t.Helper()
+	for i := range n {
 		id := livekit.ParticipantID(fmt.Sprintf("PA_%04d", i))
 		identity := livekit.ParticipantIdentity(fmt.Sprintf("sub_%04d", i))
 		_, err := dt.AddSubscriber(newTestDataTrackSubscriber(id, identity, false))
 		require.NoError(t, err)
 	}
-	recorder := newTestDataTrackSubscriber("PA_rec", "rec", true)
-	_, err := dt.AddSubscriber(recorder)
+	if includeRecorder {
+		_, err := dt.AddSubscriber(newTestDataTrackSubscriber("PA_rec", "rec", true))
+		require.NoError(t, err)
+	}
+}
+
+func TestDataTrackRevokeDisallowedSubscribersLargeAllowlist(t *testing.T) {
+	t.Run("empty subscribers", func(t *testing.T) {
+		dt := newTestRevokeDataTrack("DTR_empty", "empty")
+		defer dt.Close()
+		require.Empty(t, dt.RevokeDisallowedSubscribers([]livekit.ParticipantIdentity{"sub_0000"}))
+	})
+
+	t.Run("single subscriber with large allowlist", func(t *testing.T) {
+		dt := newTestRevokeDataTrack("DTR_single", "single")
+		defer dt.Close()
+		addTestDataTrackSubscribers(t, dt, 1, false)
+
+		allowed := newTestDataTrackAllowedIdentities(15)
+		require.Empty(t, dt.RevokeDisallowedSubscribers(allowed))
+		require.True(t, dt.IsSubscriber("PA_0000"))
+
+		revoked := dt.RevokeDisallowedSubscribers(allowed[1:])
+		require.Equal(t, []livekit.ParticipantIdentity{"sub_0000"}, revoked)
+		require.False(t, dt.IsSubscriber("PA_0000"))
+	})
+
+	t.Run("non-nil empty allowlist revokes all non-exempt", func(t *testing.T) {
+		dt := newTestRevokeDataTrack("DTR_empty_allow", "empty_allow")
+		defer dt.Close()
+		addTestDataTrackSubscribers(t, dt, 3, true)
+
+		revoked := dt.RevokeDisallowedSubscribers([]livekit.ParticipantIdentity{})
+		require.ElementsMatch(t, []livekit.ParticipantIdentity{"sub_0000", "sub_0001", "sub_0002"}, revoked)
+		require.True(t, dt.IsSubscriber("PA_rec"))
+		require.Empty(t, dt.RevokeDisallowedSubscribers([]livekit.ParticipantIdentity{}))
+	})
+
+	t.Run("threshold boundary and large allowlist", func(t *testing.T) {
+		dt := newTestRevokeDataTrack("DTR_test", "test")
+		defer dt.Close()
+		addTestDataTrackSubscribers(t, dt, 20, true)
+
+		revoked := dt.RevokeDisallowedSubscribers(newTestDataTrackAllowedIdentities(15))
+		expected := []livekit.ParticipantIdentity{"sub_0015", "sub_0016", "sub_0017", "sub_0018", "sub_0019"}
+		require.ElementsMatch(t, expected, revoked)
+		require.Empty(t, dt.RevokeDisallowedSubscribers(newTestDataTrackAllowedIdentities(15)))
+
+		revokedBoundary := dt.RevokeDisallowedSubscribers(newTestDataTrackAllowedIdentities(allowedSubscribersMapThreshold))
+		require.Len(t, revokedBoundary, 15-allowedSubscribersMapThreshold)
+
+		for i := range allowedSubscribersMapThreshold {
+			require.True(t, dt.IsSubscriber(livekit.ParticipantID(fmt.Sprintf("PA_%04d", i))))
+		}
+		for i := allowedSubscribersMapThreshold; i < 20; i++ {
+			require.False(t, dt.IsSubscriber(livekit.ParticipantID(fmt.Sprintf("PA_%04d", i))))
+		}
+		require.True(t, dt.IsSubscriber("PA_rec"))
+	})
+}
+
+func TestDataTrackRevokeDisallowedSubscribersConcurrent(t *testing.T) {
+	dt := newTestRevokeDataTrack("DTR_conc", "conc")
+	defer dt.Close()
+
+	_, err := dt.AddSubscriber(newTestDataTrackSubscriber("PA_rec", "rec", true))
 	require.NoError(t, err)
 
-	revoked := dt.RevokeDisallowedSubscribers(newTestDataTrackAllowedIdentities(15))
-	expected := []livekit.ParticipantIdentity{"sub_0015", "sub_0016", "sub_0017", "sub_0018", "sub_0019"}
-	require.ElementsMatch(t, expected, revoked)
+	allowlists := [][]livekit.ParticipantIdentity{
+		newTestDataTrackAllowedIdentities(20),
+		newTestDataTrackAllowedIdentities(allowedSubscribersMapThreshold),
+		{},
+	}
 
-	for i := range 15 {
-		require.True(t, dt.IsSubscriber(livekit.ParticipantID(fmt.Sprintf("PA_%04d", i))))
+	var wg sync.WaitGroup
+	for w := range 4 {
+		wg.Add(1)
+		go func(worker int) {
+			defer wg.Done()
+			for i := range 30 {
+				idx := (worker*7 + i) % 24
+				id := livekit.ParticipantID(fmt.Sprintf("PA_%04d", idx))
+				identity := livekit.ParticipantIdentity(fmt.Sprintf("sub_%04d", idx))
+				_, _ = dt.AddSubscriber(newTestDataTrackSubscriber(id, identity, false))
+				if i%3 == 0 {
+					dt.RemoveSubscriber(id)
+				}
+			}
+		}(w)
 	}
-	for i := 15; i < 20; i++ {
-		require.False(t, dt.IsSubscriber(livekit.ParticipantID(fmt.Sprintf("PA_%04d", i))))
+
+	for r := range 4 {
+		wg.Add(1)
+		go func(worker int) {
+			defer wg.Done()
+			for i := range 40 {
+				_ = dt.RevokeDisallowedSubscribers(allowlists[(worker+i)%len(allowlists)])
+			}
+		}(r)
 	}
-	require.True(t, dt.IsSubscriber(recorder.ID()))
+	wg.Wait()
+
+	require.True(t, dt.IsSubscriber("PA_rec"))
 }
 
 func BenchmarkDataTrackRevokeDisallowedSubscribers(b *testing.B) {
