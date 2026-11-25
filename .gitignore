@@ -27,3 +27,6 @@ proto/
 .idea/
 
 dist/
+
+# Nix build output
+result
