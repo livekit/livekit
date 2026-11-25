@@ -1770,6 +1770,45 @@ func TestLeaveJoinSession(t *testing.T) {
 	require.Equal(t, 2, tl.OnTrackPublishedCallCount())
 }
 
+func TestReleasePendingTrackOnUnknownCodec(t *testing.T) {
+	p := newParticipantForTestWithOpts("test", &participantOpts{protocolVersion: 7})
+	sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+
+	camera := p.addPendingTrack(&livekit.AddTrackRequest{Cid: "camera", Name: "camera", Type: livekit.TrackType_VIDEO})
+	require.NotNil(t, camera)
+	p.pendingTracks["camera"].trackInfos[0].Codecs = []*livekit.SimulcastCodecInfo{
+		{MimeType: mime.MimeTypeH264.String(), Cid: "camera"},
+		{MimeType: mime.MimeTypeVP8.String(), Cid: "camera-backup"},
+	}
+	screen := p.addPendingTrack(&livekit.AddTrackRequest{Cid: "screen", Name: "screen", Type: livekit.TrackType_VIDEO})
+	require.NotNil(t, screen)
+
+	p.pendingTracksLock.Lock()
+	defer p.pendingTracksLock.Unlock()
+
+	// the webrtc track id differs from the signal cid, so the media is matched to the camera by type
+	_, ti, _, _, _ := p.getPendingTrack("webrtc-camera", livekit.TrackType_VIDEO, true)
+	require.NotNil(t, ti)
+	ti = p.pendingTracks["camera"].trackInfos[0]
+
+	// a codec the track lists keeps it pending
+	require.False(t, p.releasePendingTrackOnUnknownCodecLocked(ti, "webrtc-camera", mime.MimeTypeVP8.String()))
+	require.NotNil(t, p.pendingTracks["camera"])
+
+	// a codec the track does not list releases it and tells the client
+	written := sink.WriteMessageCallCount()
+	require.True(t, p.releasePendingTrackOnUnknownCodecLocked(ti, "webrtc-camera", mime.MimeTypeH265.String()))
+	require.Nil(t, p.pendingTracks["camera"])
+	require.Equal(t, written+1, sink.WriteMessageCallCount())
+	res := sink.WriteMessageArgsForCall(written).(*livekit.SignalResponse)
+	require.Equal(t, camera.Sid, res.GetTrackUnpublished().GetTrackSid())
+
+	// a later layer of the same webrtc track does not claim the screen share
+	_, ti, _, _, _ = p.getPendingTrack("webrtc-camera", livekit.TrackType_VIDEO, true)
+	require.Nil(t, ti)
+	require.NotNil(t, p.pendingTracks["screen"])
+}
+
 const (
 	pendingTrackCid = "C"
 	parkDeadline    = 5 * time.Second

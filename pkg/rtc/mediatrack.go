@@ -287,14 +287,14 @@ func (t *MediaTrack) getReceiverLBThreshold() int {
 }
 
 // AddReceiver adds a new RTP receiver to the track, returns true when receiver represents a new codec
-// and an error when the receiver could not be added
-func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRemote, mid string) (bool, error) {
+// and if a receiver was added successfully
+func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRemote, mid string) (bool, bool) {
 	var newCodec bool
 	ssrc := uint32(track.SSRC())
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(ssrc)
 	if buff == nil || rtcpReader == nil {
 		t.params.Logger.Errorw("could not retrieve buffer pair", nil)
-		return newCodec, ErrReceiverNoBuffer
+		return newCodec, false
 	}
 
 	var lastRR uint32
@@ -359,7 +359,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			"trackInfo", logger.Proto(ti),
 		)
 		t.addReceiverLock.Unlock()
-		return newCodec, ErrReceiverNegativeLayer
+		return newCodec, false
 	}
 
 	t.params.Logger.Debugw(
@@ -372,30 +372,15 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 	)
 	wr := t.MediaTrackReceiver.Receiver(mimeType)
 	if wr == nil {
-		priority := -1
-		for idx, c := range ti.Codecs {
-			if mime.IsMimeTypeStringEqual(track.Codec().MimeType, c.MimeType) {
-				priority = idx
-				break
-			}
+		if len(ti.Codecs) == 0 {
+			// audio track
+			t.params.Logger.Warnw(
+				"unexpected 0 codecs in track info", nil,
+				"mime", mimeType,
+				"track", logger.Proto(ti),
+			)
 		}
-		if priority < 0 {
-			switch len(ti.Codecs) {
-			case 0:
-				// audio track
-				t.params.Logger.Warnw(
-					"unexpected 0 codecs in track info", nil,
-					"mime", mimeType,
-					"track", logger.Proto(ti),
-				)
-				priority = 0
-			case 1:
-				// older clients or non simulcast-codec, mime type only set later
-				if ti.Codecs[0].MimeType == "" {
-					priority = 0
-				}
-			}
-		}
+		priority := codecPriority(ti, track.Codec().MimeType)
 		if priority < 0 {
 			t.params.Logger.Warnw(
 				"could not find codec for webrtc receiver", nil,
@@ -403,7 +388,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 				"track", logger.Proto(ti),
 			)
 			t.addReceiverLock.Unlock()
-			return newCodec, ErrReceiverCodecNotFound
+			return newCodec, false
 		}
 
 		newWR := sfu.NewWebRTCReceiver(
@@ -542,7 +527,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			"newCodec", newCodec,
 		)
 		buff.Close()
-		return newCodec, err
+		return newCodec, false
 	}
 
 	var expectedBitrate int
@@ -559,7 +544,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			"newCodec", newCodec,
 		)
 		buff.Close()
-		return newCodec, err
+		return newCodec, false
 	}
 
 	t.MediaTrackReceiver.MaybeSetSimulcast()
@@ -600,7 +585,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			stats,
 		)
 	})
-	return newCodec, nil
+	return newCodec, true
 }
 
 func (t *MediaTrack) GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality) {
@@ -723,4 +708,24 @@ func (t *MediaTrack) SetPublished(published bool) {
 
 func (t *MediaTrack) Published() bool {
 	return t.published.Load()
+}
+
+// codecPriority returns the index of mimeType in the codecs of the track, or -1 when the track does not list it
+func codecPriority(ti *livekit.TrackInfo, mimeType string) int {
+	for idx, c := range ti.Codecs {
+		if mime.IsMimeTypeStringEqual(mimeType, c.MimeType) {
+			return idx
+		}
+	}
+	switch len(ti.Codecs) {
+	case 0:
+		// audio track
+		return 0
+	case 1:
+		// older clients or non simulcast-codec, mime type only set later
+		if ti.Codecs[0].MimeType == "" {
+			return 0
+		}
+	}
+	return -1
 }

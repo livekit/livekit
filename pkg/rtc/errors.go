@@ -41,9 +41,4 @@ var (
 	ErrSubscriptionLimitExceeded = errors.New("participant has exceeded its subscription limit")
 
 	ErrNoSubscribeMetricsPermission = errors.New("participant is not given permission to subscribe to metrics")
-
-	// Track publication related
-	ErrReceiverNoBuffer      = errors.New("could not retrieve buffer pair for receiver")
-	ErrReceiverNegativeLayer = errors.New("receiver layer could not be determined")
-	ErrReceiverCodecNotFound = errors.New("received codec is not in track info")
 )
