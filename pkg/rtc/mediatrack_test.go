@@ -292,10 +292,11 @@ func TestMediaTrackReceiverRevokeDisallowedSubscribers(t *testing.T) {
 	})
 
 	t.Run("threshold boundary and duplicate allowlist entries", func(t *testing.T) {
-		require.False(t, shouldBuildAllowedSubscriberSet(0, newTestAllowedSubscriberIdentities(allowedSubscribersMapThreshold+1)))
-		require.False(t, shouldBuildAllowedSubscriberSet(1, newTestAllowedSubscriberIdentities(allowedSubscribersMapThreshold+1)))
-		require.False(t, shouldBuildAllowedSubscriberSet(2, newTestAllowedSubscriberIdentities(allowedSubscribersMapThreshold)))
-		require.True(t, shouldBuildAllowedSubscriberSet(2, newTestAllowedSubscriberIdentities(allowedSubscribersMapThreshold+1)))
+		above := newTestAllowedSubscriberIdentities(allowedSubscribersMapThreshold + 1)
+		require.Nil(t, buildAllowedSubscriberSet(0, above))
+		require.Nil(t, buildAllowedSubscriberSet(1, above))
+		require.Nil(t, buildAllowedSubscriberSet(2, newTestAllowedSubscriberIdentities(allowedSubscribersMapThreshold)))
+		require.NotNil(t, buildAllowedSubscriberSet(2, above))
 
 		mtr := newTestMediaTrackReceiverWithSubscribers(10, true)
 		atThreshold := append(newTestAllowedSubscriberIdentities(allowedSubscribersMapThreshold-1), "sub_0000")

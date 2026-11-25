@@ -175,13 +175,7 @@ func (d *DataTrack) RevokeDisallowedSubscribers(allowedSubscriberIdentities []li
 		return nil
 	}
 
-	var allowedSet map[livekit.ParticipantIdentity]struct{}
-	if shouldBuildAllowedSubscriberSet(len(d.subscribedTracks), allowedSubscriberIdentities) {
-		// Release d.lock while allocating and populating the lookup set, then re-scan under lock.
-		d.lock.Unlock()
-		allowedSet = buildAllowedSubscriberSet(allowedSubscriberIdentities)
-		d.lock.Lock()
-	}
+	allowedSet := buildAllowedSubscriberSet(len(d.subscribedTracks), allowedSubscriberIdentities)
 
 	var disallowed map[livekit.ParticipantID]livekit.ParticipantIdentity
 	for subID, subscribedTrack := range d.subscribedTracks {

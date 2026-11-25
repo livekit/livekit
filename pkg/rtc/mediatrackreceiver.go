@@ -623,10 +623,7 @@ func (t *MediaTrackReceiver) RevokeDisallowedSubscribers(allowedSubscriberIdenti
 		return nil
 	}
 
-	var allowedSet map[livekit.ParticipantIdentity]struct{}
-	if shouldBuildAllowedSubscriberSet(len(subTracks), allowedSubscriberIdentities) {
-		allowedSet = buildAllowedSubscriberSet(allowedSubscriberIdentities)
-	}
+	allowedSet := buildAllowedSubscriberSet(len(subTracks), allowedSubscriberIdentities)
 
 	var revokedSubscriberIdentities []livekit.ParticipantIdentity
 	for _, subTrack := range subTracks {
