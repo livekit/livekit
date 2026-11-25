@@ -3425,6 +3425,16 @@ func configureReceiverCodecs(
 		if compliesWithCodecOrderInSDPAnswer {
 			reorderedCodecs = append(reorderedCodecs, leftCodecs...)
 		} else {
+			// keep the RTX of each preferred codec, so retransmissions stay on their own stream
+			preferredApts := make(map[string]bool, len(preferredCodecs))
+			for _, c := range preferredCodecs {
+				preferredApts[fmt.Sprintf("apt=%d", c.PayloadType)] = true
+			}
+			for _, c := range leftCodecs {
+				if mime.IsMimeTypeStringRTX(c.RTPCodecCapability.MimeType) && preferredApts[c.SDPFmtpLine] {
+					reorderedCodecs = append(reorderedCodecs, c)
+				}
+			}
 			// flexfec applies to whichever video codec is negotiated, retain
 			// it even when trimming to the preferred codec
 			for _, c := range leftCodecs {
