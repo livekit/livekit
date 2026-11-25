@@ -3082,10 +3082,10 @@ func (p *ParticipantImpl) onSubscribedAudioCodecChange(
 
 // releasePendingTrackLocked drops every pending entry of a track whose media never arrived,
 // so it stops counting against cMaxPendingTracks. Must be called with pendingTracksLock held.
-func (p *ParticipantImpl) releasePendingTrackLocked(trackID livekit.TrackID) {
+func (p *ParticipantImpl) releasePendingTrackLocked(trackID livekit.TrackID, extraCids ...string) {
 	var (
 		released     *livekit.TrackInfo
-		releasedCids []string
+		releasedCids = slices.Clone(extraCids)
 	)
 	for cid, pti := range p.pendingTracks {
 		remaining := pti.trackInfos[:0]
@@ -3128,8 +3128,18 @@ func (p *ParticipantImpl) releasePendingTrackLocked(trackID livekit.TrackID) {
 
 // releasePendingTrackOnUnknownCodecLocked releases a pending track whose media arrived in a codec that
 // its track info does not list, as it could never be forwarded. Must be called with pendingTracksLock held.
-func (p *ParticipantImpl) releasePendingTrackOnUnknownCodecLocked(ti *livekit.TrackInfo, webrtcTrackID string, mimeType string) bool {
+func (p *ParticipantImpl) releasePendingTrackOnUnknownCodecLocked(signalCid string, ti *livekit.TrackInfo, webrtcTrackID string, mimeType string) bool {
 	if codecPriority(ti, mimeType) >= 0 {
+		return false
+	}
+	// a replacement queued on the cid shares the track id, releasing would drop it too
+	if pti := p.pendingTracks[signalCid]; pti != nil && len(pti.trackInfos) > 1 {
+		p.pubLogger.Warnw(
+			"not releasing pending track with a queued replacement, received codec is not in track info", nil,
+			"trackID", ti.Sid,
+			"mime", mimeType,
+			"trackInfo", logger.Proto(ti),
+		)
 		return false
 	}
 
@@ -3140,9 +3150,9 @@ func (p *ParticipantImpl) releasePendingTrackOnUnknownCodecLocked(ti *livekit.Tr
 		"mime", mimeType,
 		"trackInfo", logger.Proto(ti),
 	)
-	// later layers of this webrtc track must not claim another pending track
-	p.addReleasedTrackCidsLocked([]string{webrtcTrackID})
-	p.releasePendingTrackLocked(livekit.TrackID(ti.Sid))
+	// later layers of this webrtc track must not claim another pending track, a new request
+	// for the track clears the webrtc track id along with its other cids
+	p.releasePendingTrackLocked(livekit.TrackID(ti.Sid), webrtcTrackID)
 	return true
 }
 
@@ -3661,7 +3671,7 @@ func (p *ParticipantImpl) mediaTrackReceived(
 			}
 		}
 
-		if !isMigrated && p.releasePendingTrackOnUnknownCodecLocked(ti, track.ID(), track.Codec().MimeType) {
+		if !isMigrated && p.releasePendingTrackOnUnknownCodecLocked(signalCid, ti, track.ID(), track.Codec().MimeType) {
 			p.pendingTracksLock.Unlock()
 			return nil, false, false, ridsFromSdp
 		}
