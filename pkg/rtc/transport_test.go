@@ -782,19 +782,18 @@ func untilTransportsConnected(transports ...*transportfakes.FakeHandler) *sync.W
 	triggered.Add(len(transports))
 
 	for _, t := range transports {
-		var done atomic.Value
-		done.Store(false)
+		var done atomic.Bool
 		hdlr := func() {
-			if val, ok := done.Load().(bool); ok && !val {
-				done.Store(true)
+			if done.CompareAndSwap(false, true) {
 				triggered.Done()
 			}
 		}
 
+		// register before checking the count, so a call in between is not missed
+		t.OnInitialConnectedCalls(hdlr)
 		if t.OnInitialConnectedCallCount() != 0 {
 			hdlr()
 		}
-		t.OnInitialConnectedCalls(hdlr)
 	}
 	return &triggered
 }

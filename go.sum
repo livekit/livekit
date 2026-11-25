@@ -182,8 +182,8 @@ github.com/livekit/protocol v1.54.3-0.20261124075400-36e1b27375d9 h1:qPD/T1vxE9N
 github.com/livekit/protocol v1.54.3-0.20261124075400-36e1b27375d9/go.mod h1:nMEqUOj5v+v+GsAgVifdu7yvuhoJu6fAt674ObTIe/8=
 github.com/livekit/psrpc v0.8.3-0.20261124192832-2826b474becf h1:Z1NNwvGWTs7F3BpYX+Xb8KiLN8G/5Je25yIwjzhh5u8=
 github.com/livekit/psrpc v0.8.3-0.20261124192832-2826b474becf/go.mod h1:Eh8f060LOzgeLY9BUSZ2Rb59gUpIlldfgv5Dlextiio=
-github.com/livekit/webrtc-pion/v4 v4.2.25-warp.3 h1:n6Rctm2NI+YuAZlAuI0yDw+ZmazAIcol6sjeeTqU32I=
-github.com/livekit/webrtc-pion/v4 v4.2.25-warp.3/go.mod h1:fJ30cAMDdcujHW6Q3gavoXGxNA/QCex+VOE31k8vldw=
+github.com/livekit/webrtc-pion/v4 v4.2.25-warp.4 h1:nX9JL2Z85kSw7LccGE/VayhowCZb303x8u4fwhfHySc=
+github.com/livekit/webrtc-pion/v4 v4.2.25-warp.4/go.mod h1:G1KIf8esGduJZ8NTOpwakRJQuu1HIHt5irZRh26E5mI=
 github.com/lucasb-eyer/go-colorful v1.2.0 h1:1nnpGOrhyZZuNyfu1QjKiUICQ74+3FNCN69Aj6K7nkY=
 github.com/lucasb-eyer/go-colorful v1.2.0/go.mod h1:R4dSotOR9KMtayYi1e77YzuveK+i7ruzyGqttikkLy0=
 github.com/mackerelio/go-osstat v0.2.8 h1:I2duicTaCGWoM53XwAwA9OIe1inu0xnVs8/pqOWWVr4=
@@ -263,8 +263,8 @@ github.com/pion/datachannel v1.6.4 h1:yFynqnFQ2Z+R01+kJmcU6SAMemRst972ZjKJVtb8/4
 github.com/pion/datachannel v1.6.4/go.mod h1:AyOmAGX4Y8UHfhGTXwL5bwpIfCD2GPxfm2+h00WJ7nQ=
 github.com/pion/dtls/v3 v3.1.15 h1:okWk5LNwU21DfhvG8z4wm45knHVSPEdkihwp6BxfQcc=
 github.com/pion/dtls/v3 v3.1.15/go.mod h1:iKFQNYrjsN2TiA2YKKMqB9MOZaFpjFULBI/A4sW0eyc=
-github.com/pion/dtls/v4 v4.0.0-rc.8 h1:r0kX03n1nZjv2bu47iqIGKGiTTKJdsPDZIspgilVLVk=
-github.com/pion/dtls/v4 v4.0.0-rc.8/go.mod h1:d0wnjVER+gonPBUifSj6ZeGXClyHxYfctzvOELtsNb4=
+github.com/pion/dtls/v4 v4.0.2 h1:BOUlZEl/AOvKMQlnC0VWvh8LHQznTs0ziBfwLaywOxU=
+github.com/pion/dtls/v4 v4.0.2/go.mod h1:2fJZQvjuB/GlMwrtZQiSdJpWhhsxA5w8urFV00aum9E=
 github.com/pion/interceptor v0.1.51 h1:PU09y6RghjWXR4AYJ+AVNyDX7EmgIZuDFMGDl6smKQA=
 github.com/pion/interceptor v0.1.51/go.mod h1:nVgAA8pNNhaglm6NSe9lMuFhmi8kwWbf7Whw1ukt9VU=
 github.com/pion/logging v0.2.4 h1:tTew+7cmQ+Mc1pTBLKH2puKsOvhm32dROumOZ655zB8=

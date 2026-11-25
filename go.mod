@@ -31,7 +31,7 @@ require (
 	github.com/olekukonko/tablewriter v1.1.5
 	github.com/ory/dockertest/v4 v4.0.1
 	github.com/pion/datachannel v1.6.4
-	github.com/pion/dtls/v4 v4.0.0-rc.8
+	github.com/pion/dtls/v4 v4.0.2
 	github.com/pion/ice/v4 v4.4.8
 	github.com/pion/interceptor v0.1.51
 	github.com/pion/rtcp v1.2.20
@@ -181,6 +181,6 @@ tool (
 	golang.org/x/tools/cmd/goimports
 )
 
-replace github.com/pion/webrtc/v4 => github.com/livekit/webrtc-pion/v4 v4.2.25-warp.3
+replace github.com/pion/webrtc/v4 => github.com/livekit/webrtc-pion/v4 v4.2.25-warp.4
 
 replace github.com/pion/ice/v4 => github.com/livekit/ice/v4 v4.4.8-warp.4

@@ -19,10 +19,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
+	"github.com/livekit/livekit-server/pkg/rtc/transport/transportfakes"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
 
@@ -139,4 +142,54 @@ func TestClientReconnectFallback(t *testing.T) {
 		tm.HandleClientReconnect(livekit.ReconnectReason_RR_SUBSCRIBER_FAILED)
 		require.Equal(t, tls, p.GetICEConfig().GetPreferenceSubscriber())
 	})
+}
+
+func TestMigratedReliableDataChannelIsOrdered(t *testing.T) {
+	clientHandler := &transportfakes.FakeHandler{}
+	client, err := NewPCTransport(TransportParams{Config: &WebRTCConfig{}, IsOfferer: true, Handler: clientHandler})
+	require.NoError(t, err)
+	defer client.Close()
+
+	serverHandler := &transportfakes.FakeHandler{}
+	server, err := NewPCTransport(TransportParams{Config: &WebRTCConfig{}, Handler: serverHandler})
+	require.NoError(t, err)
+	defer server.Close()
+
+	negotiated := true
+	lossyID, reliableID := uint16(1), uint16(0)
+	ordered, unordered := true, false
+	retransmits := uint16(0)
+	_, err = client.pc.CreateDataChannel(LossyDataChannel, &webrtc.DataChannelInit{
+		Negotiated: &negotiated, ID: &lossyID, Ordered: &unordered, MaxRetransmits: &retransmits,
+	})
+	require.NoError(t, err)
+	_, err = client.pc.CreateDataChannel(ReliableDataChannel, &webrtc.DataChannelInit{
+		Negotiated: &negotiated, ID: &reliableID, Ordered: &ordered,
+	})
+	require.NoError(t, err)
+
+	handleICEExchange(t, client, server, clientHandler, serverHandler)
+	connectTransports(t, client, server, clientHandler, serverHandler, false, 1, 1)
+
+	// same order as the JS SDK reports channels on resume: lossy first
+	tm := &TransportManager{
+		params:    TransportManagerParams{Logger: logger.GetLogger()},
+		publisher: server,
+		pendingDataChannelsPublisher: []*livekit.DataChannelInfo{
+			{Label: LossyDataChannel, Id: uint32(lossyID), Target: livekit.SignalTarget_PUBLISHER},
+			{Label: ReliableDataChannel, Id: uint32(reliableID), Target: livekit.SignalTarget_PUBLISHER},
+		},
+	}
+	tm.ProcessPendingPublisherDataChannels()
+
+	require.Eventually(t, func() bool {
+		server.lock.RLock()
+		defer server.lock.RUnlock()
+		return server.reliableDC != nil
+	}, 10*time.Second, 10*time.Millisecond, "reliable data channel did not open")
+
+	server.lock.RLock()
+	dc := server.reliableDC.BufferedAmountGetter()
+	server.lock.RUnlock()
+	require.True(t, dc.Ordered())
 }
