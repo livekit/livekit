@@ -585,7 +585,7 @@ func (r *RTPStatsReceiver) checkRTPClockSkewForSenderReport(srData *livekit.RTCP
 		(timeSinceFirst > 0.2 && math.Abs(float64(r.clockRate)-calculatedClockRateFromFirst) > 0.2*float64(r.clockRate)) {
 		r.clockSkewCount++
 		if shouldLog(r.clockSkewCount) {
-			r.logger.Infow(
+			r.logger.Debugw(
 				"received sender report, clock skew",
 				"current", WrappedRTCPSenderReportStateLogger{srData},
 				"timeSinceFirst", timeSinceFirst,
@@ -622,7 +622,7 @@ func (r *RTPStatsReceiver) checkRTPClockSkewAgainstMediaPathForSenderReport(srDa
 	if uint32(math.Abs(float64(int64(diffHighest)))) > 5*r.clockRate || uint32(math.Abs(float64(int64(diffFirst)))) > 5*r.clockRate {
 		r.clockSkewMediaPathCount++
 		if shouldLog(r.clockSkewMediaPathCount) {
-			r.logger.Infow(
+			r.logger.Debugw(
 				"received sender report, clock skew against media path",
 				"current", WrappedRTCPSenderReportStateLogger{srData},
 				"timeSinceSR", timeSinceSR,
