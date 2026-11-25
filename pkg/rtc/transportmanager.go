@@ -984,10 +984,10 @@ func (t *TransportManager) ProcessPendingPublisherDataChannels() {
 	t.pendingDataChannelsPublisher = nil
 	t.lock.Unlock()
 
-	ordered := true
 	negotiated := true
 
 	for _, ci := range pendingDataChannels {
+		ordered := true
 		var (
 			dcLabel    string
 			dcID       uint16
