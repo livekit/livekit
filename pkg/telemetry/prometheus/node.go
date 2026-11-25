@@ -47,7 +47,7 @@ var (
 	memoryStats *hwstats.MemoryStats
 )
 
-func Init(nodeID string, nodeType livekit.NodeType) error {
+func Init(nodeID string, nodeType livekit.NodeType, cpuStatsOpts ...hwstats.CPUStatsOption) error {
 	if initialized.Swap(true) {
 		return nil
 	}
@@ -121,7 +121,7 @@ func Init(nodeID string, nodeType livekit.NodeType) error {
 	initDebugStats(nodeID, nodeType)
 
 	var err error
-	cpuStats, err = hwstats.NewCPUStats(nil)
+	cpuStats, err = hwstats.NewCPUStats(nil, cpuStatsOpts...)
 	if err != nil {
 		return err
 	}

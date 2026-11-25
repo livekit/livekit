@@ -45,7 +45,8 @@ type TrackReceiver interface {
 	HeaderExtensions() []webrtc.RTPHeaderExtensionParameter
 	IsClosed() bool
 
-	ReadRTP(buf []byte, layer uint8, esn uint64) (int, error)
+	// ReadRTP reads only from the stream generation of the forwarded packet.
+	ReadRTP(buf []byte, layer uint8, esn uint64, streamGeneration uint64) (int, error)
 	GetLayeredBitrate() ([]int32, Bitrates)
 
 	GetAudioLevel() (float64, bool)

@@ -75,7 +75,11 @@ type SubscribedTrack struct {
 	onBindCallbacks []func(error)
 
 	onSubscribeStreamStarted atomic.Value //func(time.Duration)
-	onClose                  atomic.Value // func(bool)
+
+	closeLock              sync.Mutex
+	onClose                func(bool)
+	closed                 bool
+	closedExpectedToResume bool
 
 	debouncer func(func())
 
@@ -137,6 +141,7 @@ func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) 
 	stripPacketTrailer := params.MediaTrack.HasPacketTrailer() && !subSupportsPacketTrailer
 	downTrack, err := sfu.NewDownTrack(sfu.DownTrackParams{
 		Codecs:             codecs,
+		BindableCodecs:     params.WrappedReceiver.BindableCodecs(),
 		IsEncrypted:        isEncrypted,
 		Source:             params.MediaTrack.Source(),
 		Receiver:           params.WrappedReceiver,
@@ -239,8 +244,14 @@ func (t *SubscribedTrack) Bound(err error) {
 
 // for DownTrack callback to notify us that it's closed
 func (t *SubscribedTrack) Close(isExpectedToResume bool) {
-	if onClose := t.onClose.Load(); onClose != nil {
-		onClose.(func(bool))(isExpectedToResume)
+	t.closeLock.Lock()
+	t.closed = true
+	t.closedExpectedToResume = isExpectedToResume
+	onClose := t.onClose
+	t.closeLock.Unlock()
+
+	if onClose != nil {
+		onClose(isExpectedToResume)
 	}
 }
 
@@ -248,8 +259,16 @@ func (t *SubscribedTrack) OnSubscribeStreamStarted(f func(time.Duration)) {
 	t.onSubscribeStreamStarted.Store(f)
 }
 
+// OnClose also delivers an earlier close synchronously.
 func (t *SubscribedTrack) OnClose(f func(bool)) {
-	t.onClose.Store(f)
+	t.closeLock.Lock()
+	t.onClose = f
+	closed, isExpectedToResume := t.closed, t.closedExpectedToResume
+	t.closeLock.Unlock()
+
+	if closed && f != nil {
+		f(isExpectedToResume)
+	}
 }
 
 func (t *SubscribedTrack) IsBound() bool {
@@ -349,6 +368,8 @@ func (t *SubscribedTrack) applySettings() {
 
 	t.settingsVersion = t.versionGenerator.Next()
 	settingsVersion := t.settingsVersion
+	// settings is replaced, never mutated, so the snapshot can be read without the lock
+	settings := t.settings
 	t.settingsLock.Unlock()
 
 	dt := t.DownTrack()
@@ -356,15 +377,15 @@ func (t *SubscribedTrack) applySettings() {
 	temporal := buffer.InvalidLayerTemporal
 	if dt.Kind() == webrtc.RTPCodecTypeVideo {
 		mt := t.MediaTrack()
-		quality := t.settings.Quality
+		quality := settings.Quality
 		mimeType := dt.Mime()
-		if t.settings.Width > 0 {
-			quality = mt.GetQualityForDimension(mimeType, t.settings.Width, t.settings.Height)
+		if settings.Width > 0 {
+			quality = mt.GetQualityForDimension(mimeType, settings.Width, settings.Height)
 		}
 
 		spatial = buffer.GetSpatialLayerForVideoQuality(mimeType, quality, mt.ToProto())
-		if t.settings.Fps > 0 {
-			temporal = mt.GetTemporalLayerForSpatialFps(mimeType, spatial, t.settings.Fps)
+		if settings.Fps > 0 {
+			temporal = mt.GetTemporalLayerForSpatialFps(mimeType, spatial, settings.Fps)
 		}
 	}
 

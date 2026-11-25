@@ -298,6 +298,23 @@ func (m *SubscriptionManager) ClearAllSubscriptions() {
 	m.ReconcileAll()
 }
 
+// FailTrackBind ends a subscription whose track cannot bind, the same way a bind error does
+func (m *SubscriptionManager) FailTrackBind(trackID livekit.TrackID, err error) {
+	m.lock.RLock()
+	sub := m.subscriptions[trackID]
+	m.lock.RUnlock()
+	if sub != nil {
+		m.handleBindFailure(sub, err)
+	}
+}
+
+func (m *SubscriptionManager) handleBindFailure(sub *mediaTrackSubscription, err error) {
+	sub.logger.Infow("failed to bind track", "err", err)
+	sub.maybeRecordError(m.params.Participant.GetTelemetryListener(), err, true)
+	m.UnsubscribeFromTrack(sub.trackID)
+	m.params.OnSubscriptionError(sub.trackID, false, err)
+}
+
 func (m *SubscriptionManager) GetSubscribedTracks() []types.SubscribedTrack {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
@@ -840,12 +857,7 @@ func (m *SubscriptionManager) subscribe(sub *mediaTrackSubscription) error {
 		return ErrNoTrackPermission
 	}
 
-	if err := m.addSubscriber(sub, track, false); err != nil {
-		return err
-	}
-
-	m.markSubscribedTo(sub.getPublisherID(), trackID)
-	return nil
+	return m.addSubscriber(sub, track, false)
 }
 
 func (m *SubscriptionManager) subscribeSynchronous(trackID livekit.TrackID) error {
@@ -906,7 +918,10 @@ func (m *SubscriptionManager) addSubscriber(sub *mediaTrackSubscription, track t
 			prometheus.RecordSubscribePaceShadow(paceShadowDelays)
 		}
 		subTrack.OnSubscribeStreamStarted(sub.recordStreamStartLatency)
-		subTrack.OnClose(func(isExpectedToResume bool) {
+		// Install the close callback after both the subscribed track and publisher mark.
+		// OnClose also delivers an earlier close synchronously, so it must run
+		// after installation even when a permission recheck returns an error.
+		defer subTrack.OnClose(func(isExpectedToResume bool) {
 			m.handleSubscribedTrackClose(sub, isExpectedToResume)
 
 			if isSync {
@@ -917,10 +932,7 @@ func (m *SubscriptionManager) addSubscriber(sub *mediaTrackSubscription, track t
 		})
 		subTrack.AddOnBind(func(err error) {
 			if err != nil {
-				sub.logger.Infow("failed to bind track", "err", err)
-				sub.maybeRecordError(m.params.Participant.GetTelemetryListener(), err, true)
-				m.UnsubscribeFromTrack(trackID)
-				m.params.OnSubscriptionError(trackID, false, err)
+				m.handleBindFailure(sub, err)
 				return
 			}
 			sub.setBound()
@@ -942,6 +954,15 @@ func (m *SubscriptionManager) addSubscriber(sub *mediaTrackSubscription, track t
 			return ErrNoSubscribePermission
 		}
 
+		// same for the publisher revoking this track's permission, which only removes
+		// subscribers already recorded on the track
+		if !isSync {
+			if res := m.params.TrackResolver(m.params.Participant, trackID); res.Track == track && !res.HasPermission {
+				track.RemoveSubscriber(m.params.Participant.ID(), false)
+				return ErrNoTrackPermission
+			}
+		}
+
 		if !isSync && subTrack.NeedsNegotiation() {
 			m.params.Participant.Negotiate(false)
 		}
@@ -953,6 +974,10 @@ func (m *SubscriptionManager) addSubscriber(sub *mediaTrackSubscription, track t
 			"subscribedAudioCount", m.subscribedAudioCount.Load(),
 			"subscribedVideoCount", m.subscribedVideoCount.Load(),
 		)
+	}
+
+	if !isSync {
+		m.markSubscribedTo(sub.getPublisherID(), sub.trackID)
 	}
 	return nil
 }
@@ -1163,7 +1188,10 @@ func (m *SubscriptionManager) subscribeDataTrack(sub *dataTrackSubscription) err
 		sub.logger.Debugw("already subscribed to data track")
 	}
 	if err == nil && dataDownTrack != nil { // subTrack could be nil if already subscribed
-		dataDownTrack.OnClose(func() {
+		// Install the close callback after both the downtrack and publisher mark.
+		// OnClose also delivers an earlier close synchronously, so it must run
+		// after installation even when a permission recheck returns an error.
+		defer dataDownTrack.OnClose(func() {
 			m.handleDataDownTrackClose(sub)
 		})
 		sub.setDataDownTrack(dataDownTrack)
@@ -1173,6 +1201,12 @@ func (m *SubscriptionManager) subscribeDataTrack(sub *dataTrackSubscription) err
 		if !m.params.Participant.CanSubscribe() {
 			dataTrack.RemoveSubscriber(m.params.Participant.ID())
 			return ErrNoSubscribePermission
+		}
+		// same for the publisher revoking this track's permission, which only removes
+		// subscribers already recorded on the track
+		if res := m.params.DataTrackResolver(m.params.Participant, trackID); res.DataTrack == dataTrack && !res.HasPermission {
+			dataTrack.RemoveSubscriber(m.params.Participant.ID())
+			return ErrNoTrackPermission
 		}
 		sub.logger.Debugw("subscribed to data track")
 	}

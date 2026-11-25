@@ -39,7 +39,7 @@ var StaticConfigurations = []ConfigurationItem{
 		Merge: true,
 	},
 	{
-		Match: must.Get(NewScriptMatch(`c.browser == "safari" && c.browser_version > "18.3"`)),
+		Match: must.Get(NewScriptMatch(`c.browser == "safari" && c.browser_version > "18.3" && c.version < "2.13.1"`)),
 		Configuration: &livekit.ClientConfiguration{
 			DisabledCodecs: &livekit.DisabledCodecs{
 				Publish: []*livekit.Codec{

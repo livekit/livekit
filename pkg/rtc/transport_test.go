@@ -16,12 +16,13 @@ package rtc
 
 import (
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/pion/dtls/v3/pkg/protocol/handshake"
+	"github.com/pion/dtls/v4/pkg/protocol/handshake"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
@@ -473,6 +474,78 @@ func TestFirstAnswerMissedDuringICERestart(t *testing.T) {
 	transportB.Close()
 }
 
+func TestRestartOfferAnsweredWhileGathering(t *testing.T) {
+	// a STUN server that never answers keeps the server reflexive gathering of the answerer
+	// running until it times out, as for a server that gathers against STUN servers
+	stunConn, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer stunConn.Close()
+	go func() {
+		buf := make([]byte, 1500)
+		for {
+			if _, _, err := stunConn.ReadFrom(buf); err != nil {
+				return
+			}
+		}
+	}()
+
+	handlerA := &transportfakes.FakeHandler{}
+	transportA, err := NewPCTransport(TransportParams{
+		Config:    &WebRTCConfig{},
+		IsOfferer: true,
+		Handler:   handlerA,
+	})
+	require.NoError(t, err)
+	defer transportA.Close()
+	_, err = transportA.pc.CreateDataChannel(ReliableDataChannel, nil)
+	require.NoError(t, err)
+
+	configB := &WebRTCConfig{}
+	configB.Configuration.ICEServers = []webrtc.ICEServer{{URLs: []string{"stun:" + stunConn.LocalAddr().String()}}}
+	handlerB := &transportfakes.FakeHandler{}
+	transportB, err := NewPCTransport(TransportParams{
+		Config:    configB,
+		IsOfferer: false,
+		Handler:   handlerB,
+	})
+	require.NoError(t, err)
+	defer transportB.Close()
+
+	handleICEExchange(t, transportA, transportB, handlerA, handlerB)
+
+	var answerCount atomic.Int32
+	handlerB.OnAnswerCalls(func(answer webrtc.SessionDescription, answerId uint32, _midToTrackID map[string]string) error {
+		answerCount.Inc()
+		transportA.HandleRemoteDescription(answer, answerId)
+		return nil
+	})
+	var offerCount atomic.Int32
+	var gatheringAtRestartOffer atomic.Value
+	handlerA.OnOfferCalls(func(offer webrtc.SessionDescription, offerId uint32, _midToTrackID map[string]string) error {
+		if offerCount.Inc() == 2 {
+			gatheringAtRestartOffer.Store(transportB.pc.ICEGatheringState())
+		}
+		transportB.HandleRemoteDescription(offer, offerId)
+		return nil
+	})
+
+	transportA.Negotiate(true)
+	require.Eventually(t, func() bool {
+		return answerCount.Load() == 1 && iceConnected(transportA.pc) && iceConnected(transportB.pc)
+	}, testutils.ConnectTimeout, 10*time.Millisecond, "transports did not connect")
+
+	// restart while the answerer is still gathering, it should answer without waiting for gathering to complete
+	require.NoError(t, transportA.ICERestart())
+	require.Eventually(t, func() bool {
+		return answerCount.Load() == 2
+	}, 2*time.Second, 10*time.Millisecond, "ICE restart offer not answered while gathering")
+	require.Equal(t, webrtc.ICEGatheringStateGathering, gatheringAtRestartOffer.Load(), "restart offer did not arrive while gathering")
+
+	require.Eventually(t, func() bool {
+		return iceConnected(transportA.pc) && iceConnected(transportB.pc)
+	}, testutils.ConnectTimeout, 10*time.Millisecond, "transports did not reconnect after ICE restart")
+}
+
 func TestNegotiationFailed(t *testing.T) {
 	params := TransportParams{
 		Config:    &WebRTCConfig{},
@@ -709,19 +782,18 @@ func untilTransportsConnected(transports ...*transportfakes.FakeHandler) *sync.W
 	triggered.Add(len(transports))
 
 	for _, t := range transports {
-		var done atomic.Value
-		done.Store(false)
+		var done atomic.Bool
 		hdlr := func() {
-			if val, ok := done.Load().(bool); ok && !val {
-				done.Store(true)
+			if done.CompareAndSwap(false, true) {
 				triggered.Done()
 			}
 		}
 
+		// register before checking the count, so a call in between is not missed
+		t.OnInitialConnectedCalls(hdlr)
 		if t.OnInitialConnectedCallCount() != 0 {
 			hdlr()
 		}
-		t.OnInitialConnectedCalls(hdlr)
 	}
 	return &triggered
 }
@@ -762,6 +834,131 @@ func TestConfigureAudioTransceiver(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConfigureReceiverCodecsKeepsPreferredRTX(t *testing.T) {
+	for _, comply := range []bool{true, false} {
+		t.Run(fmt.Sprintf("complies=%v", comply), func(t *testing.T) {
+			var me webrtc.MediaEngine
+			require.NoError(t, registerCodecs(&me, []*livekit.Codec{
+				{Mime: mime.MimeTypeVP8.String()},
+				{Mime: mime.MimeTypeH264.String()},
+				{Mime: mime.MimeTypeRTX.String()},
+			}, RTCPFeedbackConfig{}, false))
+			pc, err := webrtc.NewAPI(webrtc.WithMediaEngine(&me)).NewPeerConnection(webrtc.Configuration{})
+			require.NoError(t, err)
+			defer pc.Close()
+			tr, err := pc.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionRecvonly})
+			require.NoError(t, err)
+
+			configureReceiverCodecs(tr, mime.MimeTypeVP8.String(), comply)
+
+			var vp8PT webrtc.PayloadType
+			var hasH264, hasVP8RTX bool
+			for _, c := range tr.Receiver().GetParameters().Codecs {
+				switch {
+				case mime.IsMimeTypeStringVP8(c.MimeType):
+					vp8PT = c.PayloadType
+				case mime.IsMimeTypeStringH264(c.MimeType):
+					hasH264 = true
+				}
+			}
+			for _, c := range tr.Receiver().GetParameters().Codecs {
+				if mime.IsMimeTypeStringRTX(c.MimeType) && c.SDPFmtpLine == fmt.Sprintf("apt=%d", vp8PT) {
+					hasVP8RTX = true
+				}
+			}
+			require.NotZero(t, vp8PT)
+			require.True(t, hasVP8RTX, "RTX of the preferred codec")
+			require.Equal(t, comply, hasH264, "other codecs only when the client follows the answer order")
+		})
+	}
+}
+
+// the trimmed answer must keep the RTX of the preferred codec at the payload types the client offered
+func TestTrimmedPublisherAnswerKeepsOfferedRTX(t *testing.T) {
+	publishCodecs := []*livekit.Codec{
+		{Mime: mime.MimeTypeVP8.String()},
+		{Mime: mime.MimeTypeH264.String()},
+		{Mime: mime.MimeTypeRTX.String()},
+	}
+
+	handler := &transportfakes.FakeHandler{}
+	server, err := NewPCTransport(TransportParams{
+		Config:               &WebRTCConfig{BufferFactory: buffer.NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()},
+		EnabledPublishCodecs: publishCodecs,
+		Handler:              handler,
+	})
+	require.NoError(t, err)
+	defer server.Close()
+
+	// client payload types differ from the server's registration
+	var clientME webrtc.MediaEngine
+	for _, c := range []webrtc.RTPCodecParameters{
+		{RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90000}, PayloadType: 120},
+		{RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeRTX, ClockRate: 90000, SDPFmtpLine: "apt=120"}, PayloadType: 124},
+		{RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264, ClockRate: 90000, SDPFmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f"}, PayloadType: 126},
+		{RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeRTX, ClockRate: 90000, SDPFmtpLine: "apt=126"}, PayloadType: 127},
+	} {
+		require.NoError(t, clientME.RegisterCodec(c, webrtc.RTPCodecTypeVideo))
+	}
+	client, err := webrtc.NewAPI(webrtc.WithMediaEngine(&clientME)).NewPeerConnection(webrtc.Configuration{})
+	require.NoError(t, err)
+	defer client.Close()
+
+	_, err = client.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{
+		Direction: webrtc.RTPTransceiverDirectionSendonly,
+	})
+	require.NoError(t, err)
+	offer, err := client.CreateOffer(nil)
+	require.NoError(t, err)
+	require.NoError(t, client.SetLocalDescription(offer))
+
+	// as the publisher does on the remote offer, for a client that does not follow the answer's codec order
+	handler.OnSetRemoteDescriptionOfferCalls(func() {
+		for _, tr := range server.pc.GetTransceivers() {
+			if tr.Kind() == webrtc.RTPCodecTypeVideo {
+				configureReceiverCodecs(tr, mime.MimeTypeVP8.String(), false)
+			}
+		}
+	})
+	var answer atomic.Pointer[webrtc.SessionDescription]
+	handler.OnAnswerCalls(func(sd webrtc.SessionDescription, _ uint32, _ map[string]string) error {
+		answer.Store(&sd)
+		return nil
+	})
+	require.NoError(t, server.HandleRemoteDescription(*client.LocalDescription(), 1))
+
+	require.Eventually(t, func() bool {
+		return answer.Load() != nil
+	}, 5*time.Second, 10*time.Millisecond, "server did not produce answer")
+
+	parsed, err := answer.Load().Unmarshal()
+	require.NoError(t, err)
+
+	var payloads, rtpmaps, fmtps []string
+	for _, m := range parsed.MediaDescriptions {
+		if m.MediaName.Media != "video" {
+			continue
+		}
+		payloads = append(payloads, m.MediaName.Formats...)
+		for _, a := range m.Attributes {
+			switch a.Key {
+			case "rtpmap":
+				rtpmaps = append(rtpmaps, a.Value)
+			case "fmtp":
+				fmtps = append(fmtps, a.Value)
+			}
+		}
+	}
+	require.ElementsMatch(t, []string{"120", "124"}, payloads, "video m-line must list only VP8 and its RTX")
+	require.Contains(t, rtpmaps, "120 VP8/90000")
+	require.Contains(t, rtpmaps, "124 rtx/90000")
+	require.Contains(t, fmtps, "124 apt=120")
+	for _, r := range rtpmaps {
+		require.NotContains(t, r, "H264/", "answer must be trimmed to the preferred codec")
+	}
+	require.NotContains(t, fmtps, "127 apt=126", "RTX of a dropped codec must not stay")
 }
 
 // When answering a subscriber offer, the sender's audio payload type must echo
@@ -1072,4 +1269,104 @@ func TestRemoteOfferParsedFollowsICERestartFragment(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "restartUfrag", ufrag)
 	require.Equal(t, "restartPwd0123456789abcdef", pwd)
+}
+
+func TestAnsweringDTLSRole(t *testing.T) {
+	sdkInfo := func(sdk livekit.ClientInfo_SDK) ClientInfo {
+		return ClientInfo{ClientInfo: &livekit.ClientInfo{Sdk: sdk}}
+	}
+	cases := []struct {
+		name       string
+		clientInfo ClientInfo
+		expected   sdp.ConnectionRole
+	}{
+		{name: "js", clientInfo: sdkInfo(livekit.ClientInfo_JS), expected: sdp.ConnectionRolePassive},
+		{name: "unknown sdk", clientInfo: ClientInfo{}, expected: sdp.ConnectionRoleActive},
+		{name: "esp32", clientInfo: sdkInfo(livekit.ClientInfo_ESP32), expected: sdp.ConnectionRoleActive},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			conf := &WebRTCConfig{}
+			answerer, err := NewPCTransport(TransportParams{
+				Config:          conf,
+				ProtocolVersion: 16,
+				ClientInfo:      c.clientInfo,
+				Handler:         &transportfakes.FakeHandler{},
+			})
+			require.NoError(t, err)
+			defer answerer.Close()
+
+			offerer, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+			require.NoError(t, err)
+			defer offerer.Close()
+			_, err = offerer.CreateDataChannel("test", nil)
+			require.NoError(t, err)
+			offer, err := offerer.CreateOffer(nil)
+			require.NoError(t, err)
+
+			require.NoError(t, answerer.pc.SetRemoteDescription(offer))
+			answer, err := answerer.pc.CreateAnswer(nil)
+			require.NoError(t, err)
+
+			parsed, err := answer.Unmarshal()
+			require.NoError(t, err)
+			setup, ok := parsed.MediaDescriptions[0].Attribute(sdp.AttrKeyConnectionSetup)
+			require.True(t, ok)
+			require.Equal(t, c.expected.String(), setup)
+		})
+	}
+}
+
+func TestICELitePlacement(t *testing.T) {
+	js := ClientInfo{ClientInfo: &livekit.ClientInfo{Sdk: livekit.ClientInfo_JS}}
+	cases := []struct {
+		name       string
+		configLite bool // server use_ice_lite
+		isOfferer  bool // true = subscriber (SFU offers); false = publisher (SFU answers)
+		expectLite bool
+	}{
+		{name: "subscriber honors lite", configLite: true, isOfferer: true, expectLite: true},
+		{name: "subscriber full when off", configLite: false, isOfferer: true, expectLite: false},
+		{name: "publisher stays full despite lite", configLite: true, isOfferer: false, expectLite: false},
+		{name: "publisher full when off", configLite: false, isOfferer: false, expectLite: false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			conf := &WebRTCConfig{}
+			conf.SettingEngine.SetLite(c.configLite)
+			tr, err := NewPCTransport(TransportParams{
+				Config:          conf,
+				ProtocolVersion: 16,
+				ClientInfo:      js,
+				IsOfferer:       c.isOfferer,
+				Handler:         &transportfakes.FakeHandler{},
+			})
+			require.NoError(t, err)
+			defer tr.Close()
+
+			var desc webrtc.SessionDescription
+			if c.isOfferer {
+				_, err = tr.pc.CreateDataChannel("test", nil)
+				require.NoError(t, err)
+				desc, err = tr.pc.CreateOffer(nil)
+				require.NoError(t, err)
+			} else {
+				offerer, err2 := webrtc.NewPeerConnection(webrtc.Configuration{})
+				require.NoError(t, err2)
+				defer offerer.Close()
+				_, err2 = offerer.CreateDataChannel("test", nil)
+				require.NoError(t, err2)
+				offer, err2 := offerer.CreateOffer(nil)
+				require.NoError(t, err2)
+				require.NoError(t, tr.pc.SetRemoteDescription(offer))
+				desc, err = tr.pc.CreateAnswer(nil)
+				require.NoError(t, err)
+			}
+
+			parsed, err := desc.Unmarshal()
+			require.NoError(t, err)
+			_, hasLite := parsed.Attribute(sdp.AttrKeyICELite)
+			require.Equal(t, c.expectLite, hasLite, "a=ice-lite presence")
+		})
+	}
 }

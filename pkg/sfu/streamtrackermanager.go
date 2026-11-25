@@ -161,11 +161,13 @@ func NewStreamTrackerManager(
 
 	s.maxExpectedLayer = buffer.InvalidLayerSpatial
 	s.maxExpectedLayerFromTrackInfo(true)
+	return s
+}
 
-	if trackInfo.Type == livekit.TrackType_VIDEO {
+func (s *StreamTrackerManager) Start() {
+	if s.trackInfo.Type == livekit.TrackType_VIDEO {
 		go s.bitrateReporter()
 	}
-	return s
 }
 
 func (s *StreamTrackerManager) Close() {

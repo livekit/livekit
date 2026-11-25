@@ -65,6 +65,7 @@ type JobRequest struct {
 	AgentName   string
 	Deployment  string
 	Attributes  map[string]string
+	ThreadId    string
 }
 
 type agentClient struct {
@@ -175,6 +176,7 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverut
 				EnableRedaction: c.config.EnableUserDataRedaction,
 				Deployment:      desc.Deployment,
 				Attributes:      desc.Attributes,
+				ThreadId:        desc.ThreadId,
 			}
 			resp, err := c.client.JobRequest(context.Background(), topic, jobTypeTopic, job)
 			if err != nil {

@@ -102,3 +102,5 @@ const KeyFrameIntervalMaxForTest = keyFrameIntervalMax * time.Millisecond
 func (d *DownTrack) KeyFrameRequesterWakeupsForTest() uint32 {
 	return d.keyFrameRequesterWakeups.Load()
 }
+
+func (d *DownTrack) RetransmitPacketsForTest(nacks []uint16) { d.retransmitPackets(nacks) }

@@ -53,7 +53,7 @@ type BitrateCalculator struct {
 	windows deque.Deque[bitrateWindow]
 	active  bitrateWindow
 
-	bytes              int
+	bytes              int64
 	busy               time.Duration
 	lastBufferedAmount int
 	last               time.Time
@@ -135,8 +135,8 @@ func (c *BitrateCalculator) AddBytes(bytes int, bufferedAmout int, ts time.Time)
 			c.busy = 0
 		}
 	}
-	c.bytes += bytes
-	c.active.bytes += bytes
+	c.bytes += int64(bytes)
+	c.active.bytes += int64(bytes)
 	c.busy += busy
 	c.active.busy += busy
 }
@@ -165,11 +165,12 @@ func (c *BitrateCalculator) bitrate(ts time.Time, force bool) (int, bool) {
 		}
 	}
 
-	return c.bytes * 8 * 1000 / int(denom.Milliseconds()), true
+	rate := c.bytes * 8 * 1000 / denom.Milliseconds()
+	return int(min(rate, int64(^uint(0)>>1))), true
 }
 
 type bitrateWindow struct {
 	start time.Time
-	bytes int
+	bytes int64
 	busy  time.Duration
 }

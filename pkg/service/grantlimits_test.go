@@ -103,6 +103,20 @@ func ConnectLimitCases() []ConnectLimitCase {
 			}),
 			Err: ErrAttributeExceedsLimits,
 		},
+		{
+			Name:  "room config agent lk attributes exceeds",
+			Limit: config.LimitConfig{MaxLKAttributesSize: 5},
+			Grant: grantWith(func(g *auth.ClaimGrants) {
+				g.RoomConfig = &auth.RoomConfiguration{Agents: []*livekit.RoomAgentDispatch{{Attributes: map[string]string{"lk.k": "abcdefg"}}}}
+			}),
+			Err: ErrAttributeExceedsLimits,
+		},
+		{
+			Name:  "lk attributes exceeds",
+			Limit: config.LimitConfig{MaxAttributesSize: 100, MaxLKAttributesSize: 5},
+			Grant: grantWith(func(g *auth.ClaimGrants) { g.Attributes = map[string]string{"lk.k": "abcdefg"} }),
+			Err:   ErrAttributeExceedsLimits,
+		},
 	}
 }
 
@@ -163,5 +177,14 @@ func TestConnectLimits(t *testing.T) {
 		g.RoomConfig = &auth.RoomConfiguration{Agents: []*livekit.RoomAgentDispatch{nil}}
 		limit := config.LimitConfig{MaxMetadataSize: 5, MaxAttributesSize: 5}
 		require.NoError(t, CheckConnectLimits(limit, g.Identity, livekit.RoomName(g.Video.Room), g))
+	})
+
+	t.Run("lk attributes do not count against attributes limit", func(t *testing.T) {
+		g := baseGrant()
+		g.Attributes = map[string]string{"k": "abcd", "lk.k": "abcdefg"}
+		limit := config.LimitConfig{MaxAttributesSize: 5, MaxLKAttributesSize: 11}
+		_, code, err := ValidateConnectRequest(logger.GetLogger(), grantRequest(g), limit, ValidateConnectRequestParams{}, nil, stubRoomAllocator{})
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, code)
 	})
 }

@@ -24,6 +24,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -163,8 +164,12 @@ func GetClientIP(r *http.Request) string {
 	if ip := r.Header.Get("CF-Connecting-IP"); ip != "" {
 		return ip
 	}
-	if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
-		return ip
+	// each proxy appends to X-Forwarded-For, so the client is the first entry
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		ip, _, _ := strings.Cut(xff, ",")
+		if ip = strings.TrimSpace(ip); ip != "" {
+			return ip
+		}
 	}
 	if ip := r.Header.Get("X-Real-IP"); ip != "" {
 		return ip
@@ -303,6 +308,7 @@ func AugmentClientInfo(ci *livekit.ClientInfo, req *http.Request) {
 
 	// attempt to parse types for SDKs that support browser as a platform
 	if ci.Sdk == livekit.ClientInfo_JS ||
+		ci.Sdk == livekit.ClientInfo_UNITY_WEB ||
 		ci.Sdk == livekit.ClientInfo_REACT_NATIVE ||
 		ci.Sdk == livekit.ClientInfo_FLUTTER ||
 		ci.Sdk == livekit.ClientInfo_UNITY ||
@@ -474,7 +480,10 @@ func CheckConnectLimits(limitConfig config.LimitConfig, identity string, roomNam
 	if !limitConfig.CheckAttributesSize(grants.Attributes) {
 		return fmt.Errorf("%w: max size %d", ErrAttributeExceedsLimits, limitConfig.MaxAttributesSize)
 	}
-	// the token's room configuration creates the room, so it gets the same checks as CreateRoom
+	if !limitConfig.CheckLKAttributesSize(grants.Attributes) {
+		return fmt.Errorf("%w: lk. attributes max size %d", ErrAttributeExceedsLimits, limitConfig.MaxLKAttributesSize)
+	}
+	// the token's room configuration creates the room, so it gets the same limit checks as CreateRoom
 	if roomConfig := grants.GetRoomConfiguration(); roomConfig != nil {
 		if !limitConfig.CheckMetadataSize(roomConfig.Metadata) {
 			return fmt.Errorf("%w: max size %d", ErrMetadataExceedsLimits, limitConfig.MaxMetadataSize)
@@ -485,6 +494,9 @@ func CheckConnectLimits(limitConfig config.LimitConfig, identity string, roomNam
 			}
 			if !limitConfig.CheckAttributesSize(ad.GetAttributes()) {
 				return fmt.Errorf("%w: max size %d", ErrAttributeExceedsLimits, limitConfig.MaxAttributesSize)
+			}
+			if !limitConfig.CheckLKAttributesSize(ad.GetAttributes()) {
+				return fmt.Errorf("%w: lk. attributes max size %d", ErrAttributeExceedsLimits, limitConfig.MaxLKAttributesSize)
 			}
 		}
 	}
@@ -505,4 +517,10 @@ func IsAgentWorkerPath(path string) bool {
 
 func IsAgentPath(path string) bool {
 	return strings.HasPrefix(path, "/agent")
+}
+
+const participantRevocationPrefix = "token_revocation"
+
+func GenRoomParticipantRevocationIdentifier(identity livekit.ParticipantIdentity, room livekit.RoomName) string {
+	return fmt.Sprintf("%s:room:%s:participant:%s", participantRevocationPrefix, url.QueryEscape(room.String()), url.QueryEscape(identity.String()))
 }

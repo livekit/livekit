@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -252,6 +253,9 @@ func (s *RTCService) validateInternal(
 
 		pi.AdaptiveStream = boolValue(r.FormValue("adaptive_stream"))
 		pi.DisableICELite = boolValue(r.FormValue("disable_ice_lite"))
+		if cp, ok := livekit.CandidateProtocol_value[strings.ToUpper(r.FormValue("candidate_protocol"))]; ok {
+			pi.CandidateProtocol = livekit.CandidateProtocol(cp)
+		}
 
 		reconnectReason, _ := strconv.Atoi(r.FormValue("reconnect_reason")) // 0 means unknown reason
 		pi.ReconnectReason = livekit.ReconnectReason(reconnectReason)
@@ -280,6 +284,9 @@ func (s *RTCService) validateInternal(
 
 		pi.AdaptiveStream = joinRequest.GetConnectionSettings().GetAdaptiveStream()
 		pi.DisableICELite = joinRequest.GetConnectionSettings().GetDisableIceLite()
+		if cp := joinRequest.GetConnectionSettings().GetCandidateProtocol(); livekit.CandidateProtocol_name[int32(cp)] != "" {
+			pi.CandidateProtocol = cp
+		}
 
 		if cs := joinRequest.GetConnectionSettings(); cs != nil && cs.SubscriberAllowPause != nil {
 			v := cs.GetSubscriberAllowPause()
@@ -390,6 +397,9 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 		pID = pi.ID
 	}
 	pLogger.Debugw("join request validated", append(getLoggerFields(), "participantInit", &pi)...)
+
+	// before node selection and the connect attempts below, which are part of the user's wait
+	stampJoinRequestTime(&pi, startedAt)
 
 	// give it a few attempts to start session
 	var cr connectionResult
@@ -777,6 +787,17 @@ func (s *RTCService) startConnection(
 	}
 
 	return cr, initialResponse, nil
+}
+
+// stampJoinRequestTime sets when the server received a new participant's join request.
+func stampJoinRequestTime(pi *routing.ParticipantInit, at time.Time) {
+	if pi.Reconnect {
+		return
+	}
+	if pi.Grants.Attributes == nil {
+		pi.Grants.Attributes = make(map[string]string, 1)
+	}
+	pi.Grants.Attributes[livekit.AttrRTCJoinRequestTime] = strconv.FormatInt(at.UnixMilli(), 10)
 }
 
 func readInitialResponse(source routing.MessageSource, timeout time.Duration) (*livekit.SignalResponse, error) {

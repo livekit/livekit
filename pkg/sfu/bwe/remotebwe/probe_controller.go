@@ -164,7 +164,7 @@ func (p *probeController) MaybeFinalizeProbe() (ccutils.ProbeClusterInfo, bool) 
 	if settleWait > p.params.Config.SettleWaitMax {
 		settleWait = p.params.Config.SettleWaitMax
 	}
-	if time.Since(p.stateSwitchedAt) < settleWait {
+	if mono.Now().Sub(p.stateSwitchedAt) < settleWait {
 		return ccutils.ProbeClusterInfoInvalid, false
 	}
 

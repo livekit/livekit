@@ -439,6 +439,9 @@ func (w *DependencyDescriptorWriter) writeFrameChains() error {
 	for i := 0; i < w.structure.NumChains; i++ {
 		chainDiff := 0
 		if w.activeChains&(1<<i) != 0 {
+			if i >= len(w.descriptor.FrameDependencies.ChainDiffs) {
+				return fmt.Errorf("no chain diff for chain %d, chain diffs: %d", i, len(w.descriptor.FrameDependencies.ChainDiffs))
+			}
 			chainDiff = w.descriptor.FrameDependencies.ChainDiffs[i]
 		}
 		if err := w.writeBits(uint64(chainDiff), 8); err != nil {

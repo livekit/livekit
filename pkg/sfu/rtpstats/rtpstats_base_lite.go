@@ -104,7 +104,7 @@ type rtpStatsBaseLite struct {
 	clockRate uint32
 	logger    logger.Logger
 
-	lock sync.RWMutex
+	lock sync.Mutex
 
 	initialized bool
 
@@ -117,8 +117,6 @@ type rtpStatsBaseLite struct {
 
 	packetsLost uint64
 
-	gapHistogram [cGapHistogramNumBins]uint32
-
 	nacks        uint32
 	nackAcks     uint32
 	nackMisses   uint32
@@ -129,15 +127,22 @@ type rtpStatsBaseLite struct {
 
 	nextSnapshotLiteID uint32
 	snapshotLites      []snapshotLite
+
+	// large and updated only on loss, kept after the fields that every packet updates
+	gapHistogram [cGapHistogramNumBins]uint32
 }
 
 func newRTPStatsBaseLite(params RTPStatsParams) *rtpStatsBaseLite {
-	return &rtpStatsBaseLite{
-		params:             params,
-		logger:             logger.GetLogger(),
-		nextSnapshotLiteID: cFirstSnapshotID,
-		snapshotLites:      make([]snapshotLite, 2),
-	}
+	r := &rtpStatsBaseLite{}
+	r.init(params)
+	return r
+}
+
+func (r *rtpStatsBaseLite) init(params RTPStatsParams) {
+	r.params = params
+	r.logger = logger.GetLogger()
+	r.nextSnapshotLiteID = cFirstSnapshotID
+	r.snapshotLites = make([]snapshotLite, 2)
 }
 
 func (r *rtpStatsBaseLite) seed(from *rtpStatsBaseLite) bool {
@@ -214,8 +219,8 @@ func (r *rtpStatsBaseLite) newSnapshotLiteID(extStartSN uint64) uint32 {
 }
 
 func (r *rtpStatsBaseLite) IsActive() bool {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	return r.initialized && r.endTime == 0
 }
@@ -299,8 +304,8 @@ func (r *rtpStatsBaseLite) updatePliTimeLocked() {
 }
 
 func (r *rtpStatsBaseLite) LastPli() int64 {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	return r.lastPli
 }

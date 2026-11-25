@@ -35,6 +35,7 @@ var (
 	ErrDestinationSameAsSourceRoom      = psrpc.NewErrorf(psrpc.InvalidArgument, "destination room cannot be the same as source room")
 	ErrOperationFailed                  = psrpc.NewErrorf(psrpc.Internal, "operation cannot be completed")
 	ErrParticipantNotFound              = psrpc.NewErrorf(psrpc.NotFound, "participant does not exist")
+	ErrInvalidRevokeTokenTs             = psrpc.NewErrorf(psrpc.InvalidArgument, "revoke_token_ts must be within 60 seconds of current time")
 	ErrRoomNotFound                     = psrpc.NewErrorf(psrpc.NotFound, "requested room does not exist")
 	ErrRoomLockFailed                   = psrpc.NewErrorf(psrpc.Internal, "could not lock room")
 	ErrRoomUnlockFailed                 = psrpc.NewErrorf(psrpc.Internal, "could not unlock room, lock token does not match")

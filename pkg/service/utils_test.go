@@ -26,6 +26,8 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/protocol/livekit"
+
 	"github.com/livekit/livekit-server/pkg/service"
 )
 
@@ -152,6 +154,65 @@ func TestRemoveDoubleSlashes(t *testing.T) {
 				got = r.URL.EscapedPath()
 			})
 			require.Equal(t, c.want, got)
+		})
+	}
+}
+
+func TestGetClientIP(t *testing.T) {
+	cases := []struct {
+		name    string
+		headers map[string]string
+		want    string
+	}{
+		{"remote address", nil, "192.0.2.1"},
+		{"cloudflare header wins", map[string]string{"CF-Connecting-IP": "203.0.113.7", "X-Forwarded-For": "198.51.100.2"}, "203.0.113.7"},
+		{"single forwarded address", map[string]string{"X-Forwarded-For": "198.51.100.2"}, "198.51.100.2"},
+		{"forwarded through two proxies", map[string]string{"X-Forwarded-For": "198.51.100.2, 10.0.0.5"}, "198.51.100.2"},
+		{"forwarded list without spaces", map[string]string{"X-Forwarded-For": "198.51.100.2,10.0.0.5,10.0.0.6"}, "198.51.100.2"},
+		{"forwarded ipv6", map[string]string{"X-Forwarded-For": "2001:db8::1, 10.0.0.5"}, "2001:db8::1"},
+		{"real ip header", map[string]string{"X-Real-IP": "198.51.100.9"}, "198.51.100.9"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/rtc", nil)
+			r.RemoteAddr = "192.0.2.1:54321"
+			for k, v := range c.headers {
+				r.Header.Set(k, v)
+			}
+			require.Equal(t, c.want, service.GetClientIP(r))
+		})
+	}
+}
+
+func TestAugmentClientInfo_ParsesUserAgent(t *testing.T) {
+	const iosSafariUA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+
+	cases := []struct {
+		name   string
+		sdk    livekit.ClientInfo_SDK
+		parsed bool
+	}{
+		{"js", livekit.ClientInfo_JS, true},
+		{"unity web", livekit.ClientInfo_UNITY_WEB, true},
+		{"swift", livekit.ClientInfo_SWIFT, false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/rtc", nil)
+			r.Header.Set("User-Agent", iosSafariUA)
+			ci := &livekit.ClientInfo{Sdk: c.sdk}
+
+			service.AugmentClientInfo(ci, r)
+
+			if c.parsed {
+				require.Equal(t, "Mobile Safari", ci.Browser)
+				require.Equal(t, "iOS", ci.Os)
+			} else {
+				require.Empty(t, ci.Browser)
+				require.Empty(t, ci.Os)
+			}
 		})
 	}
 }

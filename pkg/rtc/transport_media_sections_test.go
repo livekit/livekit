@@ -333,3 +333,87 @@ func TestMediaSectionsAnswerEchoesOfferedVideoPayloadTypes(t *testing.T) {
 		require.Equal(t, codec, offered[pt], "answer payload type %d (%s) is not what the client offered", pt, codec)
 	}
 }
+
+// multiCodecTrack exposes several upstream codecs, like a DownTrack before Bind.
+type multiCodecTrack struct {
+	*webrtc.TrackLocalStaticRTP
+	codecs []webrtc.RTPCodecParameters
+}
+
+func (m *multiCodecTrack) BindableCodecs() []webrtc.RTPCodecParameters { return m.codecs }
+
+// A subscribed track is kept out of the answer only when the client offers none of
+// its upstream codecs. A later upstream codec that the client offers keeps it.
+func TestSuppressCodecMismatchedSender(t *testing.T) {
+	serverCodecs := []*livekit.Codec{
+		{Mime: mime.MimeTypeOpus.String()},
+		{Mime: mime.MimeTypeRED.String()},
+		{Mime: mime.MimeTypeVP8.String()},
+		{Mime: mime.MimeTypeH264.String()},
+	}
+	clientCodecs := []*livekit.Codec{
+		{Mime: mime.MimeTypeOpus.String()},
+		{Mime: mime.MimeTypeVP8.String()},
+	}
+	codec := func(m mime.MimeType, clockRate uint32) webrtc.RTPCodecParameters {
+		return webrtc.RTPCodecParameters{RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: m.String(), ClockRate: clockRate}}
+	}
+	opus, red := codec(mime.MimeTypeOpus, 48000), codec(mime.MimeTypeRED, 48000)
+	vp8, h264 := codec(mime.MimeTypeVP8, 90000), codec(mime.MimeTypeH264, 90000)
+
+	cases := []struct {
+		name       string
+		bindCodec  webrtc.RTPCodecParameters
+		upstream   []webrtc.RTPCodecParameters
+		suppressed bool
+	}{
+		{name: "no offered codec", bindCodec: h264, upstream: []webrtc.RTPCodecParameters{h264}, suppressed: true},
+		{name: "RED first, Opus offered", bindCodec: opus, upstream: []webrtc.RTPCodecParameters{red, opus}},
+		{name: "H264 first, VP8 offered", bindCodec: vp8, upstream: []webrtc.RTPCodecParameters{h264, vp8}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var clientME webrtc.MediaEngine
+			require.NoError(t, registerCodecs(&clientME, clientCodecs, RTCPFeedbackConfig{}, false))
+			h := newMediaSectionsHarnessWithClient(t, serverCodecs, &clientME)
+
+			_, err := h.client.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{
+				Direction: webrtc.RTPTransceiverDirectionSendonly,
+			})
+			require.NoError(t, err)
+			h.negotiate(nil)
+
+			static, err := webrtc.NewTrackLocalStaticRTP(c.bindCodec.RTPCodecCapability, "subtrack", "subtrack")
+			require.NoError(t, err)
+			enabled := make([]*livekit.Codec, 0, len(c.upstream))
+			for _, u := range c.upstream {
+				enabled = append(enabled, &livekit.Codec{Mime: u.MimeType})
+			}
+			sender, _, err := h.server.AddTrack(
+				&multiCodecTrack{TrackLocalStaticRTP: static, codecs: c.upstream},
+				types.AddTrackParams{},
+				enabled,
+				RTCPFeedbackConfig{},
+			)
+			require.NoError(t, err)
+
+			h.negotiate(nil)
+			h.negotiate(nil)
+			h.negotiate(nil)
+
+			h.mu.Lock()
+			answerSDP := h.answer.SDP
+			h.mu.Unlock()
+			if c.suppressed {
+				require.Nil(t, sender.Track(), "codec mismatched sender was not parked")
+				require.NotContains(t, answerSDP, "subtrack", "answer advertises a track the subscriber cannot receive")
+				require.Positive(t, h.handler.OnSubscribedTrackCodecUnmatchedCallCount())
+				require.Equal(t, livekit.TrackID("subtrack"), h.handler.OnSubscribedTrackCodecUnmatchedArgsForCall(0))
+			} else {
+				require.NotNil(t, sender.Track(), "decodable sender was parked")
+				require.Contains(t, answerSDP, "subtrack", "answer drops a track the subscriber can receive")
+				require.Zero(t, h.handler.OnSubscribedTrackCodecUnmatchedCallCount())
+			}
+		})
+	}
+}

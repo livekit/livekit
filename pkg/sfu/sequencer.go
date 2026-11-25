@@ -36,16 +36,18 @@ type packetMeta struct {
 	// The original extended sequence number is used to find the original
 	// packet from publisher
 	sourceSeqNo uint64
+	// Cache identity must survive metadata snapshots held across a restart.
+	sourceStreamGeneration uint64
 	// Modified sequence number after offset.
 	// This sequence number is used for the associated
 	// down track, is modified according the offsets, and
 	// must not be shared
 	targetSeqNo uint16
+	// Modified marker
+	marker bool
 	// Modified timestamp for current associated
 	// down track.
 	timestamp uint32
-	// Modified marker
-	marker bool
 	// The last time this packet was nack requested.
 	// Sometimes clients request the same packet more than once, so keep
 	// track of the requested packets helps to avoid writing multiple times
@@ -74,6 +76,7 @@ type packetMeta struct {
 
 func (pm packetMeta) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddUint64("sourceSeqNo", pm.sourceSeqNo)
+	e.AddUint64("sourceStreamGeneration", pm.sourceStreamGeneration)
 	e.AddUint16("targetSeqNo", pm.targetSeqNo)
 	e.AddInt8("layer", pm.layer)
 	e.AddUint8("nacked", pm.nacked)
@@ -188,6 +191,7 @@ func (s *sequencer) push(
 	ddBytes []byte,
 	actBytes []byte,
 	trailerStripped int,
+	sourceStreamGeneration uint64,
 ) {
 	s.Lock()
 	defer s.Unlock()
@@ -250,14 +254,15 @@ func (s *sequencer) push(
 
 	slot := extModifiedSNAdjusted % uint64(s.size)
 	s.meta[slot] = packetMeta{
-		sourceSeqNo:     extIncomingSN,
-		targetSeqNo:     uint16(extModifiedSN),
-		timestamp:       uint32(extModifiedTS),
-		marker:          marker,
-		layer:           layer,
-		numCodecBytesIn: uint8(numCodecBytesIn),
-		trailerStripped: uint8(trailerStripped),
-		lastNack:        s.getRefTime(packetTime), // delay retransmissions after the original transmission
+		sourceSeqNo:            extIncomingSN,
+		sourceStreamGeneration: sourceStreamGeneration,
+		targetSeqNo:            uint16(extModifiedSN),
+		timestamp:              uint32(extModifiedTS),
+		marker:                 marker,
+		layer:                  layer,
+		numCodecBytesIn:        uint8(numCodecBytesIn),
+		trailerStripped:        uint8(trailerStripped),
+		lastNack:               s.getRefTime(packetTime), // delay retransmissions after the original transmission
 	}
 	pm := &s.meta[slot]
 

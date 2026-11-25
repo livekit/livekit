@@ -517,7 +517,7 @@ func TestDownTrackCapsRetransmissions(t *testing.T) {
 		}).Marshal()
 		require.NoError(t, err)
 		dh := newBoundDownTrack(t, h, factory, opusCodecParams, cp, vnettest.MediaEngineConfig{}, func(r *sfufakes.FakeTrackReceiver) {
-			r.ReadRTPCalls(func(buf []byte, _ uint8, _ uint64) (int, error) {
+			r.ReadRTPCalls(func(buf []byte, _ uint8, _ uint64, _ uint64) (int, error) {
 				return copy(buf, source), nil
 			})
 		})
@@ -916,12 +916,6 @@ func TestDownTrackSendsPaddingOnlyPackets(t *testing.T) {
 // WriteProbePackets: RTX probe packets (with StreamAllocator + Pacer + BWE)
 // -----------------------------------------------------------------------------
 
-// capturingProbe records what the DownTrack handed the pacer for a probe packet.
-type capturingProbe struct {
-	hdr        rtp.Header
-	payloadLen int
-}
-
 // capturedRTX records what the DownTrack handed the pacer for an RTX packet.
 type capturedRTX struct {
 	hdr     rtp.Header
@@ -935,7 +929,7 @@ type capturingPacer struct {
 	inner pacer.Pacer
 
 	lock   sync.Mutex
-	probes []capturingProbe
+	probes []capturedRTX
 	rtx    []capturedRTX
 }
 
@@ -943,7 +937,7 @@ func (c *capturingPacer) Enqueue(p *pacer.Packet) {
 	if p.Header != nil {
 		switch {
 		case p.IsProbe:
-			cp := capturingProbe{hdr: *p.Header, payloadLen: len(p.Payload)}
+			cp := capturedRTX{hdr: *p.Header, payload: append([]byte(nil), p.Payload...)}
 			c.lock.Lock()
 			c.probes = append(c.probes, cp)
 			c.lock.Unlock()
@@ -956,10 +950,10 @@ func (c *capturingPacer) Enqueue(p *pacer.Packet) {
 	c.inner.Enqueue(p)
 }
 
-func (c *capturingPacer) probePackets() []capturingProbe {
+func (c *capturingPacer) probePackets() []capturedRTX {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	return append([]capturingProbe(nil), c.probes...)
+	return append([]capturedRTX(nil), c.probes...)
 }
 
 func (c *capturingPacer) rtxPackets() []capturedRTX {
@@ -1143,7 +1137,7 @@ func TestDownTrackSendsProbePackets(t *testing.T) {
 				require.EqualValues(t, dh.dt.PayloadTypeRTXForTest(), pr.hdr.PayloadType, "probe packet must use the RTX payload type")
 				require.True(t, pr.hdr.Padding, "probe packet must carry padding bit")
 				require.EqualValues(t, RTPPaddingMaxPayloadSize, pr.hdr.PaddingSize, "probe packet must set header.PaddingSize")
-				require.Zero(t, pr.payloadLen, "probe packet must have no payload")
+				require.Zero(t, len(pr.payload), "probe packet must have no payload")
 			}
 
 			// the BWE is wired and exercised (the pacer records every send into it);
@@ -1338,7 +1332,7 @@ func testResumeAfterBandwidthPause(t *testing.T, allowPause bool) {
 	for i := range buckets {
 		buckets[i] = bucket.NewBucket[uint64, uint16](500, bucket.RTPMaxPktSize, bucket.RTPSeqNumOffset)
 	}
-	dh.receiver.ReadRTPCalls(func(buf []byte, layer uint8, esn uint64) (int, error) {
+	dh.receiver.ReadRTPCalls(func(buf []byte, layer uint8, esn uint64, _ uint64) (int, error) {
 		bucketsMu.Lock()
 		defer bucketsMu.Unlock()
 		return buckets[layer].GetPacket(buf, esn)

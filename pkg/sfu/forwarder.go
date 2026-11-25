@@ -819,6 +819,11 @@ func (f *Forwarder) getRefLayer() (int32, int32) {
 }
 
 func (f *Forwarder) SetRefSenderReport(layer int32, srData *livekit.RTCPSenderReportState) {
+	// a stream restart can clear the publisher report between the report callback and this read
+	if srData == nil {
+		return
+	}
+
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -1787,6 +1792,9 @@ func (f *Forwarder) Resync() {
 func (f *Forwarder) resyncLocked() {
 	f.vls.SetCurrent(buffer.InvalidLayer)
 	f.lastSSRC = 0
+	if f.ddForwarder != nil {
+		f.ddForwarder.Resync()
+	}
 	if f.pubMuted {
 		f.resumeBehindThreshold = ResumeBehindThresholdSeconds
 	}
@@ -2352,7 +2360,16 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		//
 		// To differentiate between the two cases, drop only when in DEFICIENT state.
 		//
+		// Roll the outgoing timestamp back, or pad a gap. Leaving the dropped
+		// packet's timestamp in place holds the switch clock on the higher layer,
+		// so a lower layer that stays a little behind is rejected on every keyframe.
 		tp.shouldDrop = true
+		switch tp.rtp.snOrdering {
+		case SequenceNumberOrderingContiguous:
+			f.rtpMunger.PacketDropped(extPkt)
+		case SequenceNumberOrderingGap, SequenceNumberOrderingOutOfOrder:
+			tp.padDroppedSlot = true
+		}
 		return tp, nil
 	}
 

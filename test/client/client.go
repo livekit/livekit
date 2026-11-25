@@ -1066,7 +1066,7 @@ func (c *RTCClient) PublishDataUnlabeled(data []byte) error {
 		return err
 	}
 
-	return c.publisher.SendDataMessageUnlabeled(data, true, "test")
+	return c.publisher.SendDataMessageUnlabeled(data)
 }
 
 func (c *RTCClient) PublishDataTrack() (writer TrackWriter, err error) {

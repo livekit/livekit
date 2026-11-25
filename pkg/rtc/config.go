@@ -106,6 +106,10 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 	}, nil
 }
 
+func (c *WebRTCConfig) DisableICELite() {
+	c.SettingEngine.SetLite(false)
+}
+
 func (c *WebRTCConfig) UpdatePublisherConfig(consolidated bool) {
 	c.Publisher = getPublisherConfig(consolidated, c.flexFEC)
 }

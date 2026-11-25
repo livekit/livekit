@@ -52,6 +52,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/rtc/signalling"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -369,17 +370,14 @@ func (r *RoomManager) StartSession(
 				"participantInit", &pi,
 				"numParticipants", room.GetParticipantCount(),
 			)
-			iceConfig := r.getIceConfig(room.Name(), participant)
 			if err = room.ResumeParticipant(
 				participant,
 				requestSource,
 				responseSink,
-				iceConfig,
-				r.iceServersForParticipant(
-					apiKey,
-					participant,
-					iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS,
-				),
+				// applied before the resume response, so it carries the matching client configuration
+				func() (*livekit.ICEConfig, []*livekit.ICEServer) {
+					return r.resumeICE(room.Name(), participant, apiKey, pi.CandidateProtocol)
+				},
 				pi.ReconnectReason,
 			); err != nil {
 				participant.GetLogger().Warnw("could not resume participant", err)
@@ -445,7 +443,7 @@ func (r *RoomManager) StartSession(
 	rtcConf := *r.rtcConfig
 	rtcConf.SetBufferFactory(room.GetBufferFactory())
 	if pi.DisableICELite {
-		rtcConf.SettingEngine.SetLite(false)
+		rtcConf.DisableICELite()
 	}
 	rtcConf.UpdatePublisherConfig(pi.UseSinglePeerConnection)
 
@@ -506,6 +504,7 @@ func (r *RoomManager) StartSession(
 		SubscribeEnabledCodecs:   enabledCodecs,
 		Grants:                   pi.Grants,
 		TokenExpiresAt:           pi.TokenExpiresAt,
+		APIKey:                   pi.APIKey,
 		Reconnect:                pi.Reconnect,
 		Logger:                   pLogger,
 		Reporter:                 roomobs.NewNoopParticipantSessionReporter(),
@@ -541,6 +540,7 @@ func (r *RoomManager) StartSession(
 		DatachannelDataTrackTargetLatency: r.config.RTC.DatachannelDataTrackTargetLatency,
 		FireOnTrackBySdp:                  true,
 		UseSinglePeerConnection:           pi.UseSinglePeerConnection,
+		CandidateProtocol:                 pi.CandidateProtocol,
 		EnableDataTracks:                  r.config.EnableDataTracks,
 		EnableParticipantDataBlob:         r.config.EnableParticipantDataBlob,
 		EnableRTPStreamRestartDetection:   r.config.RTC.EnableRTPStreamRestartDetection,
@@ -553,7 +553,7 @@ func (r *RoomManager) StartSession(
 		prometheus.IncrementParticipantRtcCanceled(1, enableWarp, pi.Client.GetSdk())
 		return err
 	}
-	iceConfig := r.setIceConfig(room.Name(), participant)
+	iceConfig := r.setIceConfig(room.Name(), participant, pi.CandidateProtocol)
 
 	// join room
 	opts := rtc.ParticipantOptions{
@@ -706,6 +706,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 		roomInfo := newRoom.ToProto()
 		r.telemetry.RoomEnded(ctx, roomInfo, reason.ToProto())
 		prometheus.RoomEnded(time.Unix(roomInfo.CreationTime, 0))
+		prometheus.RoomIncludedEnded(roomName)
 		if err := r.deleteRoom(ctx, roomName); err != nil {
 			newRoom.Logger().Errorw("could not delete room", err)
 		}
@@ -735,6 +736,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 
 	r.telemetry.RoomStarted(ctx, newRoom.ToProto())
 	prometheus.RoomStarted()
+	prometheus.RoomIncludedStarted(roomName)
 
 	if created && createRoom.GetEgress().GetRoom() != nil {
 		if r.egressLauncher == nil {
@@ -896,6 +898,10 @@ func (r *RoomManager) UpdateParticipant(ctx context.Context, req *livekit.Update
 		Metadata:   req.Metadata,
 		Attributes: req.Attributes,
 	}, true); err != nil {
+		if errors.Is(err, signalling.ErrAttributesExceedsLimits) {
+			// the request passed the patch check, but the merged attributes exceed a limit
+			return nil, psrpc.NewError(psrpc.InvalidArgument, err)
+		}
 		return nil, err
 	}
 
@@ -906,6 +912,14 @@ func (r *RoomManager) UpdateParticipant(ctx context.Context, req *livekit.Update
 		)
 
 		participant.SetPermission(req.Permission)
+
+		// the API revokes older tokens on every permission update, but the participant
+		// only refreshes its token when the permission actually changed
+		if r.config.TokenRevocation.Enabled {
+			if err := r.refreshToken(participant); err != nil {
+				participant.GetLogger().Errorw("could not refresh token", err)
+			}
+		}
 	}
 
 	return participant.ToProto(), nil
@@ -1062,7 +1076,7 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 	var iceServers []*livekit.ICEServer
 	rtcConf := r.config.RTC
 
-	if tlsOnly && r.config.TURN.TLSPort == 0 {
+	if tlsOnly && !r.config.IsTURNSEnabled() {
 		logger.Warnw("tls only enabled but no turn tls config", nil)
 		tlsOnly = false
 	}
@@ -1099,6 +1113,9 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 	if len(rtcConf.TURNServers) > 0 {
 		hasSTUN = true
 		for _, s := range r.config.RTC.TURNServers {
+			if tlsOnly && s.Protocol != "tls" {
+				continue
+			}
 			scheme := "turn"
 			transport := "tcp"
 			switch s.Protocol {
@@ -1156,7 +1173,7 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 }
 
 func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {
-	key, secret, err := r.getFirstKeyPair()
+	key, secret, err := r.getSigningKeyPair(participant.APIKey())
 	if err != nil {
 		return err
 	}
@@ -1192,14 +1209,51 @@ func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {
 	return nil
 }
 
-func (r *RoomManager) setIceConfig(roomName livekit.RoomName, participant types.LocalParticipant) *livekit.ICEConfig {
-	iceConfig := r.getIceConfig(roomName, participant)
+func (r *RoomManager) setIceConfig(roomName livekit.RoomName, participant types.LocalParticipant, clientPreference livekit.CandidateProtocol) *livekit.ICEConfig {
+	iceConfig := r.getIceConfig(roomName, participant, clientPreference)
 	participant.SetICEConfig(iceConfig)
 	return iceConfig
 }
 
-func (r *RoomManager) getIceConfig(roomName livekit.RoomName, participant types.LocalParticipant) *livekit.ICEConfig {
-	return r.iceConfigCache.Get(iceConfigCacheKey{roomName, participant.Identity()})
+// resumeICE applies the ICE config for a resume and returns it with the ICE servers that match it.
+func (r *RoomManager) resumeICE(roomName livekit.RoomName, participant types.LocalParticipant, apiKey string, requested livekit.CandidateProtocol) (*livekit.ICEConfig, []*livekit.ICEServer) {
+	iceConfig := r.setIceConfig(roomName, participant, resumeCandidateProtocol(r.supportedCandidateProtocol(requested), participant.GetCandidateProtocol()))
+	return iceConfig, r.iceServersForParticipant(apiKey, participant, iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS)
+}
+
+// getIceConfig returns the stronger of the learned fallback and the client preference (NONE < TCP < TLS).
+func (r *RoomManager) getIceConfig(roomName livekit.RoomName, participant types.LocalParticipant, clientPreference livekit.CandidateProtocol) *livekit.ICEConfig {
+	iceConfig := r.iceConfigCache.Get(iceConfigCacheKey{roomName, participant.Identity()})
+
+	// CandidateProtocol and ICECandidateType share values (UDP/NONE, TCP, TLS)
+	preferred := livekit.ICECandidateType(r.supportedCandidateProtocol(clientPreference))
+	if preferred <= iceConfig.PreferenceSubscriber {
+		return iceConfig
+	}
+	return &livekit.ICEConfig{
+		PreferenceSubscriber: preferred,
+		PreferencePublisher:  preferred,
+	}
+}
+
+// supportedCandidateProtocol lowers a preference to a transport the server offers, as TCP mode drops UDP candidates.
+func (r *RoomManager) supportedCandidateProtocol(cp livekit.CandidateProtocol) livekit.CandidateProtocol {
+	tcpEnabled := r.config.RTC.TCPPort != 0
+	switch {
+	case cp == livekit.CandidateProtocol_TLS && r.config.IsTURNSEnabled():
+		return livekit.CandidateProtocol_TLS
+	case (cp == livekit.CandidateProtocol_TCP || cp == livekit.CandidateProtocol_TLS) && tcpEnabled:
+		return livekit.CandidateProtocol_TCP
+	}
+	return livekit.CandidateProtocol_UDP
+}
+
+// getSigningKeyPair prefers the key that signed the join token so refreshed tokens stay valid when other keys are rotated.
+func (r *RoomManager) getSigningKeyPair(apiKey string) (string, string, error) {
+	if secret := r.config.Keys[apiKey]; apiKey != "" && secret != "" {
+		return apiKey, secret, nil
+	}
+	return r.getFirstKeyPair()
 }
 
 func (r *RoomManager) getFirstKeyPair() (string, string, error) {
@@ -1255,4 +1309,12 @@ func (h *roomManagerParticipantHelper) ShouldRegressCodec() bool {
 
 func (h *roomManagerParticipantHelper) GetCachedReliableDataMessage(seqs map[livekit.ParticipantID]uint32) []*types.DataMessageCache {
 	return h.room.GetCachedReliableDataMessage(seqs)
+}
+
+// resumeCandidateProtocol uses the preference sent on resume, and the one from join when none was sent.
+func resumeCandidateProtocol(requested, joined livekit.CandidateProtocol) livekit.CandidateProtocol {
+	if requested != livekit.CandidateProtocol_UDP {
+		return requested
+	}
+	return joined
 }
