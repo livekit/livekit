@@ -2159,29 +2159,51 @@ func requireRpcMapsEmpty(t *testing.T, p *ParticipantImpl) {
 
 func TestPerformRpcHandlersRegisteredBeforeSend(t *testing.T) {
 	p := newParticipantForTest("test")
-	resultCh := make(chan string, 1)
-	errorCh := make(chan error, 1)
+	resultCh := make(chan string, 2)
+	errorCh := make(chan error, 2)
 
-	p.PerformRpc(&livekit.PerformRpcRequest{
-		DestinationIdentity: "test",
-		Method:              "method",
-		ResponseTimeoutMs:   5000,
-	}, resultCh, errorCh)
+	var id string
+	func() {
+		// Hold joiningMessageLock as a barrier so SendDataMessage cannot return
+		// before we inspect pending handlers and inject the response.
+		p.reliableDataInfo.joiningMessageLock.Lock()
+		defer p.reliableDataInfo.joiningMessageLock.Unlock()
 
-	id := waitForQueuedRpcID(t, p)
+		p.PerformRpc(&livekit.PerformRpcRequest{
+			DestinationIdentity: "test",
+			Method:              "method",
+			ResponseTimeoutMs:   5000,
+		}, resultCh, errorCh)
 
-	// Respond immediately without a prior ACK; handler must already be registered.
-	require.True(t, p.handleIncomingRpcResponse(id, "ok", nil))
+		require.Eventually(t, func() bool {
+			p.rpcLock.Lock()
+			defer p.rpcLock.Unlock()
+			if len(p.rpcPendingResponses) != 1 || len(p.rpcPendingAcks) != 1 {
+				return false
+			}
+			for k := range p.rpcPendingResponses {
+				id = k
+			}
+			return true
+		}, time.Second, 100*time.Microsecond)
 
-	select {
-	case res := <-resultCh:
-		require.Equal(t, "ok", res)
-	case err := <-errorCh:
-		require.NoError(t, err)
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for RPC result")
-	}
+		// Respond immediately while SendDataMessage is still blocked mid-send;
+		// both ACK and response handlers must already be registered.
+		require.True(t, p.handleIncomingRpcResponse(id, "ok", nil))
 
+		select {
+		case res := <-resultCh:
+			require.Equal(t, "ok", res)
+		case err := <-errorCh:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for RPC result")
+		}
+	}()
+
+	require.Equal(t, id, waitForQueuedRpcID(t, p))
+	require.Empty(t, resultCh)
+	require.Empty(t, errorCh)
 	requireRpcMapsEmpty(t, p)
 }
 
@@ -2423,8 +2445,8 @@ func TestPerformRpcConcurrentCloseAndRespond(t *testing.T) {
 	resultChs := make([]chan string, n)
 	errorChs := make([]chan error, n)
 	for i := 0; i < n; i++ {
-		resultChs[i] = make(chan string, 1)
-		errorChs[i] = make(chan error, 1)
+		resultChs[i] = make(chan string, 4)
+		errorChs[i] = make(chan error, 4)
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -2473,6 +2495,8 @@ func TestPerformRpcConcurrentCloseAndRespond(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Fatalf("RPC %d hung", i)
 		}
+		require.Empty(t, resultChs[i], "RPC %d received duplicate completion on resultCh", i)
+		require.Empty(t, errorChs[i], "RPC %d received duplicate completion on errorCh", i)
 	}
 
 	requireRpcMapsEmpty(t, p)
