@@ -16,7 +16,6 @@ package service
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -43,6 +42,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/moq"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/version"
@@ -90,6 +90,9 @@ func NewLivekitServer(conf *config.Config,
 	tokenRevocationStore TokenRevocationStore,
 	currentNode routing.LocalNode,
 ) (s *LivekitServer, err error) {
+	if err = conf.MoQ.Validate(conf.WebTransport.Port); err != nil {
+		return
+	}
 	s = &LivekitServer{
 		config:       conf,
 		ioService:    ioService,
@@ -187,15 +190,12 @@ func NewLivekitServer(conf *config.Config,
 	}
 
 	if conf.WebTransport.Port > 0 {
-		var tlsConf *tls.Config
-		tlsConf, err = WebTransportTLS(conf.WebTransport.TLSCertFile, conf.WebTransport.TLSKeyFile, conf.Development)
+		s.webtransportServer, err = newRoomNodeQUICServer(conf, roomManager)
 		if err != nil {
 			return
 		}
 		wtMux := http.NewServeMux()
 		wtMux.Handle("/agent", agentWTService)
-
-		s.webtransportServer = NewWebTransportServer(tlsConf)
 		s.webtransportServer.H3.Handler = NewWebTransportHandler(keyProvider, tokenRevocationStore, s.webtransportServer, wtMux)
 	}
 
@@ -204,6 +204,18 @@ func NewLivekitServer(conf *config.Config,
 	}
 
 	return
+}
+
+func newRoomNodeQUICServer(conf *config.Config, rooms *RoomManager) (*WebTransportServer, error) {
+	tlsConf, err := WebTransportTLS(conf.WebTransport.TLSCertFile, conf.WebTransport.TLSKeyFile, conf.Development)
+	if err != nil {
+		return nil, err
+	}
+	server := NewWebTransportServer(tlsConf)
+	if conf.MoQ.Enabled {
+		server.handleProtocol(moq.ALPN, moq.NewEndpoint(rooms.GetRoom).Serve)
+	}
+	return server, nil
 }
 
 func (s *LivekitServer) Node() *livekit.Node {
@@ -307,6 +319,9 @@ func (s *LivekitServer) Start() error {
 	}
 	if s.config.WebTransport.Port != 0 {
 		values = append(values, "portWebTransport", s.config.WebTransport.Port)
+	}
+	if s.config.MoQ.Enabled {
+		values = append(values, "moqEndpoint", s.config.MoQ.Endpoint)
 	}
 	if s.config.Region != "" {
 		values = append(values, "region", s.config.Region)

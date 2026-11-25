@@ -67,7 +67,13 @@ type SubscriptionManagerParams struct {
 	UseOneShotSignallingMode bool
 }
 
-// SubscriptionManager manages a participant's subscriptions
+// A replacement MoQ attachment can bind before the old tap finishes closing.
+type subscribedTrackKey struct {
+	id            livekit.TrackID
+	moqGeneration uint64
+}
+
+// SubscriptionManager manages a participant's subscriptions.
 type SubscriptionManager struct {
 	params              SubscriptionManagerParams
 	lock                sync.RWMutex
@@ -76,7 +82,7 @@ type SubscriptionManager struct {
 
 	subscribedVideoCount, subscribedAudioCount atomic.Int32
 
-	subscribedTo         map[livekit.ParticipantID]map[livekit.TrackID]struct{}
+	subscribedTo         map[livekit.ParticipantID]map[subscribedTrackKey]struct{}
 	reconcileCh          chan livekit.TrackID
 	reconcileDataTrackCh chan livekit.TrackID
 	closeCh              chan struct{}
@@ -95,7 +101,7 @@ func NewSubscriptionManager(params SubscriptionManagerParams) *SubscriptionManag
 	m := &SubscriptionManager{
 		params:                 params,
 		subscriptions:          make(map[livekit.TrackID]*mediaTrackSubscription),
-		subscribedTo:           make(map[livekit.ParticipantID]map[livekit.TrackID]struct{}),
+		subscribedTo:           make(map[livekit.ParticipantID]map[subscribedTrackKey]struct{}),
 		reconcileCh:            make(chan livekit.TrackID, 50),
 		reconcileDataTrackCh:   make(chan livekit.TrackID, 5),
 		closeCh:                make(chan struct{}),
@@ -327,6 +333,16 @@ func (m *SubscriptionManager) GetSubscribedTracks() []types.SubscribedTrack {
 		}
 	}
 	return tracks
+}
+
+// GetSubscribedDataTrack resolves an active logical subscription for its MoQ request.
+func (m *SubscriptionManager) GetSubscribedDataTrack(id livekit.TrackID) types.DataDownTrack {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+	if sub := m.dataTrackSubscriptions[id]; sub != nil && sub.isDesired() {
+		return sub.getDataDownTrack()
+	}
+	return nil
 }
 
 func (m *SubscriptionManager) GetSubscribedDataTracks() []types.DataDownTrack {
@@ -977,7 +993,7 @@ func (m *SubscriptionManager) addSubscriber(sub *mediaTrackSubscription, track t
 	}
 
 	if !isSync {
-		m.markSubscribedTo(sub.getPublisherID(), sub.trackID)
+		m.markSubscribedTo(sub.getPublisherID(), subscribedTrackKey{id: sub.trackID})
 	}
 	return nil
 }
@@ -1071,7 +1087,7 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *mediaTrackSubscripti
 		relieveFromLimits = m.params.SubscriptionLimitAudio > 0 && audioCount == m.params.SubscriptionLimitAudio-1
 	}
 
-	m.unmarkSubscribedTo(s.getPublisherID(), s.trackID)
+	m.unmarkSubscribedTo(s.getPublisherID(), subscribedTrackKey{id: s.trackID})
 
 	go m.params.OnTrackUnsubscribed(subTrack)
 
@@ -1211,7 +1227,7 @@ func (m *SubscriptionManager) subscribeDataTrack(sub *dataTrackSubscription) err
 		sub.logger.Debugw("subscribed to data track")
 	}
 
-	m.markSubscribedTo(sub.getPublisherID(), trackID)
+	m.markSubscribedTo(sub.getPublisherID(), subscribedTrackKey{id: trackID})
 	return nil
 }
 
@@ -1245,7 +1261,7 @@ func (m *SubscriptionManager) handleDataDownTrackClose(s *dataTrackSubscription)
 	s.setChangedNotifier(nil)
 	s.setRemovedNotifier(nil)
 
-	m.unmarkSubscribedTo(s.getPublisherID(), s.trackID)
+	m.unmarkSubscribedTo(s.getPublisherID(), subscribedTrackKey{id: s.trackID})
 	m.notifyDataTrackSubscriberHandles()
 	m.queueReconcileDataTrack(s.trackID)
 }
@@ -1282,18 +1298,18 @@ func (m *SubscriptionManager) handleSourceDataTrackRemoved(trackID livekit.Track
 	}
 }
 
-func (m *SubscriptionManager) markSubscribedTo(publisherID livekit.ParticipantID, trackID livekit.TrackID) {
-	// add mark the participant as someone we've subscribed to
+func (m *SubscriptionManager) markSubscribedTo(publisherID livekit.ParticipantID, key subscribedTrackKey) {
+	// Mark the participant as a publisher we are receiving.
 	firstSubscribe := false
 	m.lock.Lock()
 	pTracks := m.subscribedTo[publisherID]
 	changedCB := m.onSubscribeStatusChanged
 	if pTracks == nil {
-		pTracks = make(map[livekit.TrackID]struct{})
+		pTracks = make(map[subscribedTrackKey]struct{})
 		m.subscribedTo[publisherID] = pTracks
 		firstSubscribe = true
 	}
-	pTracks[trackID] = struct{}{}
+	pTracks[key] = struct{}{}
 	m.lock.Unlock()
 
 	if changedCB != nil && firstSubscribe {
@@ -1301,14 +1317,13 @@ func (m *SubscriptionManager) markSubscribedTo(publisherID livekit.ParticipantID
 	}
 }
 
-func (m *SubscriptionManager) unmarkSubscribedTo(publisherID livekit.ParticipantID, trackID livekit.TrackID) {
-	// remove from subscribedTo
+func (m *SubscriptionManager) unmarkSubscribedTo(publisherID livekit.ParticipantID, key subscribedTrackKey) {
 	lastSubscription := false
 	m.lock.Lock()
 	changedCB := m.onSubscribeStatusChanged
 	pTracks := m.subscribedTo[publisherID]
 	if pTracks != nil {
-		delete(pTracks, trackID)
+		delete(pTracks, key)
 		if len(pTracks) == 0 {
 			delete(m.subscribedTo, publisherID)
 			lastSubscription = true

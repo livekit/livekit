@@ -96,3 +96,11 @@ func TestStreamTrackerDD(t *testing.T) {
 	ddTracker.Observe(0, 1000, 1000, false, 0, createDescriptorDependencyForTargets(1, 1))
 	checkStatues(t, statuses, StreamStatusActive, 1)
 }
+
+func TestDDBitrateSnapshot(t *testing.T) {
+	tracker := &StreamTrackerDependencyDescriptor{maxSpatialLayer: 0}
+	tracker.bitrate[0][0] = 1000
+	snapshot := tracker.BitrateTemporalCumulative(0)
+	tracker.bitrate[0][0] = 2000
+	require.EqualValues(t, 1000, snapshot[0])
+}

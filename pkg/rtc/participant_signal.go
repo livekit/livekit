@@ -57,6 +57,9 @@ func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) e
 	}
 	p.updateLock.Unlock()
 
+	if p.UsesMoQ() {
+		joinResponse.Moq = p.moq.issue(p.moq.options.endpoint, string(p.ID()))
+	}
 	// send Join response
 	err := p.signaller.WriteMessage(p.signalling.SignalJoinResponse(joinResponse))
 	if err != nil {
@@ -210,7 +213,11 @@ func (p *ParticipantImpl) HandleReconnectAndSendResponse(
 	reconnectResponse *livekit.ReconnectResponse,
 	recentlyDisconnectedParticipants []*livekit.ParticipantInfo, // when migrating in, these are the participants disconnected received from migrate out node
 ) error {
-	p.TransportManager.HandleClientReconnect(reconnectReason)
+	if p.UsesMoQ() {
+		reconnectResponse.Moq = p.moq.issue(p.moq.options.endpoint, string(p.ID()))
+	} else {
+		p.TransportManager.HandleClientReconnect(reconnectReason)
+	}
 
 	if !p.params.ClientInfo.CanHandleReconnectResponse() {
 		// no ReconnectResponse opens this connection, so nothing to hold back

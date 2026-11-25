@@ -25,6 +25,17 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+func TestTemporalLayerFpsSnapshot(t *testing.T) {
+	b := &BufferBase{}
+	calc := NewFrameRateCalculatorVP8(90000, logger.GetLogger())
+	b.frameRateCalculator[0] = calc
+	calc.frameRates[0] = 15
+	rates := b.GetTemporalLayerFpsForSpatial(0)
+	calc.frameRates[0] = 30
+	require.Equal(t, float32(15), rates[0])
+	require.Nil(t, b.GetTemporalLayerFpsForSpatial(-1))
+}
+
 type testFrameInfo struct {
 	header      rtp.Header
 	framenumber uint16

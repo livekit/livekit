@@ -138,7 +138,7 @@ func (r *signalClient) StartParticipantSignal(
 		)
 		l.Debugw("signal stream closed", "error", err)
 
-		resChan.Close()
+		resChan.closeWithError(err)
 	}()
 
 	return connectionID, sink, resChan, nil

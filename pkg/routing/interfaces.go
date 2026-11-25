@@ -205,6 +205,7 @@ type ParticipantInit struct {
 	PublisherOffer          *livekit.SessionDescription
 	SyncState               *livekit.SyncState
 	UseSinglePeerConnection bool
+	UseMoQTransport         bool
 }
 
 func (pi *ParticipantInit) MarshalLogObject(e zapcore.ObjectEncoder) error {
@@ -240,6 +241,9 @@ func (pi *ParticipantInit) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddObject("PublisherOffer", logger.Proto(pi.PublisherOffer))
 	e.AddObject("SyncState", logger.Proto(pi.SyncState))
 	logBoolPtr("UseSinglePeerConnection", &pi.UseSinglePeerConnection)
+	if pi.UseMoQTransport {
+		e.AddBool("UseMoQTransport", true)
+	}
 	return nil
 }
 
@@ -274,6 +278,7 @@ func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionI
 		PublisherOffer:          pi.PublisherOffer,
 		SyncState:               pi.SyncState,
 		UseSinglePeerConnection: pi.UseSinglePeerConnection,
+		UseMoqTransport:         pi.UseMoQTransport,
 	}
 	if pi.AutoSubscribeDataTrack != nil {
 		autoSubscribeDataTrack := *pi.AutoSubscribeDataTrack
@@ -316,6 +321,7 @@ func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*
 		PublisherOffer:          ss.PublisherOffer,
 		SyncState:               ss.SyncState,
 		UseSinglePeerConnection: ss.UseSinglePeerConnection,
+		UseMoQTransport:         ss.UseMoqTransport,
 	}
 	if ss.AutoSubscribeDataTrack != nil {
 		autoSubscribeDataTrack := *ss.AutoSubscribeDataTrack

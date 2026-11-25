@@ -106,6 +106,34 @@ func TestSignal(t *testing.T) {
 		require.True(t, proto.Equal(resMessageIn, resMessageOut), "res message should match %s %s", protojson.Format(resMessageIn), protojson.Format(resMessageOut))
 	})
 
+	t.Run("room admission rejection reaches the signaling node", func(t *testing.T) {
+		bus := psrpc.NewLocalMessageBus()
+		client, err := routing.NewSignalClient("signal", bus, cfg)
+		require.NoError(t, err)
+		handler := &servicefakes.FakeSessionHandler{}
+		handler.LoggerReturns(logger.GetLogger())
+		handler.HandleSessionReturns(service.ErrMoQUnavailable)
+		server, err := service.NewSignalServer("room", "region", bus, cfg, handler)
+		require.NoError(t, err)
+		require.NoError(t, server.Start())
+		t.Cleanup(server.Stop)
+
+		_, sink, source, err := client.StartParticipantSignal(t.Context(), "test", routing.ParticipantInit{UseMoQTransport: true}, "room")
+		require.NoError(t, err)
+		defer sink.Close()
+		select {
+		case _, ok := <-source.ReadChan():
+			require.False(t, ok)
+		case <-time.After(3 * time.Second):
+			t.Fatal("room admission did not finish")
+		}
+		relay := source.(interface{ Err() error })
+		code, ok := psrpc.GetErrorCode(relay.Err())
+		require.True(t, ok)
+		require.Equal(t, psrpc.FailedPrecondition, code)
+		require.EqualError(t, relay.Err(), service.ErrMoQUnavailable.Error())
+	})
+
 	t.Run("messages are delivered when session handler fails", func(t *testing.T) {
 		bus := psrpc.NewLocalMessageBus()
 

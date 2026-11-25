@@ -85,10 +85,6 @@ func (w *windowStat) calculatePacketScore(aplw float64, includeRTT bool, include
 	if includeJitter {
 		effectiveDelay += (w.jitterMax * 2.0) / 1000.0
 	}
-	delayEffect := effectiveDelay / 40.0
-	if effectiveDelay > 160.0 {
-		delayEffect = (effectiveDelay - 120.0) / 10.0
-	}
 
 	// discount out-of-order packets from loss to deal with a scenario like
 	// 1. up stream has loss
@@ -120,7 +116,14 @@ func (w *windowStat) calculatePacketScore(aplw float64, includeRTT bool, include
 	if w.packets+w.packetsPadding > 0 {
 		lossEffect = float64(actualLost) * 100.0 / float64(w.packets+w.packetsPadding)
 	}
-	lossEffect *= aplw
+	return packetScore(effectiveDelay, lossEffect*aplw)
+}
+
+func packetScore(effectiveDelay, lossEffect float64) float64 {
+	delayEffect := effectiveDelay / 40.0
+	if effectiveDelay > 160.0 {
+		delayEffect = (effectiveDelay - 120.0) / 10.0
+	}
 
 	score := cMaxScore - delayEffect - lossEffect
 	if score < 0.0 {

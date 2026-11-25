@@ -705,6 +705,16 @@ func (r *Room) onUpdateSubscriptionPermission(participant types.LocalParticipant
 	return nil
 }
 
+// LookupPublishedTrack looks up an existing publication without registering interest
+// in future publications. Callers must check the subscriber's grants before delivery.
+func (r *Room) LookupPublishedTrack(id livekit.TrackID) (types.LocalParticipant, types.MediaTrack) {
+	info := r.trackManager.GetTrackInfo(id)
+	if info == nil {
+		return nil, nil
+	}
+	return r.GetParticipantByID(info.PublisherID), info.Track
+}
+
 func (r *Room) ResolveMediaTrackForSubscriber(sub types.LocalParticipant, trackID livekit.TrackID) types.MediaResolverResult {
 	res := types.MediaResolverResult{}
 

@@ -1574,12 +1574,13 @@ func (b *BufferBase) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 	b.RLock()
 	defer b.RUnlock()
 
-	if int(layer) >= len(b.frameRateCalculator) {
+	if layer < 0 || int(layer) >= len(b.frameRateCalculator) {
 		return nil
 	}
 
 	if fc := b.frameRateCalculator[layer]; fc != nil {
-		return fc.GetFrameRate()
+		// Some calculators update their backing array as packets arrive.
+		return slices.Clone(fc.GetFrameRate())
 	}
 	return nil
 }

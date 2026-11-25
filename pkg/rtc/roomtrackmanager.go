@@ -33,6 +33,7 @@ type RoomTrackManager struct {
 	changedNotifier *utils.ChangeNotifierManager
 	removedNotifier *utils.ChangeNotifierManager
 	tracks          map[livekit.TrackID][]*TrackInfo
+	moqSubscribers  moqSubscribers
 	dataTracks      map[livekit.TrackID][]*DataTrackInfo
 }
 
@@ -107,6 +108,7 @@ func (r *RoomTrackManager) RemoveTrack(track types.MediaTrack) {
 	r.tracks[trackID] = r.tracks[trackID][:idx]
 	if len(r.tracks[trackID]) == 0 {
 		delete(r.tracks, trackID)
+		r.moqSubscribers.removeTrack(trackID)
 	}
 	r.lock.Unlock()
 	if numRemoved == 0 {
@@ -129,6 +131,10 @@ func (r *RoomTrackManager) GetTrackInfo(trackID livekit.TrackID) *TrackInfo {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
+	return r.getTrackInfoLocked(trackID)
+}
+
+func (r *RoomTrackManager) getTrackInfoLocked(trackID livekit.TrackID) *TrackInfo {
 	infos := r.tracks[trackID]
 	if len(infos) == 0 {
 		return nil

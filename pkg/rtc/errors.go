@@ -27,6 +27,7 @@ var (
 	ErrAlreadyJoined            = errors.New("a participant with the same identity is already in the room")
 	ErrDataChannelUnavailable   = errors.New("data channel is not available")
 	ErrDataChannelBufferFull    = errors.New("data channel buffer is full")
+	ErrNoPeerConnection         = errors.New("peer connection is unavailable")
 	ErrTransportFailure         = errors.New("transport failure")
 	ErrEmptyIdentity            = errors.New("participant identity cannot be empty")
 	ErrEmptyParticipantID       = errors.New("participant ID cannot be empty")

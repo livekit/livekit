@@ -42,6 +42,14 @@ const (
 // aggregation packet it is counted in the size of the last NAL unit. That size
 // is reduced in place, see ShrinkLastAggregatedNALU.
 func StripTrailer(payload []byte, mimeType mime.MimeType, isEndOfFrame bool) int {
+	trailerLen := trailerLength(payload, isEndOfFrame)
+	if trailerLen == 0 || !ShrinkLastAggregatedNALU(payload, mimeType, trailerLen) {
+		return 0
+	}
+	return trailerLen
+}
+
+func trailerLength(payload []byte, isEndOfFrame bool) int {
 	if !isEndOfFrame || len(payload) < envelopeSize {
 		return 0
 	}
@@ -54,10 +62,6 @@ func StripTrailer(payload []byte, mimeType mime.MimeType, isEndOfFrame bool) int
 
 	trailerLen := int(payload[len(payload)-5] ^ xorByte)
 	if trailerLen < envelopeSize || trailerLen > len(payload) {
-		return 0
-	}
-
-	if !ShrinkLastAggregatedNALU(payload, mimeType, trailerLen) {
 		return 0
 	}
 
@@ -93,4 +97,112 @@ func ShrinkLastAggregatedNALU(payload []byte, mimeType mime.MimeType, n int) boo
 		offset = end
 	}
 	return false
+}
+
+const (
+	trailerTagTimestampUs = 0x01
+	trailerTagFrameID     = 0x02
+	trailerTagUserData    = 0x03
+)
+
+// Metadata is the content of an LKTS trailer.
+type Metadata struct {
+	UserTimestampUs    int64
+	HasUserTimestampUs bool
+	FrameID            uint32
+	HasFrameID         bool
+	UserData           []byte
+}
+
+func (m Metadata) IsEmpty() bool {
+	return !m.HasUserTimestampUs && !m.HasFrameID && len(m.UserData) == 0
+}
+
+// ParseTrailer decodes an LKTS trailer and returns it with the number of bytes
+// it occupies at the end of the payload (0 if absent).
+func ParseTrailer(payload []byte, isEndOfFrame bool) (Metadata, int) {
+	var metadata Metadata
+	trailerLen := trailerLength(payload, isEndOfFrame)
+	if trailerLen == 0 {
+		return metadata, 0
+	}
+
+	tlv := payload[len(payload)-trailerLen : len(payload)-envelopeSize]
+	for len(tlv) != 0 {
+		if len(tlv) < 2 {
+			return metadata, trailerLen
+		}
+		tag := tlv[0] ^ xorByte
+		valueLen := int(tlv[1] ^ xorByte)
+		tlv = tlv[2:]
+		if valueLen > len(tlv) {
+			return metadata, trailerLen
+		}
+		value := tlv[:valueLen]
+		tlv = tlv[valueLen:]
+
+		switch tag {
+		case trailerTagTimestampUs:
+			if valueLen == 8 {
+				metadata.UserTimestampUs = int64(xorUint64(value))
+				metadata.HasUserTimestampUs = true
+			}
+		case trailerTagFrameID:
+			if valueLen == 4 {
+				metadata.FrameID = uint32(xorUint64(value))
+				metadata.HasFrameID = true
+			}
+		case trailerTagUserData:
+			metadata.UserData = make([]byte, valueLen)
+			for i, b := range value {
+				metadata.UserData[i] = b ^ xorByte
+			}
+		}
+	}
+
+	return metadata, trailerLen
+}
+
+// AppendTrailer appends an LKTS trailer carrying m to payload. Like the
+// client SDKs, it drops user data that does not fit the 255 byte trailer
+// next to the timestamp and frame id, and returns payload unchanged when
+// nothing is left to embed.
+func AppendTrailer(payload []byte, m Metadata) []byte {
+	if m.IsEmpty() {
+		return payload
+	}
+	var tlv []byte
+	if m.HasUserTimestampUs {
+		tlv = append(tlv, trailerTagTimestampUs^xorByte, 8^xorByte)
+		for i := 7; i >= 0; i-- {
+			tlv = append(tlv, byte(uint64(m.UserTimestampUs)>>(8*i))^xorByte)
+		}
+	}
+	if m.HasFrameID {
+		tlv = append(tlv, trailerTagFrameID^xorByte, 4^xorByte)
+		for i := 3; i >= 0; i-- {
+			tlv = append(tlv, byte(m.FrameID>>(8*i))^xorByte)
+		}
+	}
+	if budget := 255 - len(tlv) - envelopeSize - 2; len(m.UserData) > 0 && len(m.UserData) <= budget {
+		tlv = append(tlv, trailerTagUserData^xorByte, byte(len(m.UserData))^xorByte)
+		for _, b := range m.UserData {
+			tlv = append(tlv, b^xorByte)
+		}
+	}
+	if len(tlv) == 0 {
+		return payload
+	}
+	total := len(tlv) + envelopeSize
+	payload = append(payload, tlv...)
+	payload = append(payload, byte(total)^xorByte)
+	return append(payload, Magic[:]...)
+}
+
+func xorUint64(value []byte) uint64 {
+	var out uint64
+	for _, b := range value {
+		out = (out << 8) | uint64(b^xorByte)
+	}
+	return out
 }

@@ -1,0 +1,14 @@
+[package]
+name = "livekit-moq-interop"
+version = "0.1.0"
+publish = false
+edition = "2024"
+
+[dependencies]
+moqtap-client = { version = "=0.16.0", default-features = false, features = ["draft23"] }
+moqtap-codec = { version = "=0.13.1", default-features = false, features = ["draft23"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+
+[profile.dev]
+debug = 0
+incremental = false

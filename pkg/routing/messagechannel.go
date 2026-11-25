@@ -28,6 +28,7 @@ type MessageChannel struct {
 	msgChan      chan proto.Message
 	onClose      func()
 	isClosed     bool
+	closeErr     error
 	lock         sync.RWMutex
 }
 
@@ -74,13 +75,25 @@ func (m *MessageChannel) ReadChan() <-chan proto.Message {
 	return m.msgChan
 }
 
+// Err reports the terminal relay error after the channel closes.
+func (m *MessageChannel) Err() error {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+	return m.closeErr
+}
+
 func (m *MessageChannel) Close() {
+	m.closeWithError(nil)
+}
+
+func (m *MessageChannel) closeWithError(err error) {
 	m.lock.Lock()
 	if m.isClosed {
 		m.lock.Unlock()
 		return
 	}
 	m.isClosed = true
+	m.closeErr = err
 	close(m.msgChan)
 	m.lock.Unlock()
 

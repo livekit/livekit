@@ -321,3 +321,68 @@ func TestStripTrailerMalformedAggregationPacket(t *testing.T) {
 		})
 	}
 }
+
+func TestTrailerRoundTrip(t *testing.T) {
+	m := Metadata{UserTimestampUs: 1760300000123456, HasUserTimestampUs: true, FrameID: 42, HasFrameID: true, UserData: []byte("hi")}
+	payload := AppendTrailer([]byte{1, 2, 3}, m)
+	got, n := ParseTrailer(payload, true)
+	if n == 0 || !got.HasUserTimestampUs || got.UserTimestampUs != m.UserTimestampUs ||
+		!got.HasFrameID || got.FrameID != 42 || string(got.UserData) != "hi" {
+		t.Fatalf("round trip failed: %+v n=%d", got, n)
+	}
+	if len(payload)-n != 3 {
+		t.Fatalf("expected 3 payload bytes, got %d", len(payload)-n)
+	}
+}
+
+func TestTrailerOversizeUserDataDropped(t *testing.T) {
+	// timestamp (10) + frame id (6) + envelope (5) leave 232 bytes of user data
+	fits := Metadata{UserTimestampUs: 5, HasUserTimestampUs: true, FrameID: 9, HasFrameID: true, UserData: make([]byte, 232)}
+	if got, n := ParseTrailer(AppendTrailer([]byte{1}, fits), true); n != 255 || len(got.UserData) != 232 {
+		t.Fatalf("232 bytes of user data should fit: n=%d, user data %d bytes", n, len(got.UserData))
+	}
+
+	over := fits
+	over.UserData = make([]byte, 250)
+	got, n := ParseTrailer(AppendTrailer([]byte{1}, over), true)
+	if n != 21 || !got.HasUserTimestampUs || !got.HasFrameID || len(got.UserData) != 0 {
+		t.Fatalf("oversize user data must be dropped, keeping timestamp and frame id: %+v n=%d", got, n)
+	}
+
+	if out := AppendTrailer([]byte{1}, Metadata{UserData: make([]byte, 300)}); len(out) != 1 {
+		t.Fatalf("nothing embeddable must leave the payload unchanged, got %d bytes", len(out))
+	}
+}
+
+func TestAV1TrailerOBU(t *testing.T) {
+	td := []byte{0x12, 0x00}                    // temporal delimiter, size 0
+	seq := []byte{0x0a, 0x03, 0xaa, 0xbb, 0xcc} // sequence header, size 3
+	frame := []byte{0x32, 0x02, 0x11, 0x22}     // frame OBU, size 2
+	tu := append(append(append([]byte{}, td...), seq...), frame...)
+	m := Metadata{UserTimestampUs: 77, HasUserTimestampUs: true, FrameID: 5, HasFrameID: true, UserData: []byte("u")}
+
+	withMeta := InsertAV1(tu, m)
+	// the metadata OBU goes after the temporal delimiter and sequence header
+	prefix := len(td) + len(seq)
+	if string(withMeta[:prefix]) != string(tu[:prefix]) || withMeta[prefix]>>3&0x0f != 5 {
+		t.Fatalf("metadata OBU not inserted after the sequence header: %x", withMeta)
+	}
+	if string(withMeta[len(withMeta)-len(frame):]) != string(frame) {
+		t.Fatalf("frame OBU not kept last: %x", withMeta)
+	}
+
+	got, stripped, ok := ExtractAV1(withMeta)
+	if !ok || got.UserTimestampUs != 77 || got.FrameID != 5 || string(got.UserData) != "u" {
+		t.Fatalf("extract failed: %+v ok=%v", got, ok)
+	}
+	if string(stripped) != string(tu) {
+		t.Fatalf("stripped temporal unit differs: %x vs %x", stripped, tu)
+	}
+
+	if _, same, ok := ExtractAV1(tu); ok || string(same) != string(tu) {
+		t.Fatal("a temporal unit without metadata must be returned unchanged")
+	}
+	if out := InsertAV1(tu, Metadata{}); string(out) != string(tu) {
+		t.Fatal("empty metadata must not add an OBU")
+	}
+}

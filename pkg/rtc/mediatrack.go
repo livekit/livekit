@@ -212,6 +212,27 @@ func (t *MediaTrack) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, quali
 	}
 }
 
+// SetRenditionSubscribed keeps the publisher's base layer active for a subscriber
+// that reads directly from its receiver. The subscriber ID belongs to the tap.
+func (t *MediaTrack) SetRenditionSubscribed(id livekit.ParticipantID, codec mime.MimeType, subscribed bool) {
+	if t.dynacastManager == nil {
+		return
+	}
+	if t.Kind() == livekit.TrackType_AUDIO {
+		t.dynacastManager.NotifySubscription(id, codec, subscribed)
+		return
+	}
+	quality := livekit.VideoQuality_OFF
+	if subscribed {
+		ti := t.TrackInfo()
+		quality = buffer.GetVideoQualityForSpatialLayer(codec, 0, ti)
+		if quality == livekit.VideoQuality_OFF && len(buffer.GetVideoLayersForMimeType(codec, ti)) == 0 {
+			quality = livekit.VideoQuality_HIGH // single encoding without layer metadata
+		}
+	}
+	t.dynacastManager.NotifySubscriberMaxQuality(id, codec, quality)
+}
+
 func (t *MediaTrack) NotifySubscriptionNode(nodeID livekit.NodeID, codecs []*livekit.SubscribedAudioCodec) {
 	if t.dynacastManager != nil {
 		t.dynacastManager.NotifySubscriptionNode(nodeID, codecs)

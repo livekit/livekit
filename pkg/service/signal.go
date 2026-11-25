@@ -190,6 +190,11 @@ func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalRe
 	// copy the incoming rpc headers to avoid dropping any session vars.
 	ctx := metadata.NewContextWithIncomingHeader(context.Background(), metadata.IncomingHeader(stream.Context()))
 	err = r.sessionHandler.HandleSession(ctx, *pi, livekit.ConnectionID(ss.ConnectionId), reqChan, sink)
+	if errors.Is(err, ErrMoQUnavailable) {
+		// Admission failed before the session produced any responses. Return
+		// the room node's precondition to the signaling node on the RPC stream.
+		return stream.Close(err)
+	}
 	if err != nil {
 		sink.Close()
 		l.Errorw("could not handle new participant", err)

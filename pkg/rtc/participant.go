@@ -229,6 +229,7 @@ type ParticipantParams struct {
 	DisableSenderReportPassThrough    bool
 	MetricConfig                      metric.MetricConfig
 	UseOneShotSignallingMode          bool
+	MoQ                               *MoQParticipantOptions
 	EnableMetrics                     bool
 	DataChannelMaxBufferedAmount      uint64
 	DatachannelSlowThreshold          int
@@ -256,6 +257,7 @@ type ParticipantImpl struct {
 	// utils.TimedVersion is a atomic. To be correctly aligned also on 32bit archs
 	// 64it atomics need to be at the front of a struct
 	timedVersion utils.TimedVersion
+	moq          *moqAttachment
 
 	params ParticipantParams
 
@@ -417,6 +419,10 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		dataBlob: NewParticipantDataBlob(ParticipantDataBlobParams{
 			Logger: params.Logger,
 		}),
+	}
+	if params.MoQ != nil {
+		p.params.EnableDataTracks = true
+		p.moq = &moqAttachment{options: params.MoQ, subscriptions: make(map[livekit.TrackID]struct{})}
 	}
 	p.setupSignalling()
 
@@ -926,7 +932,7 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 
 	onClaimsChanged := p.onClaimsChanged
 
-	isPublisher := canPublish && p.TransportManager.IsPublisherEstablished()
+	isPublisher := canPublish && (p.TransportManager.IsPublisherEstablished() || (p.UsesMoQ() && len(p.GetPublishedTracks()) != 0))
 	p.requireBroadcast = p.requireBroadcast || isPublisher
 	p.lock.Unlock()
 
@@ -1098,6 +1104,11 @@ func (p *ParticipantImpl) OnClaimsChanged(callback func(types.LocalParticipant))
 func (p *ParticipantImpl) HandleSignalSourceClose() {
 	p.TransportManager.SetSignalSourceValid(false)
 
+	// Once attached, QUIC owns the disconnect timer, including when both
+	// transports drop and the QUIC close arrives first.
+	if p.UsesMoQ() && p.moq.everConnected() {
+		return
+	}
 	if !p.HasICEConnected() {
 		_ = p.Close(false, types.ParticipantCloseReasonSignalSourceClose, false)
 	}
@@ -1204,7 +1215,9 @@ func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription, unma
 				"pendingTrack", pti,
 			)
 
-			ti := pti.trackInfos[0]
+			// TrackPublished can still be marshaling the previous snapshot.
+			ti := proto.CloneOf(pti.trackInfos[0])
+			pti.trackInfos[0] = ti
 			for _, codec := range ti.Codecs {
 				if codec.Cid == mst || codec.SdpCid == mst {
 					mimeType := mime.NormalizeMimeType(codec.MimeType)
@@ -1599,6 +1612,9 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 		return nil
 	}
 
+	if p.UsesMoQ() {
+		p.moq.close()
+	}
 	p.recordRTCState(reason)
 
 	var sessionDuration time.Duration
@@ -1712,7 +1728,7 @@ func (p *ParticipantImpl) CloseReason() types.ParticipantCloseReason {
 // Negotiate subscriber SDP with client, if force is true, will cancel pending
 // negotiate task and negotiate immediately
 func (p *ParticipantImpl) Negotiate(force bool) {
-	if p.params.UseOneShotSignallingMode {
+	if p.UsesMoQ() || p.params.UseOneShotSignallingMode {
 		return
 	}
 
@@ -1731,7 +1747,7 @@ func (p *ParticipantImpl) clearMigrationTimer() {
 }
 
 func (p *ParticipantImpl) setupMigrationTimerLocked() {
-	if p.params.UseSinglePeerConnection {
+	if p.params.UseSinglePeerConnection || p.UsesMoQ() {
 		return
 	}
 
@@ -1767,7 +1783,7 @@ func (p *ParticipantImpl) setupMigrationTimerLocked() {
 }
 
 func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
-	if p.IsClosed() || p.params.UseOneShotSignallingMode {
+	if p.IsClosed() || p.params.UseOneShotSignallingMode || p.UsesMoQ() {
 		return false
 	}
 
@@ -1891,7 +1907,7 @@ func (p *ParticipantImpl) MigrateState() types.MigrateState {
 
 // ICERestart restarts subscriber ICE connections
 func (p *ParticipantImpl) ICERestart(iceConfig *livekit.ICEConfig) {
-	if p.params.UseOneShotSignallingMode {
+	if p.UsesMoQ() || p.params.UseOneShotSignallingMode {
 		return
 	}
 
@@ -1916,6 +1932,9 @@ func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParti
 func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo {
 	minQuality := livekit.ConnectionQuality_EXCELLENT
 	minScore := connectionquality.MaxMOS
+	if p.UsesMoQ() {
+		minScore, minQuality = p.moq.pathQuality()
+	}
 
 	for _, pt := range p.GetPublishedTracks() {
 		score, quality := pt.(types.LocalMediaTrack).GetConnectionScoreAndQuality()
@@ -2191,7 +2210,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 	var pth transport.Handler = PublisherTransportHandler{ath}
 	var sth transport.Handler = SubscriberTransportHandler{ath}
 
-	subscriberAsPrimary := !p.params.UseOneShotSignallingMode && (p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe()) && !p.params.UseSinglePeerConnection
+	subscriberAsPrimary := !p.UsesMoQ() && !p.params.UseOneShotSignallingMode && (p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe()) && !p.params.UseSinglePeerConnection
 	if subscriberAsPrimary {
 		sth = PrimaryTransportHandler{sth, p}
 	} else {
@@ -2226,6 +2245,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		SubscriberHandler:                 sth,
 		DataChannelStats:                  p.dataChannelStats,
 		UseOneShotSignallingMode:          p.params.UseOneShotSignallingMode,
+		SignalingOnly:                     p.UsesMoQ(),
 		FireOnTrackBySdp:                  p.params.FireOnTrackBySdp,
 		EnableDataTracks:                  p.params.EnableDataTracks,
 		ExcludeIPv6LocalCandidates:        p.params.ExcludeIPv6LocalCandidates,
@@ -3456,6 +3476,9 @@ func (p *ParticipantImpl) HasICEConnected() bool {
 }
 
 func (p *ParticipantImpl) HasConnected() bool {
+	if p.UsesMoQ() {
+		return p.moq.everConnected()
+	}
 	return p.TransportManager.HasSubscriberEverConnected() || p.TransportManager.HasPublisherEverConnected()
 }
 
@@ -4290,6 +4313,10 @@ func (p *ParticipantImpl) SupportsTransceiverReuse(mt types.MediaTrack) bool {
 }
 
 func (p *ParticipantImpl) SendDataMessage(kind livekit.DataPacket_Kind, data []byte, sender livekit.ParticipantID, seq uint32) error {
+	if p.UsesMoQ() {
+		return ErrDataChannelUnavailable
+	}
+
 	if kind != livekit.DataPacket_RELIABLE {
 		if p.State() != livekit.ParticipantInfo_ACTIVE {
 			return ErrDataChannelUnavailable
@@ -4353,6 +4380,10 @@ func (p *ParticipantImpl) SendDataMessage(kind livekit.DataPacket_Kind, data []b
 }
 
 func (p *ParticipantImpl) SendDataMessageUnlabeled(data []byte, useRaw bool, sender livekit.ParticipantIdentity) error {
+	if p.UsesMoQ() {
+		return ErrDataChannelUnavailable
+	}
+
 	if useRaw || p.params.UseOneShotSignallingMode {
 		if p.State() != livekit.ParticipantInfo_ACTIVE {
 			return ErrDataChannelUnavailable
@@ -4577,6 +4608,9 @@ func (p *ParticipantImpl) SupportsCodecChange() bool {
 }
 
 func (p *ParticipantImpl) SupportsMoving() error {
+	if p.UsesMoQ() {
+		return psrpc.NewErrorf(psrpc.FailedPrecondition, "MoQ attachments are scoped to one room")
+	}
 	if !p.ProtocolVersion().SupportsMoving() {
 		return ErrMoveOldClientVersion
 	}
@@ -4715,6 +4749,9 @@ func (p *ParticipantImpl) HandleLeaveRequest(reason types.ParticipantCloseReason
 }
 
 func (p *ParticipantImpl) HandleSignalMessage(msg proto.Message) error {
+	if req, ok := msg.(*livekit.SignalRequest); ok && p.UsesMoQ() {
+		return p.handleMoQSignalRequest(req)
+	}
 	return p.signalHandler.HandleMessage(msg)
 }
 

@@ -16,6 +16,18 @@
 # for production setups, this port should be placed behind a load balancer with TLS
 port: 7880
 
+# Optional native MoQ data plane. Advertise a UDP endpoint that routes to this room node.
+# Signaling continues to use the existing WebSocket URL.
+# MoQ is disabled by default. Set the flag on each room node that should accept it.
+# See docs/moq.md for deployment, Rust SDK setup and interoperability.
+# moq:
+#   enabled: true
+#   endpoint: moqt://node-1.example.com:7883/moq
+# webtransport:
+#   port: 7883
+#   tls_cert_file: /etc/livekit/tls/fullchain.pem
+#   tls_key_file: /etc/livekit/tls/key.pem
+
 # when redis is set, LiveKit will automatically operate in a fully distributed fashion
 # clients could connect to any node and be routed to the same room
 redis:

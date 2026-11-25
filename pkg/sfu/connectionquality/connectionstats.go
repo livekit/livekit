@@ -402,6 +402,19 @@ func (cs *ConnectionStats) updateStatsWorker() {
 // For video:
 //
 //	o No in-built codec repair available, hence same for all codecs
+//
+// PathScore applies the interactive video packet score to an entire transport path.
+// RTT is the smoothed round trip and lossPercent is measured over the sampling window.
+func PathScore(rtt time.Duration, lossPercent float64) (float32, livekit.ConnectionQuality) {
+	score := packetScore(float64(rtt)/float64(time.Millisecond)/2, lossPercent*videoPacketLossWeight)
+	// As for an active RTP stream, a very poor live path can still deliver.
+	// The attachment lifecycle reports LOST when the transport disconnects.
+	score = max(cMinScore, score)
+	return scoreToMOS(score), scoreToConnectionQuality(score)
+}
+
+const videoPacketLossWeight = 10.0
+
 func getPacketLossWeight(mimeType mime.MimeType, isFecEnabled bool) float64 {
 	var plw float64
 	switch {
@@ -423,7 +436,7 @@ func getPacketLossWeight(mimeType mime.MimeType, isFecEnabled bool) float64 {
 
 	case mime.IsMimeTypeVideo(mimeType):
 		// 2%: fall to GOOD, 6%: fall to POOR
-		plw = 10.0
+		plw = videoPacketLossWeight
 	}
 
 	return plw

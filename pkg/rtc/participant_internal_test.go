@@ -1446,6 +1446,7 @@ type participantOpts struct {
 	clientInfo      *livekit.ClientInfo
 	migration       bool
 	oneShot         bool
+	moq             *MoQParticipantOptions
 }
 
 func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *participantOpts) *ParticipantImpl {
@@ -1502,6 +1503,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		ParticipantHelper:        &typesfakes.FakeLocalParticipantHelper{},
 		Migration:                opts.migration,
 		UseOneShotSignallingMode: opts.oneShot,
+		MoQ:                      opts.moq,
 	})
 	p.isPublisher.Store(opts.publisher)
 	p.updateState(livekit.ParticipantInfo_ACTIVE)
@@ -1956,6 +1958,22 @@ const pendingVideoOffer = "v=0\r\n" +
 	"a=rid:h send\r\n" +
 	"a=rid:f send\r\n" +
 	"a=simulcast:send q;h;f\r\n"
+
+func TestPublisherOfferPreservesTrackPublishedSnapshot(t *testing.T) {
+	p := newParticipantForTest("test")
+	info := p.addPendingTrack(&livekit.AddTrackRequest{
+		Cid: pendingTrackCid, Type: livekit.TrackType_VIDEO,
+		SimulcastCodecs: []*livekit.SimulcastCodec{{Codec: "vp8", Cid: pendingTrackCid}},
+		Layers:          []*livekit.VideoLayer{{Quality: livekit.VideoQuality_LOW}, {Quality: livekit.VideoQuality_HIGH}},
+	})
+	require.NotNil(t, info)
+	before := proto.CloneOf(info)
+	var offer sdp.SessionDescription
+	require.NoError(t, offer.Unmarshal([]byte(pendingVideoOffer)))
+	p.updateRidsFromSDP(&offer, offer.MediaDescriptions)
+	require.True(t, proto.Equal(before, info))
+	require.False(t, proto.Equal(before, p.GetPendingTrack(livekit.TrackID(info.Sid))))
+}
 
 // MutePublishedTrack and the TrackMuted telemetry event marshal the returned
 // TrackInfo outside the lock, while the publisher offer writes the pending one's layers

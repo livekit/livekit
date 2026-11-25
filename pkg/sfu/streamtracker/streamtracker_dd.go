@@ -15,6 +15,7 @@
 package streamtracker
 
 import (
+	"slices"
 	"sync"
 	"time"
 
@@ -97,7 +98,7 @@ func (s *StreamTrackerDependencyDescriptor) BitrateTemporalCumulative(layer int3
 		return brs
 	}
 
-	return s.bitrate[layer][:]
+	return slices.Clone(s.bitrate[layer][:])
 }
 
 func (s *StreamTrackerDependencyDescriptor) Reset() {

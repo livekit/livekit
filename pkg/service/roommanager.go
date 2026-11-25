@@ -287,7 +287,9 @@ func (r *RoomManager) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	return room.ToProto(), nil
 }
 
-// StartSession starts WebRTC session when a new participant is connected, takes place on RTC node
+var ErrMoQUnavailable = psrpc.NewErrorf(psrpc.FailedPrecondition, "MoQ transport is disabled on the room node")
+
+// StartSession admits the participant on the node that owns the room.
 func (r *RoomManager) StartSession(
 	ctx context.Context,
 	pi routing.ParticipantInit,
@@ -296,6 +298,16 @@ func (r *RoomManager) StartSession(
 	useOneShotSignallingMode bool,
 ) error {
 	sessionStartTime := time.Now()
+
+	// Reject an unavailable data plane before creating a room or replacing a session.
+	if pi.UseMoQTransport {
+		if !r.config.MoQ.Enabled {
+			return ErrMoQUnavailable
+		}
+		if useOneShotSignallingMode || pi.UseSinglePeerConnection || pi.PublisherOffer != nil {
+			return errors.New("MoQ requires WebSocket signaling without a WebRTC offer")
+		}
+	}
 
 	if pi.Identity != "" && pi.Grants != nil {
 		if err := CheckConnectLimits(r.config.Limit, string(pi.Identity), livekit.RoomName(pi.CreateRoom.GetName()), pi.Grants); err != nil {
@@ -329,6 +341,9 @@ func (r *RoomManager) StartSession(
 		// When reconnecting, it means WS has interrupted but underlying peer connection is still ok in this state,
 		// we'll keep the participant SID, and just swap the sink for the underlying connection
 		if pi.Reconnect {
+			if current, ok := participant.(*rtc.ParticipantImpl); ok && current.UsesMoQ() != pi.UseMoQTransport {
+				return errors.New("cannot change room transport on resume")
+			}
 			if participant.IsClosed() {
 				// Send leave request if participant is closed, i. e. handle the case of client trying to resume crossing wires with
 				// server closing the participant due to some irrecoverable condition. Such a condition would have triggered
@@ -486,7 +501,11 @@ func (r *RoomManager) StartSession(
 		enabledCodecs = append(enabledCodecs, &livekit.Codec{Mime: mime.MimeTypeRTX.String()})
 	}
 
-	enableWarp := !useOneShotSignallingMode && r.config.RTC.EnableWarp
+	var moqOptions *rtc.MoQParticipantOptions
+	if pi.UseMoQTransport {
+		moqOptions = room.MoQParticipantOptions(r.config.MoQ.Endpoint)
+	}
+	enableWarp := !pi.UseMoQTransport && !useOneShotSignallingMode && r.config.RTC.EnableWarp
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:                 pi.Identity,
 		Name:                     pi.Name,
@@ -537,6 +556,7 @@ func (r *RoomManager) StartSession(
 		ForwardStats:                      r.forwardStats,
 		MetricConfig:                      r.config.Metric,
 		UseOneShotSignallingMode:          useOneShotSignallingMode,
+		MoQ:                               moqOptions,
 		DataChannelMaxBufferedAmount:      r.config.RTC.DataChannelMaxBufferedAmount,
 		DatachannelSlowThreshold:          r.config.RTC.DatachannelSlowThreshold,
 		DatachannelLossyTargetLatency:     r.config.RTC.DatachannelLossyTargetLatency,

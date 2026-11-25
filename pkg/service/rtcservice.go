@@ -225,7 +225,15 @@ func (s *RTCService) validateInternal(
 		return res.roomName, routing.ParticipantInit{}, code, err
 	}
 
+	transport := r.URL.Query().Get("transport")
+	if transport != "" && transport != "webrtc" && transport != "moq" {
+		return res.roomName, routing.ParticipantInit{}, http.StatusBadRequest, errors.New("unknown room transport")
+	}
+	if transport == "moq" && useSinglePeerConnection {
+		return res.roomName, routing.ParticipantInit{}, http.StatusBadRequest, errors.New("MoQ uses /rtc WebSocket signaling")
+	}
 	pi := routing.ParticipantInit{
+		UseMoQTransport:         transport == "moq",
 		Identity:                livekit.ParticipantIdentity(res.grants.Identity),
 		Name:                    livekit.ParticipantName(res.grants.Name),
 		Grants:                  res.grants,
@@ -287,6 +295,9 @@ func (s *RTCService) validateInternal(
 		}
 
 		pi.AddTrackRequests = joinRequest.AddTrackRequests
+		if pi.UseMoQTransport && joinRequest.PublisherOffer != nil {
+			return res.roomName, routing.ParticipantInit{}, http.StatusBadRequest, errors.New("MoQ joins cannot include a WebRTC offer")
+		}
 		pi.PublisherOffer = joinRequest.PublisherOffer
 
 		pi.Reconnect = joinRequest.Reconnect
@@ -401,7 +412,8 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 		connectionTimeout := time.Duration(3+attempt) * time.Second
 		ctx := utils.ContextWithAttempt(r.Context(), attempt)
 		cr, initialResponse, err = s.startConnection(ctx, roomName, pi, connectionTimeout)
-		if err == nil || errors.Is(err, context.Canceled) {
+		code, _ := psrpc.GetErrorCode(err)
+		if err == nil || errors.Is(err, context.Canceled) || code == psrpc.FailedPrecondition {
 			break
 		}
 	}
@@ -802,6 +814,12 @@ func readInitialResponse(source routing.MessageSource, timeout time.Duration) (*
 			return nil, errors.New("timed out while waiting for signal response")
 		case msg := <-source.ReadChan():
 			if msg == nil {
+				if relay, ok := source.(interface{ Err() error }); ok {
+					err := relay.Err()
+					if code, _ := psrpc.GetErrorCode(err); code == psrpc.FailedPrecondition {
+						return nil, err
+					}
+				}
 				return nil, errors.New("connection closed by media")
 			}
 			res, ok := msg.(*livekit.SignalResponse)

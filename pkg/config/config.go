@@ -91,6 +91,7 @@ type Config struct {
 	Prometheus     PrometheusConfig         `yaml:"prometheus,omitempty"`
 	DebugHandler   DebugHandlerConfig       `yaml:"debug_handler,omitempty"`
 	WebTransport   WebTransportConfig       `yaml:"webtransport,omitempty"`
+	MoQ            MoQConfig                `yaml:"moq,omitempty"`
 	RTC            RTCConfig                `yaml:"rtc,omitempty"`
 	Redis          redisLiveKit.RedisConfig `yaml:"redis,omitempty"`
 	Audio          sfu.AudioConfig          `yaml:"audio,omitempty"`
@@ -750,6 +751,10 @@ func NewConfig(confString string, strictMode bool, c *cli.Command, baseFlags []c
 		if err := conf.updateFromCLI(c, baseFlags); err != nil {
 			return nil, err
 		}
+	}
+
+	if err := conf.MoQ.Validate(conf.WebTransport.Port); err != nil {
+		return nil, err
 	}
 
 	if err := conf.RTC.Validate(conf.Development); err != nil {

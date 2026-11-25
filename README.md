@@ -94,6 +94,8 @@ Deutsche Telekom, Spotify, Tinder, Coursera, Headspace, Skydio, Retell, Decagon,
 
 https://docs.livekit.io
 
+To enable native Media over QUIC on a self-hosted SFU, connect a Rust client or implement an interoperable subscriber, see the [MoQ endpoint integration guide](docs/moq.md).
+
 Working with a coding agent? Give it the [LiveKit Docs MCP server](https://docs.livekit.io/mcp/), or start with the
 [coding agents guide](https://docs.livekit.io/intro/coding-agents/).
 

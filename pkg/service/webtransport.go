@@ -80,11 +80,12 @@ func WebTransportTLS(certFile, keyFile string, dev bool) (*tls.Config, error) {
 type WebTransportServer struct {
 	*webtransport.Server
 
-	mu      sync.Mutex
-	conns   []*net.UDPConn
-	lns     []*quic.EarlyListener
-	cancel  context.CancelFunc
-	serving sync.WaitGroup
+	mu        sync.Mutex
+	conns     []*net.UDPConn
+	lns       []*quic.EarlyListener
+	cancel    context.CancelFunc
+	serving   sync.WaitGroup
+	protocols map[string]func(context.Context, *quic.Conn)
 }
 
 // NewWebTransportServer wraps an HTTP/3 WebTransport server around tlsConf (the
@@ -95,6 +96,15 @@ func NewWebTransportServer(tlsConf *tls.Config) *WebTransportServer {
 		tlsConf.NextProtos = []string{http3.NextProtoH3}
 	}
 	return &WebTransportServer{Server: &webtransport.Server{H3: &http3.Server{TLSConfig: tlsConf}}}
+}
+
+// handleProtocol registers a native QUIC handler and its TLS advertisement before Listen.
+func (s *WebTransportServer) handleProtocol(alpn string, serve func(context.Context, *quic.Conn)) {
+	if s.protocols == nil {
+		s.protocols = make(map[string]func(context.Context, *quic.Conn))
+	}
+	s.protocols[alpn] = serve
+	s.H3.TLSConfig.NextProtos = append(s.H3.TLSConfig.NextProtos, alpn)
 }
 
 // NewWebTransportHandler builds the listener's handler: mux behind api-key auth,
@@ -243,6 +253,20 @@ func (s *WebTransportServer) accept(ctx context.Context, ln *quic.EarlyListener)
 			return
 		}
 		s.serving.Go(func() {
+			if len(s.protocols) != 0 {
+				select {
+				case <-conn.HandshakeComplete():
+				case <-conn.Context().Done():
+					return
+				case <-ctx.Done():
+					_ = conn.CloseWithError(0, "server shutdown")
+					return
+				}
+				if serve := s.protocols[conn.ConnectionState().TLS.NegotiatedProtocol]; serve != nil {
+					serve(ctx, conn)
+					return
+				}
+			}
 			if err := s.ServeQUICConn(conn); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				logger.Infow("webtransport connection stopped", "error", err)
 			}
