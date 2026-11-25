@@ -1770,6 +1770,76 @@ func TestLeaveJoinSession(t *testing.T) {
 	require.Equal(t, 2, tl.OnTrackPublishedCallCount())
 }
 
+func TestReleasePendingTrackOnUnknownCodec(t *testing.T) {
+	p := newParticipantForTestWithOpts("test", &participantOpts{protocolVersion: 7})
+	sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+
+	camera := p.addPendingTrack(&livekit.AddTrackRequest{Cid: "camera", Name: "camera", Type: livekit.TrackType_VIDEO})
+	require.NotNil(t, camera)
+	p.pendingTracks["camera"].trackInfos[0].Codecs = []*livekit.SimulcastCodecInfo{
+		{MimeType: mime.MimeTypeH264.String(), Cid: "camera"},
+		{MimeType: mime.MimeTypeVP8.String(), Cid: "camera-backup"},
+	}
+
+	// the webrtc track id differs from the signal cid, the camera is the only pending video track to match by type
+	p.pendingTracksLock.Lock()
+	_, ti, _, _, _ := p.getPendingTrack("webrtc-camera", livekit.TrackType_VIDEO, true)
+	p.pendingTracksLock.Unlock()
+	require.NotNil(t, ti)
+	require.Equal(t, camera.Sid, ti.Sid)
+
+	screen := p.addPendingTrack(&livekit.AddTrackRequest{Cid: "screen", Name: "screen", Type: livekit.TrackType_VIDEO})
+	require.NotNil(t, screen)
+
+	p.pendingTracksLock.Lock()
+	// a codec the track lists keeps it pending
+	require.False(t, p.releasePendingTrackOnUnknownCodecLocked("camera", ti, "webrtc-camera", mime.MimeTypeVP8.String()))
+	require.NotNil(t, p.pendingTracks["camera"])
+
+	// a codec the track does not list releases it and tells the client
+	written := sink.WriteMessageCallCount()
+	require.True(t, p.releasePendingTrackOnUnknownCodecLocked("camera", ti, "webrtc-camera", mime.MimeTypeH265.String()))
+	require.Nil(t, p.pendingTracks["camera"])
+	require.Equal(t, written+1, sink.WriteMessageCallCount())
+	res := sink.WriteMessageArgsForCall(written).(*livekit.SignalResponse)
+	require.Equal(t, camera.Sid, res.GetTrackUnpublished().GetTrackSid())
+
+	// a later layer of the same webrtc track does not claim the screen share
+	_, ti, _, _, _ = p.getPendingTrack("webrtc-camera", livekit.TrackType_VIDEO, true)
+	require.Nil(t, ti)
+	require.NotNil(t, p.pendingTracks["screen"])
+	p.pendingTracksLock.Unlock()
+
+	// a corrected publish of the camera clears the webrtc track id too, so its media on the reused transceiver matches it
+	republished := p.addPendingTrack(&livekit.AddTrackRequest{Cid: "camera", Name: "camera", Type: livekit.TrackType_VIDEO})
+	require.NotNil(t, republished)
+	p.pendingTracksLock.Lock()
+	_, ti, _, _, _ = p.getPendingTrack("webrtc-camera", livekit.TrackType_VIDEO, true)
+	p.pendingTracksLock.Unlock()
+	// a released id returns nil before any matching, so a match shows the id was cleared
+	require.NotNil(t, ti)
+}
+
+func TestKeepPendingTrackWithQueuedReplacementOnUnknownCodec(t *testing.T) {
+	p := newParticipantForTestWithOpts("test", &participantOpts{protocolVersion: 7})
+
+	camera := p.addPendingTrack(&livekit.AddTrackRequest{Cid: "camera", Name: "camera", Type: livekit.TrackType_VIDEO})
+	require.NotNil(t, camera)
+	p.pendingTracks["camera"].trackInfos[0].Codecs = []*livekit.SimulcastCodecInfo{
+		{MimeType: mime.MimeTypeH264.String(), Cid: "camera"},
+	}
+	// a second request for the same cid is queued behind the pending one
+	require.Nil(t, p.addPendingTrack(&livekit.AddTrackRequest{Cid: "camera", Name: "camera", Type: livekit.TrackType_VIDEO}))
+	require.Len(t, p.pendingTracks["camera"].trackInfos, 2)
+
+	p.pendingTracksLock.Lock()
+	defer p.pendingTracksLock.Unlock()
+	ti := p.pendingTracks["camera"].trackInfos[0]
+	require.False(t, p.releasePendingTrackOnUnknownCodecLocked("camera", ti, "webrtc-camera", mime.MimeTypeH265.String()))
+	require.Len(t, p.pendingTracks["camera"].trackInfos, 2)
+	require.False(t, p.isReleasedTrackCidLocked("webrtc-camera"))
+}
+
 const (
 	pendingTrackCid = "C"
 	parkDeadline    = 5 * time.Second
