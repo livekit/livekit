@@ -2243,6 +2243,32 @@ func IsParticipantExemptFromTrackPermissionsRestrictions(p types.LocalParticipan
 	return p.IsRecorder()
 }
 
+// allowedSubscribersMapThreshold balances one-time map allocation against repeated slices.Contains scans.
+const allowedSubscribersMapThreshold = 8
+
+// buildAllowedSubscriberSet materializes allowed subscriber identities into an O(1) lookup set
+// when prebuilding avoids O(N*M) linear scans, or returns nil otherwise.
+func buildAllowedSubscriberSet(numSubscribers int, allowed []livekit.ParticipantIdentity) map[livekit.ParticipantIdentity]struct{} {
+	if numSubscribers <= 1 || len(allowed) <= allowedSubscribersMapThreshold {
+		return nil
+	}
+
+	set := make(map[livekit.ParticipantIdentity]struct{}, len(allowed))
+	for _, identity := range allowed {
+		set[identity] = struct{}{}
+	}
+	return set
+}
+
+// isSubscriberAllowed checks identity against allowedSet when built, falling back to slices.Contains otherwise.
+func isSubscriberAllowed(allowed []livekit.ParticipantIdentity, allowedSet map[livekit.ParticipantIdentity]struct{}, identity livekit.ParticipantIdentity) bool {
+	if allowedSet != nil {
+		_, ok := allowedSet[identity]
+		return ok
+	}
+	return slices.Contains(allowed, identity)
+}
+
 func CompareParticipant(pi1 *livekit.ParticipantInfo, pi2 *livekit.ParticipantInfo) int {
 	if pi1.JoinedAt != pi2.JoinedAt {
 		if pi1.JoinedAt < pi2.JoinedAt {
