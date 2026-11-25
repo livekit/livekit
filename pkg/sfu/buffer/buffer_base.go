@@ -203,8 +203,9 @@ type BufferBase struct {
 	snRangeMap *utils.RangeMap[uint64, uint64]
 
 	// extended sequence numbers + 1 of packets repaired from RTX, indexed by
-	// sequence number modulo the history size; zero marks an empty slot
-	rtxRepairedSNs [rtxRepairedHistory]uint64
+	// sequence number modulo the history size; zero marks an empty slot.
+	// Allocated on the first repair, see rtxRepairedHistorySize.
+	rtxRepairedSNs []uint64
 
 	audioLevelConfig audio.AudioLevelConfig
 	audioLevel       *audio.AudioLevel
@@ -593,7 +594,7 @@ func (b *BufferBase) restartStreamLocked(reason string, isDetected bool) {
 
 	// restart
 	b.snRangeMap = utils.NewRangeMap[uint64, uint64](100)
-	b.rtxRepairedSNs = [rtxRepairedHistory]uint64{}
+	clear(b.rtxRepairedSNs)
 	b.setupRTPStats(b.clockRate)
 
 	b.streamGeneration = streamGenerationCounter.Inc()
@@ -813,10 +814,11 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 	extSequenceNumber, err := b.handleIncomingPacketLocked(
 		rawPkt, rtpPacket, arrivalTime, isBuffered, isRTX, skippedSeqs, oobSequenceNumber,
 	)
-	if b.fecDecoder != nil {
+	if b.fecDecoder != nil && !b.isRTXRepairedSequenceNumberLocked(sequenceNumber) {
 		// Media can complete a retained FEC window. Recover before callers
 		// generate feedback, using the publisher's sequence number because
-		// ingestion adjusts it when padding has been removed.
+		// ingestion adjusts it when padding has been removed. A packet repaired
+		// from RTX is not the media FlexFEC protected, see markRTXRepairedLocked.
 		mediaPacket := *rtpPacket
 		mediaPacket.SequenceNumber = sequenceNumber
 		b.feedFECLocked(&mediaPacket, arrivalTime)
@@ -1064,17 +1066,43 @@ func (b *BufferBase) getFECMediaPacketLocked(sequenceNumber uint16, dst []byte) 
 	// removes padding-only packets from the downstream space, so resolve the
 	// original extended sequence number and apply the same adjustment used
 	// when the packet was inserted into the bucket.
-	extendedSN, ok := b.publisherExtSequenceNumberLocked(sequenceNumber)
+	extendedSN, bucketSN, ok := b.bucketSequenceNumberLocked(sequenceNumber)
 	if !ok || b.isRTXRepairedLocked(extendedSN) {
 		return 0, errFECMediaPacketNotFound
 	}
 
-	sequenceNumberAdjustment, err := b.snRangeMap.GetValue(extendedSN)
-	if err != nil || sequenceNumberAdjustment > extendedSN {
-		return 0, errFECMediaPacketNotFound
+	return b.bucket.GetPacket(dst, bucketSN)
+}
+
+// bucketSequenceNumberLocked maps a sequence number of the publisher's space
+// to its extended form and to the sequence number the packet has in the
+// bucket, which leaves out removed padding-only packets.
+func (b *BufferBase) bucketSequenceNumberLocked(sequenceNumber uint16) (extendedSN uint64, bucketSN uint64, ok bool) {
+	extendedSN, ok = b.publisherExtSequenceNumberLocked(sequenceNumber)
+	if !ok || b.snRangeMap == nil {
+		return 0, 0, false
 	}
 
-	return b.bucket.GetPacket(dst, extendedSN-sequenceNumberAdjustment)
+	sequenceNumberAdjustment, err := b.snRangeMap.GetValue(extendedSN)
+	if err != nil || sequenceNumberAdjustment > extendedSN {
+		return 0, 0, false
+	}
+	return extendedSN, extendedSN - sequenceNumberAdjustment, true
+}
+
+// isPacketCachedLocked reports whether the bucket holds the packet with this
+// sequence number of the publisher's space.
+func (b *BufferBase) isPacketCachedLocked(sequenceNumber uint16) bool {
+	if b.bucket == nil {
+		return false
+	}
+	_, bucketSN, ok := b.bucketSequenceNumberLocked(sequenceNumber)
+	if !ok {
+		return false
+	}
+	// an empty buffer only checks that the packet is there, without copying it
+	_, err := b.bucket.GetPacket(nil, bucketSN)
+	return errors.Is(err, bucket.ErrBufferTooSmall)
 }
 
 // FECDecoderStats returns cumulative FlexFEC decode counters of the buffer.
@@ -1869,10 +1897,16 @@ func (b *BufferBase) GetRtcpReceptionReportLocked(proxyLoss uint8) *rtcp.Recepti
 
 // ---------------------------------------------------------------
 
-// rtxRepairedHistory bounds how many recent sequence numbers are checked for
-// an RTX repair. FlexFEC masks span far fewer packets, and repairs arrive
-// close to the media they protect.
-const rtxRepairedHistory = 512
+// minRTXRepairedHistory is the smallest RTX repair history, see
+// rtxRepairedHistorySize.
+const minRTXRepairedHistory = 512
+
+// rtxRepairedHistorySize covers at least the video packet cache, so that two
+// repairs sharing a slot are rarely both cached. When they are, the earlier
+// repair counts as unusable, see isRTXRepairedLocked.
+func (b *BufferBase) rtxRepairedHistorySize() int {
+	return max(minRTXRepairedHistory, b.params.MaxVideoPkts)
+}
 
 // markRTXRepairedLocked records that a packet was repaired from RTX. Its
 // header comes from the RTX packet: libwebrtc adds a MID to retransmissions
@@ -1880,16 +1914,38 @@ const rtxRepairedHistory = 512
 // at send time, so it differs from the media FlexFEC protected. Like
 // libwebrtc, such packets are not used to recover others, see
 // isRTXRepairedLocked. Packets recovered by FEC are exact and are not marked.
+//
+// A retransmission of a packet that is already cached is not marked: the
+// bucket rejects it as a duplicate and keeps the exact packet.
 func (b *BufferBase) markRTXRepairedLocked(sequenceNumber uint16) {
-	if extSN, ok := b.publisherExtSequenceNumberLocked(sequenceNumber); ok {
-		b.rtxRepairedSNs[extSN%rtxRepairedHistory] = extSN + 1
+	extSN, ok := b.publisherExtSequenceNumberLocked(sequenceNumber)
+	if !ok || b.isPacketCachedLocked(sequenceNumber) {
+		return
 	}
+	if b.rtxRepairedSNs == nil {
+		b.rtxRepairedSNs = make([]uint64, b.rtxRepairedHistorySize())
+	}
+	b.rtxRepairedSNs[extSN%uint64(len(b.rtxRepairedSNs))] = extSN + 1
 }
 
 // isRTXRepairedLocked reports whether the packet with the given extended
-// sequence number of the publisher's space was repaired from RTX.
+// sequence number of the publisher's space was repaired from RTX. A slot that
+// a later repair reused no longer tells whether this packet was repaired as
+// well, so it counts as repaired: a packet that cannot be used only costs a
+// recovery, a repaired packet used to recover would corrupt it.
 func (b *BufferBase) isRTXRepairedLocked(extendedSN uint64) bool {
-	return b.rtxRepairedSNs[extendedSN%rtxRepairedHistory] == extendedSN+1
+	if len(b.rtxRepairedSNs) == 0 {
+		return false
+	}
+	marked := b.rtxRepairedSNs[extendedSN%uint64(len(b.rtxRepairedSNs))]
+	return marked != 0 && marked >= extendedSN+1
+}
+
+// isRTXRepairedSequenceNumberLocked is isRTXRepairedLocked for a sequence
+// number of the publisher's space.
+func (b *BufferBase) isRTXRepairedSequenceNumberLocked(sequenceNumber uint16) bool {
+	extSN, ok := b.publisherExtSequenceNumberLocked(sequenceNumber)
+	return ok && b.isRTXRepairedLocked(extSN)
 }
 
 // publisherExtSequenceNumberLocked extends a sequence number of the
