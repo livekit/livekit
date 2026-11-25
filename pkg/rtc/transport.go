@@ -1550,7 +1550,7 @@ func (t *PCTransport) SendDataMessageUnlabeled(data []byte) error {
 	return t.sendDataMessage(dc, data)
 }
 
-func (t *PCTransport) SendDataTrackMessage(data []byte) error {
+func (t *PCTransport) SendDataTrackMessage(data []byte, _ uint8) error {
 	t.lock.RLock()
 	dc := t.dataTrackDC
 	t.lock.RUnlock()

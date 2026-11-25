@@ -136,7 +136,14 @@ All names below use the joining participant's two-element namespace. Use a disti
 | Upload DataTracks | `PUBLISH dt/up/<SID>` | Use the SID from the WebSocket publish response. Each publication has its own alias. A group carries one serialized LiveKit packet. Send consecutive MOQT OBJECT_DATAGRAMs starting at object zero, with 1024 payload bytes per nonfinal object. Mark the final object END_OF_GROUP. |
 | Receive DataTracks | `SUBSCRIBE dt/down/<SID>` | Subscribe through signaling first and use the SID from the subscriber handle map. Check the packet handle against the subscription. In both directions, reassemble chunks within each group and deliver complete packets immediately. Groups are independent. The limit is 64 objects per packet and the receive window is 16 groups per alias. |
 
-QUIC datagrams have no stream ID. The MoQ alias identifies the DataTrack on the shared QUIC connection. The SDK retains a pending frame per publication, and the SFU queues outgoing packets per subscription. All tracks currently use the default publisher priority of 128 and share connection congestion control.
+QUIC datagrams have no stream ID. The MoQ alias identifies the DataTrack on the shared QUIC connection. The SDK retains a pending frame per publication, and the SFU queues outgoing packets per subscription. The SDK chooses the next pending frame by publisher priority. Lower numbers go first (0–255, default 128). Each chunk carries the frame’s priority. When the SFU chooses the next packet for a MoQ subscriber, it compares the MOQT subscriber priority first, the publisher priority second, and arrival order third. It uses the priority of object zero when reassembling a packet. WebRTC ingress supplies the default of 128. DataTracks share connection congestion control.
+
+A Rust app can set the priority before publication or adjust it during a call. The setting is per local publication name and survives a room reconnect.
+
+```rust
+room.set_moq_data_track_priority("telemetry", 16);
+room.set_moq_data_track_priority("thumbnails", 224);
+```
 
 ## Network handoff and reconnect
 

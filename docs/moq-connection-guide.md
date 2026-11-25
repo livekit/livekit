@@ -90,7 +90,7 @@ dt/down/<SID>    sends the rewritten packet on the subscriber's track alias
 Viewer app       depacketizes complete packets into application frames
 ```
 
-The **track SID** identifies the room publication. The **handle** identifies that track in LiveKit packets on this hop. The **alias** identifies its MoQ datagrams on this connection. Both directions use up to 64 chunks of 1024 bytes per packet. A missing chunk can cost an application frame. Later complete groups continue immediately, including on the same track. QUIC does not retransmit the datagrams. A successful `try_push` reports local acceptance. Each track has its own alias and queue. All tracks currently use publisher priority 128.
+The **track SID** identifies the room publication. The **handle** identifies that track in LiveKit packets on this hop. The **alias** identifies its MoQ datagrams on this connection. Both directions use up to 64 chunks of 1024 bytes per packet. A missing chunk can cost an application frame. Later complete groups continue immediately, including on the same track. QUIC does not retransmit the datagrams. A successful `try_push` reports local acceptance. Each track has its own alias and queue. The default publisher priority is 128. Call `room.set_moq_data_track_priority("telemetry", 16)` to give telemetry precedence over other pending frames at the default priority.
 
 ## 7. Handoff and recovery
 

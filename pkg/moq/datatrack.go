@@ -5,6 +5,8 @@ package moq
 
 import (
 	"bytes"
+	"cmp"
+	"context"
 	"sync"
 
 	"github.com/livekit/protocol/datatrack"
@@ -30,6 +32,7 @@ type dataGroup struct {
 	chunks   [maxDataChunks][]byte
 	received uint64
 	last     int
+	priority uint8
 	done     bool
 }
 
@@ -38,16 +41,16 @@ type dataAssembler struct {
 	groups  [dataGroupWindow]*dataGroup
 }
 
-func (a *dataAssembler) push(d *message.Datagram) []byte {
+func (a *dataAssembler) push(d *message.Datagram, defaultPriority uint8) ([]byte, uint8) {
 	n := len(d.Payload)
 	if d.HasStatus || n == 0 || n > dataChunkSize || d.Object >= maxDataChunks {
-		return nil
+		return nil, 0
 	}
 	if !d.EndOfGroup && (n != dataChunkSize || d.Object == maxDataChunks-1) {
-		return nil
+		return nil, 0
 	}
 	if d.Group < a.highest && a.highest-d.Group >= dataGroupWindow {
-		return nil
+		return nil, 0
 	}
 	a.highest = max(a.highest, d.Group)
 	slot := d.Group % dataGroupWindow
@@ -61,36 +64,45 @@ func (a *dataAssembler) push(d *message.Datagram) []byte {
 	i := int(d.Object)
 	bit := uint64(1) << i
 	if g.done || g.received&bit != 0 || (g.last >= 0 && (i > g.last || d.EndOfGroup)) {
-		return nil
+		return nil, 0
+	}
+	// The first chunk supplies the packet's priority even when it arrives last.
+	if i == 0 {
+		g.priority = d.Priority
+		if d.DefaultPriority {
+			g.priority = defaultPriority
+		}
 	}
 	if d.EndOfGroup {
 		if g.received>>(i+1) != 0 {
-			return nil
+			return nil, 0
 		}
 		if i == 0 {
 			g.done = true
-			return bytes.Clone(d.Payload)
+			return bytes.Clone(d.Payload), g.priority
 		}
 		g.last = i
 	}
 	g.chunks[i] = bytes.Clone(d.Payload)
 	g.received |= bit
 	if g.last < 0 || g.received != (uint64(1)<<(g.last+1))-1 {
-		return nil
+		return nil, 0
 	}
 	packet := bytes.Join(g.chunks[:g.last+1], nil)
+	priority := g.priority
 	*g = dataGroup{id: d.Group, done: true}
-	return packet
+	return packet, priority
 }
 
 type dataUpload struct {
-	peer      *moqPeer
-	track     types.DataTrack
-	mu        sync.Mutex
-	assembler dataAssembler
+	peer            *moqPeer
+	track           types.DataTrack
+	defaultPriority uint8
+	mu              sync.Mutex
+	assembler       dataAssembler
 }
 
-func (p *moqPeer) acceptDataUpload(r *session.Request, sid livekit.TrackID) bool {
+func (p *moqPeer) acceptDataUpload(r *session.Request, sid livekit.TrackID, defaultPriority uint8) bool {
 	if !p.participant.CanPublishData() || !p.participant.IsMoQAttachmentCurrent(p.generation) {
 		return false
 	}
@@ -112,7 +124,7 @@ func (p *moqPeer) acceptDataUpload(r *session.Request, sid livekit.TrackID) bool
 			}
 			p.mu.Unlock()
 		}()
-		r.SetHandlers(nil, &dataUpload{peer: p, track: track})
+		r.SetHandlers(nil, &dataUpload{peer: p, track: track, defaultPriority: defaultPriority})
 		if err := r.Send(&message.RequestOK{}); err == nil {
 			<-r.Context().Done()
 		}
@@ -126,10 +138,10 @@ func (u *dataUpload) HandleDatagram(r *session.Request, d *message.Datagram) {
 		return
 	}
 	u.mu.Lock()
-	packet := u.assembler.push(d)
+	packet, priority := u.assembler.push(d, u.defaultPriority)
 	u.mu.Unlock()
 	if packet != nil {
-		u.peer.participant.ReceiveMoQDataTrack(u.peer.generation, u.track, packet, mono.UnixNano())
+		u.peer.participant.ReceiveMoQDataTrack(u.peer.generation, u.track, packet, mono.UnixNano(), priority)
 	}
 }
 
@@ -140,13 +152,61 @@ func (*dataUpload) HandleSubgroup(_ *session.Request, in *session.IncomingSubgro
 	in.Cancel(message.ResetCancelled)
 }
 
-type dataDownload struct {
-	request *session.Request
-	queue   chan []byte
+type queuedDataPacket struct {
+	payload  []byte
+	priority uint8
+	sequence uint64
 }
 
-// Each active subscriber handle has an independent, bounded packet queue.
-func (p *moqPeer) SendDataTrackMessage(packet []byte) error {
+type dataDownload struct {
+	request            *session.Request
+	track              types.DataDownTrack
+	sid                livekit.TrackID
+	subscriberPriority uint8
+	ready              bool
+	group              uint64
+	queue              []queuedDataPacket
+}
+
+// All tracks for this subscriber share one QUIC send queue. Select a packet
+// before handing it to QUIC, while its priority can still affect send order.
+func (p *moqPeer) nextDataPacket() (*dataDownload, queuedDataPacket, uint64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var next *dataDownload
+	var selected queuedDataPacket
+	for _, sub := range p.downloads {
+		if !sub.ready || len(sub.queue) == 0 {
+			continue
+		}
+		head := sub.queue[0]
+		if next == nil || cmp.Or(
+			cmp.Compare(sub.subscriberPriority, next.subscriberPriority),
+			cmp.Compare(head.priority, selected.priority),
+			cmp.Compare(head.sequence, selected.sequence),
+		) < 0 {
+			next, selected = sub, head
+		}
+	}
+	if next == nil {
+		return nil, queuedDataPacket{}, 0
+	}
+	next.queue[0] = queuedDataPacket{}
+	next.queue = next.queue[1:]
+	group := next.group
+	next.group++
+	return next, selected, group
+}
+
+func (p *moqPeer) notifyDataWriter() {
+	select {
+	case p.dataReady <- struct{}{}:
+	default:
+	}
+}
+
+// Each subscriber handle has an independent bounded queue.
+func (p *moqPeer) SendDataTrackMessage(packet []byte, priority uint8) error {
 	var h datatrack.Header
 	if _, err := h.Unmarshal(packet); err != nil {
 		return err
@@ -160,20 +220,53 @@ func (p *moqPeer) SendDataTrackMessage(packet []byte) error {
 	if sub == nil || sub.request.Context().Err() != nil {
 		return rtc.ErrDataChannelUnavailable
 	}
-	// All producers hold p.mu. The reader can only make more space.
-	if len(sub.queue) < cap(sub.queue) {
-		sub.queue <- bytes.Clone(packet)
+	if len(sub.queue) < 32 {
+		sub.queue = append(sub.queue, queuedDataPacket{payload: bytes.Clone(packet), priority: priority, sequence: p.dataSequence})
+		p.dataSequence++
+		p.notifyDataWriter()
 	}
 	return nil
 }
 
-func (p *moqPeer) serveData(r *session.Request, sid livekit.TrackID) bool {
+func (p *moqPeer) writeData(ctx context.Context) {
+	for ctx.Err() == nil {
+		sub, packet, group := p.nextDataPacket()
+		if sub == nil {
+			select {
+			case <-ctx.Done():
+				return
+			case <-p.dataReady:
+				continue
+			}
+		}
+		if sub.request.Context().Err() != nil {
+			continue
+		}
+		if !p.participant.IsMoQAttachmentCurrent(p.generation) || !p.participant.CanSubscribe() || p.participant.GetSubscribedDataTrack(sub.sid) != sub.track {
+			sub.request.Cancel(message.ResetCancelled)
+			continue
+		}
+		for start := 0; start < len(packet.payload); start += dataChunkSize {
+			end := min(start+dataChunkSize, len(packet.payload))
+			d := &message.Datagram{
+				Group: group, Object: uint64(start / dataChunkSize), EndOfGroup: end == len(packet.payload),
+				Priority: packet.priority, DefaultPriority: packet.priority == message.DefaultPublisherPriority,
+				Payload: packet.payload[start:end],
+			}
+			if err := sub.request.SendDatagram(d); err != nil {
+				break
+			}
+		}
+	}
+}
+
+func (p *moqPeer) serveData(r *session.Request, sid livekit.TrackID, subscriberPriority uint8) bool {
 	track := p.participant.GetSubscribedDataTrack(sid)
 	if track == nil || !p.participant.CanSubscribe() || !p.participant.IsMoQAttachmentCurrent(p.generation) {
 		return false
 	}
 	handle := track.Handle()
-	download := &dataDownload{request: r, queue: make(chan []byte, 32)}
+	download := &dataDownload{request: r, sid: sid, track: track, subscriberPriority: subscriberPriority}
 	p.mu.Lock()
 	if prev := p.downloads[handle]; prev != nil && prev.request.Context().Err() == nil {
 		p.mu.Unlock()
@@ -192,28 +285,14 @@ func (p *moqPeer) serveData(r *session.Request, sid livekit.TrackID) bool {
 	if err != nil {
 		return true
 	}
-	for group := uint64(0); ; group++ {
-		select {
-		case <-r.Context().Done():
-			return true
-		case <-sub.update:
-			endMoQSubscriptionOnUpdate(r)
-			return true
-		case packet := <-download.queue:
-			if !p.participant.IsMoQAttachmentCurrent(p.generation) || !p.participant.CanSubscribe() || p.participant.GetSubscribedDataTrack(sid) != track {
-				r.Cancel(message.ResetCancelled)
-				return true
-			}
-			for start := 0; start < len(packet); start += dataChunkSize {
-				end := min(start+dataChunkSize, len(packet))
-				d := &message.Datagram{
-					Group: group, Object: uint64(start / dataChunkSize), EndOfGroup: end == len(packet),
-					DefaultPriority: true, Payload: packet[start:end],
-				}
-				if err := r.SendDatagram(d); err != nil {
-					break
-				}
-			}
-		}
+	p.mu.Lock()
+	download.ready = true
+	p.mu.Unlock()
+	p.notifyDataWriter()
+	select {
+	case <-r.Context().Done():
+	case <-sub.update:
+		endMoQSubscriptionOnUpdate(r)
 	}
+	return true
 }

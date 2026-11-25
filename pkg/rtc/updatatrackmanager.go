@@ -112,7 +112,7 @@ func (u *UpDataTrackManager) HandleReceivedDataTrackMessage(data []byte, packet 
 		return
 	}
 
-	dt.HandlePacket(data, packet, arrivalTime)
+	dt.HandlePacket(data, packet, arrivalTime, types.DefaultDataTrackPriority)
 }
 
 func (u *UpDataTrackManager) ToProto() []*livekit.DataTrackInfo {

@@ -917,6 +917,9 @@ type LocalMediaTrack interface {
 	NotifySubscriberNodeMediaLoss(nodeID livekit.NodeID, fractionalLoss uint8)
 }
 
+// DefaultDataTrackPriority is the MOQT publisher priority for an unmarked packet.
+const DefaultDataTrackPriority uint8 = 128
+
 // DataTrack represents a data track
 //
 //counterfeiter:generate . DataTrack
@@ -937,7 +940,7 @@ type DataTrack interface {
 	AddDataDownTrack(sender DataTrackSender) error
 	DeleteDataDownTrack(subscriberID livekit.ParticipantID)
 
-	HandlePacket(data []byte, packet *datatrack.Packet, arrivalTime int64)
+	HandlePacket(data []byte, packet *datatrack.Packet, arrivalTime int64, priority uint8)
 
 	Close()
 }
@@ -957,12 +960,12 @@ type DataDownTrack interface {
 type DataTrackSender interface {
 	SubscriberID() livekit.ParticipantID
 
-	WritePacket(data []byte, packet *datatrack.Packet, arrivalTime int64)
+	WritePacket(data []byte, packet *datatrack.Packet, arrivalTime int64, priority uint8)
 }
 
 //counterfeiter:generate . DataTrackTransport
 type DataTrackTransport interface {
-	SendDataTrackMessage(data []byte) error
+	SendDataTrackMessage(data []byte, priority uint8) error
 }
 
 //counterfeiter:generate . SubscribedTrack

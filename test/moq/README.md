@@ -25,6 +25,7 @@ cargo test --locked -p livekit \
 
 | Test | What a pass demonstrates |
 | --- | --- |
+| `publisher_priority_on_forwarded_datagrams` | An independent MoQ subscriber reads the forwarded publisher priority after initial configuration, a live update, and a reset to 128. |
 | `datagram_data_tracks` | Two simultaneous DataTracks carry distinct payloads in both mixed directions and between two MoQ clients. A 128 KiB application frame spans multiple datagram groups. Unpublishing one track preserves delivery on the other. |
 | `room_transport_matrix` | WebRTC → MoQ, MoQ → WebRTC and MoQ → MoQ each deliver an intact 128 KiB DataTrack frame, decoded Opus samples and at least five changing 1280×720 frames for each of H.264, H.265, VP8, VP9 and AV1. The test host needs working encoders and decoders for those codecs. |
 | `first_subscriber_and_video_subscription_limit` | A MoQ publisher receives its first-subscriber event before capturing a frame. The viewer receives remote quality updates. See below to run the refusal-and-recovery case. |

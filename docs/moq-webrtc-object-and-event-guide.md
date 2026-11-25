@@ -161,7 +161,7 @@ The Rust application calls `RemoteDataTrack::subscribe()`. The SDK signals its i
 
 MoQ participants always have DataTracks enabled. Publishing requires the data grant, and receiving requires an authorized subscription. A WebRTC leg also uses the server’s WebRTC DataTrack setting.
 
-The alias identifies a logical flow of datagrams. Each track has its own queue. Tracks share the connection’s congestion control and currently use the same default publisher priority of 128.
+The alias identifies a logical flow of datagrams. Each track has its own queue. Tracks share congestion control. Lower numbers go first (0–255, default 128). A Rust publisher can call `room.set_moq_data_track_priority("telemetry", 16)` before or during publication. The SFU preserves that priority on MoQ downloads. WebRTC uploads receive priority 128.
 
 Implementation sources · [MoQ DataTrack framing](../pkg/moq/datatrack.go) · [Handle rewriting](../pkg/rtc/datadowntrack.go) · [Subscriber handle map](../pkg/rtc/subscriptionmanager.go) · [Rust DataTrack stream](../../rust-sdks2/livekit-datatrack/src/remote/mod.rs)
 

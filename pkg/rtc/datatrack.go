@@ -216,13 +216,13 @@ func (d *DataTrack) DeleteDataDownTrack(subscriberID livekit.ParticipantID) {
 	d.logger.Infow("data downtrack deleted", "subscriberID", subscriberID)
 }
 
-func (d *DataTrack) HandlePacket(data []byte, packet *datatrack.Packet, arrivalTime int64) {
+func (d *DataTrack) HandlePacket(data []byte, packet *datatrack.Packet, arrivalTime int64, priority uint8) {
 	d.stats.Update(packet, arrivalTime, len(data))
 	if d.params.BytesTrackStats != nil {
 		d.params.BytesTrackStats.AddBytes(uint64(len(data)), false)
 	}
 
 	d.downTrackSpreader.Broadcast(func(dts types.DataTrackSender) {
-		dts.WritePacket(data, packet, arrivalTime)
+		dts.WritePacket(data, packet, arrivalTime, priority)
 	})
 }

@@ -115,7 +115,7 @@ func (d *DataDownTrack) SubscriberID() livekit.ParticipantID {
 	return livekit.ParticipantID(fmt.Sprintf("%s:%d", d.params.SubscriberID, d.createdAt))
 }
 
-func (d *DataDownTrack) WritePacket(data []byte, packet *datatrack.Packet, _arrivalTime int64) {
+func (d *DataDownTrack) WritePacket(data []byte, packet *datatrack.Packet, _arrivalTime int64, priority uint8) {
 	forwardedPacket := *packet
 	forwardedPacket.Handle = d.params.Handle
 	buf, err := forwardedPacket.Marshal()
@@ -123,7 +123,7 @@ func (d *DataDownTrack) WritePacket(data []byte, packet *datatrack.Packet, _arri
 		d.logger.Warnw("could not marshal data track message", err)
 		return
 	}
-	if err := d.params.Transport.SendDataTrackMessage(buf); err != nil {
+	if err := d.params.Transport.SendDataTrackMessage(buf, priority); err != nil {
 		d.logger.Warnw("could not send data track message", err)
 		return
 	}

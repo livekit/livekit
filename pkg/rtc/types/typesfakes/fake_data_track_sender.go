@@ -12,30 +12,33 @@ import (
 type FakeDataTrackSender struct {
 	SubscriberIDStub        func() livekit.ParticipantID
 	subscriberIDMutex       sync.RWMutex
-	subscriberIDArgsForCall []struct {
-	}
-	subscriberIDReturns struct {
+	subscriberIDArgsForCall []struct{}
+	subscriberIDReturns     struct {
 		result1 livekit.ParticipantID
 	}
 	subscriberIDReturnsOnCall map[int]struct {
 		result1 livekit.ParticipantID
 	}
-	WritePacketStub        func([]byte, *datatrack.Packet, int64)
+	WritePacketStub        func([]byte, *datatrack.Packet, int64, uint8)
 	writePacketMutex       sync.RWMutex
-	writePacketArgsForCall []struct {
-		arg1 []byte
-		arg2 *datatrack.Packet
-		arg3 int64
-	}
-	invocations      map[string][][]interface{}
-	invocationsMutex sync.RWMutex
+	writePacketArgsForCall []FakeDataTrackSenderWritePacketArgs
+	invocations            map[string][][]interface{}
+	callOrder              []string
+	invocationsMutex       sync.RWMutex
+}
+
+// FakeDataTrackSenderWritePacketArgs holds the arguments of one call to WritePacket.
+type FakeDataTrackSenderWritePacketArgs struct {
+	Arg1 []byte
+	Arg2 *datatrack.Packet
+	Arg3 int64
+	Arg4 uint8
 }
 
 func (fake *FakeDataTrackSender) SubscriberID() livekit.ParticipantID {
 	fake.subscriberIDMutex.Lock()
 	ret, specificReturn := fake.subscriberIDReturnsOnCall[len(fake.subscriberIDArgsForCall)]
-	fake.subscriberIDArgsForCall = append(fake.subscriberIDArgsForCall, struct {
-	}{})
+	fake.subscriberIDArgsForCall = append(fake.subscriberIDArgsForCall, struct{}{})
 	stub := fake.SubscriberIDStub
 	fakeReturns := fake.subscriberIDReturns
 	fake.recordInvocation("SubscriberID", []interface{}{})
@@ -84,23 +87,19 @@ func (fake *FakeDataTrackSender) SubscriberIDReturnsOnCall(i int, result1 liveki
 	}{result1}
 }
 
-func (fake *FakeDataTrackSender) WritePacket(arg1 []byte, arg2 *datatrack.Packet, arg3 int64) {
+func (fake *FakeDataTrackSender) WritePacket(arg1 []byte, arg2 *datatrack.Packet, arg3 int64, arg4 uint8) {
 	var arg1Copy []byte
 	if arg1 != nil {
 		arg1Copy = make([]byte, len(arg1))
 		copy(arg1Copy, arg1)
 	}
 	fake.writePacketMutex.Lock()
-	fake.writePacketArgsForCall = append(fake.writePacketArgsForCall, struct {
-		arg1 []byte
-		arg2 *datatrack.Packet
-		arg3 int64
-	}{arg1Copy, arg2, arg3})
+	fake.writePacketArgsForCall = append(fake.writePacketArgsForCall, FakeDataTrackSenderWritePacketArgs{arg1Copy, arg2, arg3, arg4})
 	stub := fake.WritePacketStub
-	fake.recordInvocation("WritePacket", []interface{}{arg1Copy, arg2, arg3})
+	fake.recordInvocation("WritePacket", []interface{}{arg1Copy, arg2, arg3, arg4})
 	fake.writePacketMutex.Unlock()
 	if stub != nil {
-		fake.WritePacketStub(arg1, arg2, arg3)
+		stub(arg1, arg2, arg3, arg4)
 	}
 }
 
@@ -110,17 +109,25 @@ func (fake *FakeDataTrackSender) WritePacketCallCount() int {
 	return len(fake.writePacketArgsForCall)
 }
 
-func (fake *FakeDataTrackSender) WritePacketCalls(stub func([]byte, *datatrack.Packet, int64)) {
+func (fake *FakeDataTrackSender) WritePacketCalls(stub func([]byte, *datatrack.Packet, int64, uint8)) {
 	fake.writePacketMutex.Lock()
 	defer fake.writePacketMutex.Unlock()
 	fake.WritePacketStub = stub
 }
 
-func (fake *FakeDataTrackSender) WritePacketArgsForCall(i int) ([]byte, *datatrack.Packet, int64) {
+func (fake *FakeDataTrackSender) WritePacketArgsForCall(i int) ([]byte, *datatrack.Packet, int64, uint8) {
 	fake.writePacketMutex.RLock()
 	defer fake.writePacketMutex.RUnlock()
 	argsForCall := fake.writePacketArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+	return argsForCall.Arg1, argsForCall.Arg2, argsForCall.Arg3, argsForCall.Arg4
+}
+
+func (fake *FakeDataTrackSender) WritePacketArgs() []FakeDataTrackSenderWritePacketArgs {
+	fake.writePacketMutex.RLock()
+	defer fake.writePacketMutex.RUnlock()
+	args := make([]FakeDataTrackSenderWritePacketArgs, len(fake.writePacketArgsForCall))
+	copy(args, fake.writePacketArgsForCall)
+	return args
 }
 
 func (fake *FakeDataTrackSender) Invocations() map[string][][]interface{} {
@@ -133,9 +140,18 @@ func (fake *FakeDataTrackSender) Invocations() map[string][][]interface{} {
 	return copiedInvocations
 }
 
+func (fake *FakeDataTrackSender) CallOrder() []string {
+	fake.invocationsMutex.RLock()
+	defer fake.invocationsMutex.RUnlock()
+	order := make([]string, len(fake.callOrder))
+	copy(order, fake.callOrder)
+	return order
+}
+
 func (fake *FakeDataTrackSender) recordInvocation(key string, args []interface{}) {
 	fake.invocationsMutex.Lock()
 	defer fake.invocationsMutex.Unlock()
+	fake.callOrder = append(fake.callOrder, key)
 	if fake.invocations == nil {
 		fake.invocations = map[string][][]interface{}{}
 	}

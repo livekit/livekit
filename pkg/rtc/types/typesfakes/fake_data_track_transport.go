@@ -8,22 +8,27 @@ import (
 )
 
 type FakeDataTrackTransport struct {
-	SendDataTrackMessageStub        func([]byte) error
+	SendDataTrackMessageStub        func([]byte, uint8) error
 	sendDataTrackMessageMutex       sync.RWMutex
-	sendDataTrackMessageArgsForCall []struct {
-		arg1 []byte
-	}
-	sendDataTrackMessageReturns struct {
+	sendDataTrackMessageArgsForCall []FakeDataTrackTransportSendDataTrackMessageArgs
+	sendDataTrackMessageReturns     struct {
 		result1 error
 	}
 	sendDataTrackMessageReturnsOnCall map[int]struct {
 		result1 error
 	}
 	invocations      map[string][][]interface{}
+	callOrder        []string
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeDataTrackTransport) SendDataTrackMessage(arg1 []byte) error {
+// FakeDataTrackTransportSendDataTrackMessageArgs holds the arguments of one call to SendDataTrackMessage.
+type FakeDataTrackTransportSendDataTrackMessageArgs struct {
+	Arg1 []byte
+	Arg2 uint8
+}
+
+func (fake *FakeDataTrackTransport) SendDataTrackMessage(arg1 []byte, arg2 uint8) error {
 	var arg1Copy []byte
 	if arg1 != nil {
 		arg1Copy = make([]byte, len(arg1))
@@ -31,15 +36,13 @@ func (fake *FakeDataTrackTransport) SendDataTrackMessage(arg1 []byte) error {
 	}
 	fake.sendDataTrackMessageMutex.Lock()
 	ret, specificReturn := fake.sendDataTrackMessageReturnsOnCall[len(fake.sendDataTrackMessageArgsForCall)]
-	fake.sendDataTrackMessageArgsForCall = append(fake.sendDataTrackMessageArgsForCall, struct {
-		arg1 []byte
-	}{arg1Copy})
+	fake.sendDataTrackMessageArgsForCall = append(fake.sendDataTrackMessageArgsForCall, FakeDataTrackTransportSendDataTrackMessageArgs{arg1Copy, arg2})
 	stub := fake.SendDataTrackMessageStub
 	fakeReturns := fake.sendDataTrackMessageReturns
-	fake.recordInvocation("SendDataTrackMessage", []interface{}{arg1Copy})
+	fake.recordInvocation("SendDataTrackMessage", []interface{}{arg1Copy, arg2})
 	fake.sendDataTrackMessageMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		return stub(arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1
@@ -53,17 +56,25 @@ func (fake *FakeDataTrackTransport) SendDataTrackMessageCallCount() int {
 	return len(fake.sendDataTrackMessageArgsForCall)
 }
 
-func (fake *FakeDataTrackTransport) SendDataTrackMessageCalls(stub func([]byte) error) {
+func (fake *FakeDataTrackTransport) SendDataTrackMessageCalls(stub func([]byte, uint8) error) {
 	fake.sendDataTrackMessageMutex.Lock()
 	defer fake.sendDataTrackMessageMutex.Unlock()
 	fake.SendDataTrackMessageStub = stub
 }
 
-func (fake *FakeDataTrackTransport) SendDataTrackMessageArgsForCall(i int) []byte {
+func (fake *FakeDataTrackTransport) SendDataTrackMessageArgsForCall(i int) ([]byte, uint8) {
 	fake.sendDataTrackMessageMutex.RLock()
 	defer fake.sendDataTrackMessageMutex.RUnlock()
 	argsForCall := fake.sendDataTrackMessageArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.Arg1, argsForCall.Arg2
+}
+
+func (fake *FakeDataTrackTransport) SendDataTrackMessageArgs() []FakeDataTrackTransportSendDataTrackMessageArgs {
+	fake.sendDataTrackMessageMutex.RLock()
+	defer fake.sendDataTrackMessageMutex.RUnlock()
+	args := make([]FakeDataTrackTransportSendDataTrackMessageArgs, len(fake.sendDataTrackMessageArgsForCall))
+	copy(args, fake.sendDataTrackMessageArgsForCall)
+	return args
 }
 
 func (fake *FakeDataTrackTransport) SendDataTrackMessageReturns(result1 error) {
@@ -99,9 +110,18 @@ func (fake *FakeDataTrackTransport) Invocations() map[string][][]interface{} {
 	return copiedInvocations
 }
 
+func (fake *FakeDataTrackTransport) CallOrder() []string {
+	fake.invocationsMutex.RLock()
+	defer fake.invocationsMutex.RUnlock()
+	order := make([]string, len(fake.callOrder))
+	copy(order, fake.callOrder)
+	return order
+}
+
 func (fake *FakeDataTrackTransport) recordInvocation(key string, args []interface{}) {
 	fake.invocationsMutex.Lock()
 	defer fake.invocationsMutex.Unlock()
+	fake.callOrder = append(fake.callOrder, key)
 	if fake.invocations == nil {
 		fake.invocations = map[string][][]interface{}{}
 	}

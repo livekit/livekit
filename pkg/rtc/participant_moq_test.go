@@ -26,8 +26,8 @@ type testMoQTransport struct {
 func (t *testMoQTransport) PathQuality() (float32, livekit.ConnectionQuality) {
 	return 4.5, livekit.ConnectionQuality_EXCELLENT
 }
-func (t *testMoQTransport) Close()                            { t.closed.Add(1) }
-func (t *testMoQTransport) SendDataTrackMessage([]byte) error { t.packets.Add(1); return nil }
+func (t *testMoQTransport) Close()                                   { t.closed.Add(1) }
+func (t *testMoQTransport) SendDataTrackMessage([]byte, uint8) error { t.packets.Add(1); return nil }
 
 func TestPublishDataTrackWithServerFlagOff(t *testing.T) {
 	moq := &MoQParticipantOptions{tracks: NewRoomTrackManager(logger.GetLogger())}
@@ -80,18 +80,18 @@ func TestMoQAttachment(t *testing.T) {
 	require.EqualValues(t, 1, accepted.Load())
 	next := m.issue(info.Endpoint, info.ParticipantSid)
 	require.Error(t, m.attach(info.Generation, info.AttachmentToken, second))
-	require.NoError(t, m.SendDataTrackMessage([]byte("old")))
+	require.NoError(t, m.SendDataTrackMessage([]byte("old"), 128))
 	require.NoError(t, m.attach(next.Generation, next.AttachmentToken, second))
 	require.EqualValues(t, 1, first.closed.Load())
 	m.detach(info.Generation, func() { panic("stale disconnect") })
 	require.True(t, (&ParticipantImpl{moq: &m}).IsMoQAttachmentCurrent(next.Generation))
-	require.NoError(t, m.SendDataTrackMessage([]byte("new")))
+	require.NoError(t, m.SendDataTrackMessage([]byte("new"), 128))
 	require.EqualValues(t, 1, first.packets.Load())
 	require.EqualValues(t, 1, second.packets.Load())
 	m.detach(next.Generation, func() { panic("resume window unexpectedly expired") })
 	require.False(t, (&ParticipantImpl{moq: &m}).IsMoQAttachmentCurrent(m.generation))
 	require.True(t, m.everConnected())
-	require.ErrorIs(t, m.SendDataTrackMessage(nil), ErrDataChannelUnavailable)
+	require.ErrorIs(t, m.SendDataTrackMessage(nil, 128), ErrDataChannelUnavailable)
 	resume := m.issue(info.Endpoint, info.ParticipantSid)
 	third := &testMoQTransport{}
 	require.NoError(t, m.attach(resume.Generation, resume.AttachmentToken, third))

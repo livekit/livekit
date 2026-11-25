@@ -38,6 +38,8 @@ type moqPeer struct {
 	catalog            *session.Request
 	uploads            map[livekit.TrackID]*session.Request
 	downloads          map[uint16]*dataDownload
+	dataReady          chan struct{}
+	dataSequence       uint64
 	catalogGroup       atomic.Uint64
 	inflight           *semaphore.Weighted
 	mediaSubscriptions map[livekit.TrackID]livekit.TrackType
@@ -58,6 +60,7 @@ func (e *Endpoint) Serve(ctx context.Context, conn *quic.Conn) {
 		conn: conn, lookup: e.lookup, inflight: semaphore.NewWeighted(16 << 20),
 		uploads:   make(map[livekit.TrackID]*session.Request),
 		downloads: make(map[uint16]*dataDownload),
+		dataReady: make(chan struct{}, 1),
 	}
 	sess, err := session.New(session.FromQUIC(conn), session.Options{
 		Codec: c, Role: session.RoleServer, Handler: peer, OnSetup: peer.authenticate,
@@ -73,6 +76,7 @@ func (e *Endpoint) Serve(ctx context.Context, conn *quic.Conn) {
 	stop := context.AfterFunc(ctx, peer.Close)
 	defer stop()
 	if err = sess.Start(ctx); err == nil {
+		peer.writeData(sess.Context())
 		<-sess.Done()
 	}
 	peer.mu.Lock()
@@ -125,7 +129,7 @@ func (p *moqPeer) HandleRequest(r *session.Request) {
 		if p.ownNamespace(req.Track) {
 			name := string(req.Track.Name)
 			if sid, ok := strings.CutPrefix(name, "dt/up/"); ok {
-				if p.conn.ConnectionState().SupportsDatagrams.Local && p.acceptDataUpload(r, livekit.TrackID(sid)) {
+				if p.conn.ConnectionState().SupportsDatagrams.Local && p.acceptDataUpload(r, livekit.TrackID(sid), req.TrackProperties.PublisherPriority()) {
 					return
 				}
 			} else if p.acceptMedia(r, name) {
@@ -145,7 +149,7 @@ func (p *moqPeer) HandleRequest(r *session.Request) {
 			}
 			name := string(req.Track.Name)
 			if sid, ok := strings.CutPrefix(name, "dt/down/"); ok {
-				if p.conn.ConnectionState().SupportsDatagrams.Remote && p.serveData(r, livekit.TrackID(sid)) {
+				if p.conn.ConnectionState().SupportsDatagrams.Remote && p.serveData(r, livekit.TrackID(sid), req.Params.SubscriberPriorityOr(message.DefaultSubscriberPriority)) {
 					return
 				}
 			} else if p.serveMedia(r, name) {

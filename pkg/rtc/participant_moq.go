@@ -158,7 +158,7 @@ func (p *ParticipantImpl) DetachMoQ(generation uint64) {
 }
 
 // ReceiveMoQDataTrack delivers data through the same handle and permission checks as WebRTC.
-func (p *ParticipantImpl) ReceiveMoQDataTrack(generation uint64, track types.DataTrack, data []byte, at int64) {
+func (p *ParticipantImpl) ReceiveMoQDataTrack(generation uint64, track types.DataTrack, data []byte, at int64, priority uint8) {
 	if !p.IsMoQAttachmentCurrent(generation) || p.IsClosed() || !p.CanPublishData() || p.GetPublishedDataTrack(track.PubHandle()) != track {
 		return
 	}
@@ -166,7 +166,7 @@ func (p *ParticipantImpl) ReceiveMoQDataTrack(generation uint64, track types.Dat
 	if err := packet.Unmarshal(data); err != nil || packet.Handle != track.PubHandle() {
 		return
 	}
-	track.HandlePacket(data, &packet, at)
+	track.HandlePacket(data, &packet, at, priority)
 	p.listener().OnDataTrackMessage(p, data, &packet)
 }
 
@@ -201,14 +201,14 @@ func (m *moqAttachment) pathQuality() (float32, livekit.ConnectionQuality) {
 	return connectionquality.MaxMOS, livekit.ConnectionQuality_EXCELLENT
 }
 
-func (m *moqAttachment) SendDataTrackMessage(b []byte) error {
+func (m *moqAttachment) SendDataTrackMessage(b []byte, priority uint8) error {
 	m.mu.Lock()
 	t := m.active
 	m.mu.Unlock()
 	if t == nil {
 		return ErrDataChannelUnavailable
 	}
-	return t.SendDataTrackMessage(b)
+	return t.SendDataTrackMessage(b, priority)
 }
 
 // UsesMoQ reports the transport selected at WebSocket join.
