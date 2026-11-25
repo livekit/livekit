@@ -31,7 +31,7 @@ require (
 	github.com/olekukonko/tablewriter v1.1.5
 	github.com/ory/dockertest/v4 v4.0.1
 	github.com/pion/datachannel v1.6.4
-	github.com/pion/dtls/v4 v4.0.0-rc.8
+	github.com/pion/dtls/v4 v4.0.1
 	github.com/pion/ice/v4 v4.4.8
 	github.com/pion/interceptor v0.1.51
 	github.com/pion/rtcp v1.2.20
