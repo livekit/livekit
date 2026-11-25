@@ -836,6 +836,45 @@ func TestConfigureAudioTransceiver(t *testing.T) {
 	}
 }
 
+func TestConfigureReceiverCodecsKeepsPreferredRTX(t *testing.T) {
+	for _, comply := range []bool{true, false} {
+		t.Run(fmt.Sprintf("complies=%v", comply), func(t *testing.T) {
+			var me webrtc.MediaEngine
+			require.NoError(t, registerCodecs(&me, []*livekit.Codec{
+				{Mime: mime.MimeTypeVP8.String()},
+				{Mime: mime.MimeTypeH264.String()},
+				{Mime: mime.MimeTypeRTX.String()},
+			}, RTCPFeedbackConfig{}, false))
+			pc, err := webrtc.NewAPI(webrtc.WithMediaEngine(&me)).NewPeerConnection(webrtc.Configuration{})
+			require.NoError(t, err)
+			defer pc.Close()
+			tr, err := pc.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionRecvonly})
+			require.NoError(t, err)
+
+			configureReceiverCodecs(tr, mime.MimeTypeVP8.String(), comply)
+
+			var vp8PT webrtc.PayloadType
+			var hasH264, hasVP8RTX bool
+			for _, c := range tr.Receiver().GetParameters().Codecs {
+				switch {
+				case mime.IsMimeTypeStringVP8(c.MimeType):
+					vp8PT = c.PayloadType
+				case mime.IsMimeTypeStringH264(c.MimeType):
+					hasH264 = true
+				}
+			}
+			for _, c := range tr.Receiver().GetParameters().Codecs {
+				if mime.IsMimeTypeStringRTX(c.MimeType) && c.SDPFmtpLine == fmt.Sprintf("apt=%d", vp8PT) {
+					hasVP8RTX = true
+				}
+			}
+			require.NotZero(t, vp8PT)
+			require.True(t, hasVP8RTX, "RTX of the preferred codec")
+			require.Equal(t, comply, hasH264, "other codecs only when the client follows the answer order")
+		})
+	}
+}
+
 // When answering a subscriber offer, the sender's audio payload type must echo
 // the payload type the offer assigned (RFC 3264), otherwise Firefox decodes no
 // audio. See https://github.com/livekit/livekit/issues/4599.
