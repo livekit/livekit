@@ -287,14 +287,14 @@ func (t *MediaTrack) getReceiverLBThreshold() int {
 }
 
 // AddReceiver adds a new RTP receiver to the track, returns true when receiver represents a new codec
-// and if a receiver was added successfully
-func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRemote, mid string) (bool, bool) {
+// and an error when the receiver could not be added
+func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRemote, mid string) (bool, error) {
 	var newCodec bool
 	ssrc := uint32(track.SSRC())
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(ssrc)
 	if buff == nil || rtcpReader == nil {
 		t.params.Logger.Errorw("could not retrieve buffer pair", nil)
-		return newCodec, false
+		return newCodec, ErrReceiverNoBuffer
 	}
 
 	var lastRR uint32
@@ -359,7 +359,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			"trackInfo", logger.Proto(ti),
 		)
 		t.addReceiverLock.Unlock()
-		return newCodec, false
+		return newCodec, ErrReceiverNegativeLayer
 	}
 
 	t.params.Logger.Debugw(
@@ -403,7 +403,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 				"track", logger.Proto(ti),
 			)
 			t.addReceiverLock.Unlock()
-			return newCodec, false
+			return newCodec, ErrReceiverCodecNotFound
 		}
 
 		newWR := sfu.NewWebRTCReceiver(
@@ -542,7 +542,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			"newCodec", newCodec,
 		)
 		buff.Close()
-		return newCodec, false
+		return newCodec, err
 	}
 
 	var expectedBitrate int
@@ -559,7 +559,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			"newCodec", newCodec,
 		)
 		buff.Close()
-		return newCodec, false
+		return newCodec, err
 	}
 
 	t.MediaTrackReceiver.MaybeSetSimulcast()
@@ -600,7 +600,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			stats,
 		)
 	})
-	return newCodec, true
+	return newCodec, nil
 }
 
 func (t *MediaTrack) GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality) {

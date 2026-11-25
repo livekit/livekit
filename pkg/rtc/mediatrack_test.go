@@ -17,11 +17,15 @@ package rtc
 import (
 	"testing"
 
+	"github.com/pion/transport/v5/packetio"
+	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 func TestTrackInfo(t *testing.T) {
@@ -194,4 +198,51 @@ func TestGetQualityForDimension(t *testing.T) {
 		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(mime.MimeTypeH264, 1200, 800))
 	})
 
+}
+
+type codecOnlyTrackRemote struct {
+	codec webrtc.RTPCodecParameters
+}
+
+func (r *codecOnlyTrackRemote) ID() string                       { return "webrtc-track" }
+func (r *codecOnlyTrackRemote) RID() string                      { return "" }
+func (r *codecOnlyTrackRemote) Msid() string                     { return "" }
+func (r *codecOnlyTrackRemote) SSRC() webrtc.SSRC                { return 1234 }
+func (r *codecOnlyTrackRemote) RtxSSRC() webrtc.SSRC             { return 0 }
+func (r *codecOnlyTrackRemote) StreamID() string                 { return "stream" }
+func (r *codecOnlyTrackRemote) Kind() webrtc.RTPCodecType        { return webrtc.RTPCodecTypeVideo }
+func (r *codecOnlyTrackRemote) Codec() webrtc.RTPCodecParameters { return r.codec }
+func (r *codecOnlyTrackRemote) RTCTrack() *webrtc.TrackRemote    { return nil }
+
+func TestAddReceiverCodecNotInTrackInfo(t *testing.T) {
+	bufferFactory := buffer.NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+	bufferFactory.GetOrNew(packetio.RTPBufferPacket, 1234)
+	bufferFactory.GetOrNew(packetio.RTCPBufferPacket, 1234)
+
+	mt := NewMediaTrack(MediaTrackParams{
+		BufferFactory:      bufferFactory,
+		Logger:             logger.GetLogger(),
+		ShouldRegressCodec: func() bool { return false },
+	}, &livekit.TrackInfo{
+		Sid:  "TR_video",
+		Type: livekit.TrackType_VIDEO,
+		Codecs: []*livekit.SimulcastCodecInfo{
+			{MimeType: mime.MimeTypeH264.String()},
+			{MimeType: mime.MimeTypeVP8.String()},
+		},
+	})
+
+	// the client sends a codec that the track did not list
+	_, err := mt.AddReceiver(nil, &codecOnlyTrackRemote{
+		codec: webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: mime.MimeTypeH265.String(), ClockRate: 90000},
+			PayloadType:        49,
+		},
+	}, "0")
+	require.ErrorIs(t, err, ErrReceiverCodecNotFound)
+	require.Empty(t, mt.Receivers())
+	require.True(t, isTrackUnforwardable(mt, err))
+
+	// a failure that affects only one layer does not make the track unforwardable
+	require.False(t, isTrackUnforwardable(mt, ErrReceiverNegativeLayer))
 }

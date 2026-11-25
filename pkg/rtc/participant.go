@@ -2519,7 +2519,7 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 	)
 
 	var track sfu.TrackRemote = sfu.NewTrackRemoteFromSdp(rtcTrack, codec)
-	publishedTrack, isNewTrack, isReceiverAdded, sdpRids := p.mediaTrackReceived(track, rtpReceiver)
+	publishedTrack, isNewTrack, receiverErr, sdpRids := p.mediaTrackReceived(track, rtpReceiver)
 	if publishedTrack == nil {
 		p.pubLogger.Debugw(
 			"webrtc track published but can't find MediaTrack in pendingTracks",
@@ -2530,7 +2530,7 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 			"rtxSsrc", track.RtxSSRC(),
 			"mime", mime.NormalizeMimeType(codec.MimeType),
 			"isNewTrack", isNewTrack,
-			"isReceiverAdded", isReceiverAdded,
+			"receiverErr", receiverErr,
 			"sdpRids", logger.StringSlice(sdpRids[:]),
 		)
 		return
@@ -2539,6 +2539,16 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 	if !p.CanPublishSource(publishedTrack.Source()) {
 		p.pubLogger.Warnw("no permission to publish mediaTrack", nil,
 			"source", publishedTrack.Source(),
+		)
+		p.removePublishedTrack(publishedTrack)
+		return
+	}
+
+	if isTrackUnforwardable(publishedTrack, receiverErr) {
+		p.pubLogger.Warnw("unpublishing mediaTrack, received codec is not in track info", receiverErr,
+			"trackID", publishedTrack.ID(),
+			"mime", mime.NormalizeMimeType(codec.MimeType),
+			"trackInfo", logger.Proto(publishedTrack.ToProto()),
 		)
 		p.removePublishedTrack(publishedTrack)
 		return
@@ -2564,7 +2574,7 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 		"mime", mime.NormalizeMimeType(codec.MimeType),
 		"trackInfo", logger.Proto(publishedTrack.ToProto()),
 		"fromSdp", fromSdp,
-		"isReceiverAdded", isReceiverAdded,
+		"receiverErr", receiverErr,
 		"sdpRids", logger.StringSlice(sdpRids[:]),
 	)
 
@@ -3556,7 +3566,7 @@ func (p *ParticipantImpl) setTrackMuted(mute *livekit.MuteTrackRequest, fromAdmi
 func (p *ParticipantImpl) mediaTrackReceived(
 	track sfu.TrackRemote,
 	rtpReceiver *webrtc.RTPReceiver,
-) (*MediaTrack, bool, bool, buffer.VideoLayersRid) {
+) (*MediaTrack, bool, error, buffer.VideoLayersRid) {
 	p.pendingTracksLock.Lock()
 
 	mid := p.TransportManager.GetPublisherMid(rtpReceiver)
@@ -3577,7 +3587,7 @@ func (p *ParticipantImpl) mediaTrackReceived(
 		)
 		p.pendingTracksLock.Unlock()
 		p.pubLogger.Warnw("could not get mid for track", nil, "trackID", track.ID())
-		return nil, false, false, buffer.VideoLayersRid{}
+		return nil, false, nil, buffer.VideoLayersRid{}
 	}
 
 	// use existing media track to handle simulcast
@@ -3597,7 +3607,7 @@ func (p *ParticipantImpl) mediaTrackReceived(
 				"trackID", track.ID(),
 				"mid", mid,
 			)
-			return nil, false, false, buffer.VideoLayersRid{}
+			return nil, false, nil, buffer.VideoLayersRid{}
 		}
 
 		var (
@@ -3611,7 +3621,7 @@ func (p *ParticipantImpl) mediaTrackReceived(
 				&pendingRemoteTrack{track: track.RTCTrack(), receiver: rtpReceiver},
 			)
 			p.pendingTracksLock.Unlock()
-			return nil, false, false, ridsFromSdp
+			return nil, false, nil, ridsFromSdp
 		}
 
 		// check if the migrated track has correct codec
@@ -3637,7 +3647,7 @@ func (p *ParticipantImpl) mediaTrackReceived(
 				)
 				p.pendingTracksLock.Unlock()
 				p.IssueFullReconnect(types.ParticipantCloseReasonMigrateCodecMismatch)
-				return nil, false, false, ridsFromSdp
+				return nil, false, nil, ridsFromSdp
 			}
 		}
 
@@ -3687,9 +3697,10 @@ func (p *ParticipantImpl) mediaTrackReceived(
 	}
 	p.pendingTracksLock.Unlock()
 
-	_, isReceiverAdded := mt.AddReceiver(rtpReceiver, track, mid)
+	_, receiverErr := mt.AddReceiver(rtpReceiver, track, mid)
 
-	if isNewTrack {
+	// a track that cannot forward its codec is unpublished by the caller, do not announce it
+	if isNewTrack && !isTrackUnforwardable(mt, receiverErr) {
 		go func() {
 			// TODO: remove this after we know where the high delay is coming from
 			if pubTime > 3*time.Second {
@@ -3725,7 +3736,7 @@ func (p *ParticipantImpl) mediaTrackReceived(
 		}()
 	}
 
-	return mt, isNewTrack, isReceiverAdded, ridsFromSdp
+	return mt, isNewTrack, receiverErr, ridsFromSdp
 }
 
 func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *MediaTrack {
@@ -4928,4 +4939,10 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 
 func (p *ParticipantImpl) IsWarpEnabled() bool {
 	return p.params.EnableWarp
+}
+
+// isTrackUnforwardable reports a track that has no receiver because its codec is not in the track info,
+// such a track can never be forwarded, unlike a track that missed only one layer
+func isTrackUnforwardable(mt *MediaTrack, receiverErr error) bool {
+	return errors.Is(receiverErr, ErrReceiverCodecNotFound) && len(mt.Receivers()) == 0
 }
