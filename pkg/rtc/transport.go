@@ -300,10 +300,8 @@ type PCTransport struct {
 	negotiateCounter          atomic.Int32
 	signalStateCheckTimer     *time.Timer
 	currentOfferIceCredential string // ice user:pwd, for publish side ice restart checking
-	pendingRestartIceOffer    *webrtc.SessionDescription
-	// parsed forms kept so that a remote description is parsed once per negotiation
-	pendingRestartIceOfferParsed *sdp.SessionDescription
-	remoteOfferParsed            *sdp.SessionDescription
+	// parsed form kept so that a remote description is parsed once per negotiation
+	remoteOfferParsed *sdp.SessionDescription
 }
 
 type TransportParams struct {
@@ -412,7 +410,6 @@ func newPeerConnection(
 	//
 	se.DisableSRTPReplayProtection(true)
 	se.DisableSRTCPReplayProtection(true)
-	iceLite := params.Config.ICELite
 	if !params.ProtocolVersion.SupportsICELite() || !params.ClientInfo.SupportsPrflxOverRelay() {
 		// if client don't support prflx over relay which is only Firefox, disable ICE Lite to ensure that
 		// aggressive nomination is handled properly. Firefox does aggressive nomination even if peer is
@@ -422,9 +419,8 @@ func newPeerConnection(
 		// ending up with different candidates.
 		// As Firefox does not support migration, ICE Lite can be disabled.
 		se.SetLite(false)
-		iceLite = false
 	}
-	if iceLite && params.ClientInfo.SupportsAnswerDTLSRoleServer() {
+	if params.ClientInfo.SupportsAnswerDTLSRoleServer() {
 		_ = se.SetAnsweringDTLSRole(webrtc.DTLSRoleServer)
 	}
 	// ICE checks already prove the remote address, so the HelloVerifyRequest cookie only adds a round trip.
@@ -494,6 +490,7 @@ func newPeerConnection(
 		// sfu only use interceptor to send XR but don't read response from it (use buffer instead),
 		// so use a empty callback here
 		ir.Add(lkinterceptor.NewRTTFromXRFactory(func(rtt uint32) {}))
+		se.SetLite(false)
 	}
 	if len(params.SimTracks) > 0 {
 		f, err := sfuinterceptor.NewUnhandleSimulcastInterceptorFactory(sfuinterceptor.UnhandleSimulcastTracks(params.Logger, params.SimTracks))
@@ -978,7 +975,7 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 				n, _, err := rawDC.ReadDataChannel(buffer)
 				if err != nil {
 					if !errors.Is(err, io.EOF) && !strings.Contains(err.Error(), "state=Closed") {
-						t.params.Logger.Warnw("error reading data channel", err, "label", dc.Label())
+						t.params.Logger.Debugw("error reading data channel", "error", err, "label", dc.Label())
 					}
 					return
 				}
@@ -1355,7 +1352,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 				n, _, err := rawDC.ReadDataChannel(buffer)
 				if err != nil {
 					if !errors.Is(err, io.EOF) && !strings.Contains(err.Error(), "state=Closed") {
-						t.params.Logger.Warnw("error reading data channel", err, "label", dc.Label())
+						t.params.Logger.Debugw("error reading data channel", "error", err, "label", dc.Label())
 					}
 					return
 				}
@@ -1408,7 +1405,7 @@ func (t *PCTransport) CreateReadableDataChannel(label string, dci *webrtc.DataCh
 				n, _, err := rawDC.ReadDataChannel(buffer)
 				if err != nil {
 					if !errors.Is(err, io.EOF) && !strings.Contains(err.Error(), "state=Closed") {
-						t.params.Logger.Warnw("error reading data channel", err, "label", dc.Label())
+						t.params.Logger.Debugw("error reading data channel", "error", err, "label", dc.Label())
 					}
 					return
 				}
@@ -2379,9 +2376,8 @@ func (t *PCTransport) postEvent(e event) {
 func (t *PCTransport) handleICEGatheringComplete(_ event) error {
 	if t.params.IsOfferer {
 		return t.handleICEGatheringCompleteOfferer()
-	} else {
-		return t.handleICEGatheringCompleteAnswerer()
 	}
+	return nil
 }
 
 func (t *PCTransport) handleICEGatheringCompleteOfferer() error {
@@ -2392,27 +2388,6 @@ func (t *PCTransport) handleICEGatheringCompleteOfferer() error {
 	t.params.Logger.Debugw("restarting ICE after ICE gathering")
 	t.restartAfterGathering = false
 	return t.doICERestart()
-}
-
-func (t *PCTransport) handleICEGatheringCompleteAnswerer() error {
-	if t.pendingRestartIceOffer == nil {
-		return nil
-	}
-
-	offer := *t.pendingRestartIceOffer
-	parsed := t.pendingRestartIceOfferParsed
-	t.pendingRestartIceOffer = nil
-	t.pendingRestartIceOfferParsed = nil
-
-	t.params.Logger.Debugw("accept remote restart ice offer after ICE gathering")
-
-	if err := t.setRemoteDescription(offer, parsed); err != nil {
-		return err
-	}
-	t.params.Handler.OnSetRemoteDescriptionOffer()
-	t.processSendersPendingConfig(offerAudioPayloadTypes(parsed))
-
-	return t.createAndSendAnswer()
 }
 
 func (t *PCTransport) localDescriptionSent() error {
@@ -2950,15 +2925,8 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, p
 		return errors.Wrap(err, "check remote offer restart ice failed")
 	}
 
-	if offerRestartICE && t.pendingRestartIceOffer == nil {
+	if offerRestartICE {
 		t.clearLocalDescriptionSent()
-	}
-
-	if offerRestartICE && t.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
-		t.params.Logger.Debugw("remote offer restart ice while ice gathering")
-		t.pendingRestartIceOffer = sd
-		t.pendingRestartIceOfferParsed = parsed
-		return nil
 	}
 
 	if offerRestartICE && t.resetShortConnOnICERestart.CompareAndSwap(true, false) {
@@ -3457,6 +3425,16 @@ func configureReceiverCodecs(
 		if compliesWithCodecOrderInSDPAnswer {
 			reorderedCodecs = append(reorderedCodecs, leftCodecs...)
 		} else {
+			// keep the RTX of each preferred codec, so retransmissions stay on their own stream
+			preferredApts := make(map[string]bool, len(preferredCodecs))
+			for _, c := range preferredCodecs {
+				preferredApts[fmt.Sprintf("apt=%d", c.PayloadType)] = true
+			}
+			for _, c := range leftCodecs {
+				if mime.IsMimeTypeStringRTX(c.RTPCodecCapability.MimeType) && preferredApts[c.SDPFmtpLine] {
+					reorderedCodecs = append(reorderedCodecs, c)
+				}
+			}
 			// flexfec applies to whichever video codec is negotiated, retain
 			// it even when trimming to the preferred codec
 			for _, c := range leftCodecs {

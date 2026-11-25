@@ -242,3 +242,42 @@ func TestIngressLimits(t *testing.T) {
 		require.Equal(t, 1, store.UpdateIngressCallCount())
 	})
 }
+
+// Without redis there is no ingress store (see getIngressStore), but there is an
+// ingress client, on the local message bus. Every ingress API must answer
+// ErrIngressNotConnected there instead of reaching for the store.
+func TestIngressAPIWithoutStore(t *testing.T) {
+	svc := service.NewIngressServiceWithIngressLauncher(
+		&config.IngressConfig{},
+		config.LimitConfig{},
+		"nodeID",
+		nil,
+		unusedIngressClient{},
+		nil,
+		&servicefakes.FakeIOClient{},
+		&telemetryfakes.FakeTelemetryService{},
+		&servicefakes.FakeIngressLauncher{},
+	)
+
+	adminCtx := service.WithGrants(context.Background(), &auth.ClaimGrants{Video: &auth.VideoGrant{IngressAdmin: true}}, "")
+
+	t.Run("CreateIngress", func(t *testing.T) {
+		_, err := svc.CreateIngress(adminCtx, &livekit.CreateIngressRequest{InputType: livekit.IngressInput_RTMP_INPUT})
+		require.ErrorIs(t, err, service.ErrIngressNotConnected)
+	})
+
+	t.Run("ListIngress", func(t *testing.T) {
+		_, err := svc.ListIngress(adminCtx, &livekit.ListIngressRequest{})
+		require.ErrorIs(t, err, service.ErrIngressNotConnected)
+	})
+
+	t.Run("UpdateIngress", func(t *testing.T) {
+		_, err := svc.UpdateIngress(adminCtx, &livekit.UpdateIngressRequest{IngressId: "IN_test"})
+		require.ErrorIs(t, err, service.ErrIngressNotConnected)
+	})
+
+	t.Run("DeleteIngress", func(t *testing.T) {
+		_, err := svc.DeleteIngress(adminCtx, &livekit.DeleteIngressRequest{IngressId: "IN_test"})
+		require.ErrorIs(t, err, service.ErrIngressNotConnected)
+	})
+}

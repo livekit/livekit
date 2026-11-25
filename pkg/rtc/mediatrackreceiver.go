@@ -618,22 +618,27 @@ func (t *MediaTrackReceiver) removeAllSubscribersForMime(mime mime.MimeType, isE
 }
 
 func (t *MediaTrackReceiver) RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity {
-	var revokedSubscriberIdentities []livekit.ParticipantIdentity
+	subTracks := t.MediaTrackSubscriptions.getAllSubscribedTracks()
+	if len(subTracks) == 0 {
+		return nil
+	}
 
-	// LK-TODO: large number of subscribers needs to be solved for this loop
-	for _, subTrack := range t.MediaTrackSubscriptions.getAllSubscribedTracks() {
+	allowedSet := buildAllowedSubscriberSet(len(subTracks), allowedSubscriberIdentities)
+
+	var revokedSubscriberIdentities []livekit.ParticipantIdentity
+	for _, subTrack := range subTracks {
 		if IsParticipantExemptFromTrackPermissionsRestrictions(subTrack.Subscriber()) {
 			continue
 		}
 
-		found := slices.Contains(allowedSubscriberIdentities, subTrack.SubscriberIdentity())
-		if !found {
+		subIdentity := subTrack.SubscriberIdentity()
+		if !isSubscriberAllowed(allowedSubscriberIdentities, allowedSet, subIdentity) {
 			t.params.Logger.Infow("revoking subscription",
-				"subscriber", subTrack.SubscriberIdentity(),
+				"subscriber", subIdentity,
 				"subscriberID", subTrack.SubscriberID(),
 			)
 			t.RemoveSubscriber(subTrack.SubscriberID(), false)
-			revokedSubscriberIdentities = append(revokedSubscriberIdentities, subTrack.SubscriberIdentity())
+			revokedSubscriberIdentities = append(revokedSubscriberIdentities, subIdentity)
 		}
 	}
 

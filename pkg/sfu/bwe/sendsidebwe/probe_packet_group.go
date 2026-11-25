@@ -107,7 +107,7 @@ func (p *probePacketGroup) MaybeFinalizeProbe(maxSequenceNumber uint64, rtt floa
 	if settleWait > p.params.Config.SettleWaitMax {
 		settleWait = p.params.Config.SettleWaitMax
 	}
-	if time.Since(p.doneAt) < settleWait {
+	if mono.Now().Sub(p.doneAt) < settleWait {
 		return ccutils.ProbeClusterInfoInvalid, false
 	}
 

@@ -176,7 +176,8 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 		u.subscriptionPermissionVersion.Update(timedVersion)
 	} else {
 		// for requests coming from the current node, use local versions
-		u.subscriptionPermissionVersion.Update(u.params.VersionGenerator.Next())
+		// Advance past remote versions even when the local clock is behind.
+		u.subscriptionPermissionVersion.Update(max(u.params.VersionGenerator.Next(), u.subscriptionPermissionVersion.Next()))
 	}
 
 	// store as is for use when migrating

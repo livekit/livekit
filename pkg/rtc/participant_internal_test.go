@@ -16,6 +16,7 @@ package rtc
 
 import (
 	"fmt"
+	"net"
 	"regexp"
 	"runtime"
 	"slices"
@@ -47,6 +48,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
+	rtcsignalling "github.com/livekit/livekit-server/pkg/rtc/signalling"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 	"github.com/livekit/livekit-server/pkg/testutils"
@@ -113,6 +115,24 @@ func TestPublishCodecFallbackSkipsRTX(t *testing.T) {
 		alt := selectAlternativeVideoCodec(p.enabledPublishCodecs)
 		require.False(t, mime.IsMimeTypeStringRTX(alt), "fallback must not be rtx, got %q", alt)
 		require.Equal(t, mime.MimeTypeVP8.String(), alt)
+	})
+}
+
+func TestSupportsTransceiverReuse(t *testing.T) {
+	// Browser / Os values are what the server's user agent parser sets for desktop Safari
+	safari := &livekit.ClientInfo{Browser: "Safari", Os: "Mac OS X"}
+	track := &typesfakes.FakeMediaTrack{}
+
+	// a one shot client, i. e. WHIP, cannot negotiate again, so the transceivers of its offer are
+	// the only place for a subscribed track, also on a client that does not re-use otherwise
+	t.Run("one shot signalling re-uses on Safari", func(t *testing.T) {
+		p := newParticipantForTestWithOpts("test", &participantOpts{clientInfo: safari, oneShot: true})
+		require.True(t, p.SupportsTransceiverReuse(track))
+	})
+
+	t.Run("regular signalling does not re-use on Safari", func(t *testing.T) {
+		p := newParticipantForTestWithOpts("test", &participantOpts{clientInfo: safari})
+		require.False(t, p.SupportsTransceiverReuse(track))
 	})
 }
 
@@ -625,6 +645,64 @@ func TestDisconnectTiming(t *testing.T) {
 		// close channel and then try to Negotiate
 		msg.Close()
 	})
+}
+
+// a second Close returns while the first runs the close callbacks; CloseDone waits for them
+func TestCloseDone(t *testing.T) {
+	p := newParticipantForTest("test")
+	inCallback, release := make(chan struct{}), make(chan struct{})
+	p.AddOnClose("test", func(types.LocalParticipant) {
+		close(inCallback)
+		<-release
+	})
+	go func() { _ = p.Close(false, types.ParticipantCloseReasonClientRequestLeave, false) }()
+	<-inCallback
+
+	require.NoError(t, p.Close(false, types.ParticipantCloseReasonRoomClosed, false))
+	select {
+	case <-p.CloseDone():
+		t.Fatal("close done before its callbacks finished")
+	default:
+	}
+
+	close(release)
+	select {
+	case <-p.CloseDone():
+	case <-time.After(time.Second):
+		t.Fatal("close not done after its callbacks finished")
+	}
+}
+
+func TestCheckMetadataLimitsLKAttributes(t *testing.T) {
+	p := newParticipantForTest("test")
+	p.params.LimitConfig = config.LimitConfig{MaxAttributesSize: 5, MaxLKAttributesSize: 10}
+
+	require.NoError(t, p.checkMetadataLimits("", "", map[string]string{"k": "vvvv", "lk.k": "vvvvvv"}))
+
+	err := p.checkMetadataLimits("", "", map[string]string{"lk.k": "vvvvvvv"})
+	require.Equal(t, errLKAttributesExceedsLimits, err)
+	require.ErrorIs(t, err, rtcsignalling.ErrAttributesExceedsLimits)
+}
+
+func TestUpdateMetadataChecksMergedAttributes(t *testing.T) {
+	p := newParticipantForTest("test")
+	p.params.LimitConfig = config.LimitConfig{MaxAttributesSize: 5, MaxLKAttributesSize: 10}
+
+	// each update fits the lk. limit alone, but the stored total would not
+	require.NoError(t, p.UpdateMetadata(&livekit.UpdateParticipantMetadata{Attributes: map[string]string{"lk.a": "vvvv"}}, true))
+	err := p.UpdateMetadata(&livekit.UpdateParticipantMetadata{Attributes: map[string]string{"lk.b": "vvvv"}}, true)
+	require.ErrorIs(t, err, rtcsignalling.ErrAttributesExceedsLimits)
+	require.Equal(t, map[string]string{"lk.a": "vvvv"}, p.ClaimGrants().Attributes)
+
+	// replacing a key counts its new value only, and an empty value deletes the key
+	require.NoError(t, p.UpdateMetadata(&livekit.UpdateParticipantMetadata{Attributes: map[string]string{"lk.a": "vvvvvv"}}, true))
+	require.NoError(t, p.UpdateMetadata(&livekit.UpdateParticipantMetadata{Attributes: map[string]string{"lk.a": "", "lk.b": "vvvvvv"}}, true))
+	require.Equal(t, map[string]string{"lk.b": "vvvvvv"}, p.ClaimGrants().Attributes)
+
+	// customer attributes accumulate against their own limit the same way
+	require.NoError(t, p.UpdateMetadata(&livekit.UpdateParticipantMetadata{Attributes: map[string]string{"a": "vv"}}, true))
+	err = p.UpdateMetadata(&livekit.UpdateParticipantMetadata{Attributes: map[string]string{"b": "vv"}}, true)
+	require.Equal(t, rtcsignalling.ErrAttributesExceedsLimits, err)
 }
 
 func TestCorrectJoinedAt(t *testing.T) {
@@ -1513,7 +1591,6 @@ func TestMigratingInParticipantWaitsForReconnectResponse(t *testing.T) {
 		require.False(t, p.IsReady())
 
 		require.NoError(t, p.HandleReconnectAndSendResponse(
-			livekit.ReconnectReason_RR_UNKNOWN,
 			&livekit.ReconnectResponse{LastMessageSeq: 21},
 			nil,
 		))
@@ -1539,7 +1616,6 @@ func TestMigratingInParticipantWaitsForReconnectResponse(t *testing.T) {
 		require.Zero(t, sink.WriteMessageCallCount())
 
 		require.NoError(t, p.HandleReconnectAndSendResponse(
-			livekit.ReconnectReason_RR_UNKNOWN,
 			&livekit.ReconnectResponse{},
 			nil,
 		))
@@ -1562,7 +1638,6 @@ func TestMigratingInParticipantWaitsForReconnectResponse(t *testing.T) {
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 
 		require.NoError(t, p.HandleReconnectAndSendResponse(
-			livekit.ReconnectReason_RR_UNKNOWN,
 			&livekit.ReconnectResponse{},
 			nil,
 		))
@@ -1603,7 +1678,6 @@ func TestResumedParticipantWaitsForReconnectResponse(t *testing.T) {
 		require.Zero(t, sink.WriteMessageCallCount())
 
 		require.NoError(t, p.HandleReconnectAndSendResponse(
-			livekit.ReconnectReason_RR_SIGNAL_DISCONNECTED,
 			&livekit.ReconnectResponse{LastMessageSeq: 7},
 			nil,
 		))
@@ -1640,7 +1714,6 @@ func TestResumedParticipantWaitsForReconnectResponse(t *testing.T) {
 		p, sink := newResumedParticipant("1.6.2")
 
 		require.NoError(t, p.HandleReconnectAndSendResponse(
-			livekit.ReconnectReason_RR_SIGNAL_DISCONNECTED,
 			&livekit.ReconnectResponse{},
 			nil,
 		))
@@ -1695,6 +1768,76 @@ func TestLeaveJoinSession(t *testing.T) {
 	p.JoinSession(nil)
 	require.Equal(t, 2, tl.OnTrackUnpublishedCallCount())
 	require.Equal(t, 2, tl.OnTrackPublishedCallCount())
+}
+
+func TestReleasePendingTrackOnUnknownCodec(t *testing.T) {
+	p := newParticipantForTestWithOpts("test", &participantOpts{protocolVersion: 7})
+	sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+
+	camera := p.addPendingTrack(&livekit.AddTrackRequest{Cid: "camera", Name: "camera", Type: livekit.TrackType_VIDEO})
+	require.NotNil(t, camera)
+	p.pendingTracks["camera"].trackInfos[0].Codecs = []*livekit.SimulcastCodecInfo{
+		{MimeType: mime.MimeTypeH264.String(), Cid: "camera"},
+		{MimeType: mime.MimeTypeVP8.String(), Cid: "camera-backup"},
+	}
+
+	// the webrtc track id differs from the signal cid, the camera is the only pending video track to match by type
+	p.pendingTracksLock.Lock()
+	_, ti, _, _, _ := p.getPendingTrack("webrtc-camera", livekit.TrackType_VIDEO, true)
+	p.pendingTracksLock.Unlock()
+	require.NotNil(t, ti)
+	require.Equal(t, camera.Sid, ti.Sid)
+
+	screen := p.addPendingTrack(&livekit.AddTrackRequest{Cid: "screen", Name: "screen", Type: livekit.TrackType_VIDEO})
+	require.NotNil(t, screen)
+
+	p.pendingTracksLock.Lock()
+	// a codec the track lists keeps it pending
+	require.False(t, p.releasePendingTrackOnUnknownCodecLocked("camera", ti, "webrtc-camera", mime.MimeTypeVP8.String()))
+	require.NotNil(t, p.pendingTracks["camera"])
+
+	// a codec the track does not list releases it and tells the client
+	written := sink.WriteMessageCallCount()
+	require.True(t, p.releasePendingTrackOnUnknownCodecLocked("camera", ti, "webrtc-camera", mime.MimeTypeH265.String()))
+	require.Nil(t, p.pendingTracks["camera"])
+	require.Equal(t, written+1, sink.WriteMessageCallCount())
+	res := sink.WriteMessageArgsForCall(written).(*livekit.SignalResponse)
+	require.Equal(t, camera.Sid, res.GetTrackUnpublished().GetTrackSid())
+
+	// a later layer of the same webrtc track does not claim the screen share
+	_, ti, _, _, _ = p.getPendingTrack("webrtc-camera", livekit.TrackType_VIDEO, true)
+	require.Nil(t, ti)
+	require.NotNil(t, p.pendingTracks["screen"])
+	p.pendingTracksLock.Unlock()
+
+	// a corrected publish of the camera clears the webrtc track id too, so its media on the reused transceiver matches it
+	republished := p.addPendingTrack(&livekit.AddTrackRequest{Cid: "camera", Name: "camera", Type: livekit.TrackType_VIDEO})
+	require.NotNil(t, republished)
+	p.pendingTracksLock.Lock()
+	_, ti, _, _, _ = p.getPendingTrack("webrtc-camera", livekit.TrackType_VIDEO, true)
+	p.pendingTracksLock.Unlock()
+	// a released id returns nil before any matching, so a match shows the id was cleared
+	require.NotNil(t, ti)
+}
+
+func TestKeepPendingTrackWithQueuedReplacementOnUnknownCodec(t *testing.T) {
+	p := newParticipantForTestWithOpts("test", &participantOpts{protocolVersion: 7})
+
+	camera := p.addPendingTrack(&livekit.AddTrackRequest{Cid: "camera", Name: "camera", Type: livekit.TrackType_VIDEO})
+	require.NotNil(t, camera)
+	p.pendingTracks["camera"].trackInfos[0].Codecs = []*livekit.SimulcastCodecInfo{
+		{MimeType: mime.MimeTypeH264.String(), Cid: "camera"},
+	}
+	// a second request for the same cid is queued behind the pending one
+	require.Nil(t, p.addPendingTrack(&livekit.AddTrackRequest{Cid: "camera", Name: "camera", Type: livekit.TrackType_VIDEO}))
+	require.Len(t, p.pendingTracks["camera"].trackInfos, 2)
+
+	p.pendingTracksLock.Lock()
+	defer p.pendingTracksLock.Unlock()
+	ti := p.pendingTracks["camera"].trackInfos[0]
+	require.False(t, p.releasePendingTrackOnUnknownCodecLocked("camera", ti, "webrtc-camera", mime.MimeTypeH265.String()))
+	require.Len(t, p.pendingTracks["camera"].trackInfos, 2)
+	require.False(t, p.isReleasedTrackCidLocked("webrtc-camera"))
 }
 
 const (
@@ -1824,6 +1967,43 @@ func TestUpdateVideoTrackWritesPendingUnderWriteLock(t *testing.T) {
 	p, sid := newParticipantWithPendingTrack(t, livekit.TrackType_VIDEO)
 	raceOnPendingTrack(func() {
 		p.UpdateVideoTrack(&livekit.UpdateLocalVideoTrack{TrackSid: sid, Width: 1280, Height: 720})
+	})
+}
+
+func TestUpdateTrackOfOtherKindLeavesPendingTrackUnchanged(t *testing.T) {
+	pendingInfo := func(p *ParticipantImpl) *livekit.TrackInfo {
+		return p.pendingTracks[pendingTrackCid].trackInfos[0]
+	}
+
+	t.Run("video update on an audio track", func(t *testing.T) {
+		p, sid := newParticipantWithPendingTrack(t, livekit.TrackType_AUDIO)
+		before := proto.CloneOf(pendingInfo(p))
+		require.Error(t, p.UpdateVideoTrack(&livekit.UpdateLocalVideoTrack{TrackSid: sid, Width: 1920, Height: 1080}))
+		require.True(t, proto.Equal(before, pendingInfo(p)), "pending audio track changed: %v", pendingInfo(p))
+	})
+
+	t.Run("audio update on a video track", func(t *testing.T) {
+		p, sid := newParticipantWithPendingTrack(t, livekit.TrackType_VIDEO)
+		before := proto.CloneOf(pendingInfo(p))
+		require.Error(t, p.UpdateAudioTrack(&livekit.UpdateLocalAudioTrack{
+			TrackSid: sid,
+			Features: []livekit.AudioTrackFeature{livekit.AudioTrackFeature_TF_STEREO, livekit.AudioTrackFeature_TF_NO_DTX},
+		}))
+		require.True(t, proto.Equal(before, pendingInfo(p)), "pending video track changed: %v", pendingInfo(p))
+	})
+
+	t.Run("update of the same kind still applies", func(t *testing.T) {
+		p, sid := newParticipantWithPendingTrack(t, livekit.TrackType_VIDEO)
+		require.NoError(t, p.UpdateVideoTrack(&livekit.UpdateLocalVideoTrack{TrackSid: sid, Width: 1920, Height: 1080}))
+		require.Equal(t, uint32(1920), pendingInfo(p).Width)
+		require.Equal(t, uint32(1080), pendingInfo(p).Height)
+
+		p, sid = newParticipantWithPendingTrack(t, livekit.TrackType_AUDIO)
+		require.NoError(t, p.UpdateAudioTrack(&livekit.UpdateLocalAudioTrack{
+			TrackSid: sid,
+			Features: []livekit.AudioTrackFeature{livekit.AudioTrackFeature_TF_STEREO},
+		}))
+		require.True(t, pendingInfo(p).Stereo)
 	})
 }
 
@@ -1972,4 +2152,53 @@ func TestPerformRpcForwardedResponseTimeout(t *testing.T) {
 			require.Equal(t, c.expected, dp.GetRpcRequest().GetResponseTimeoutMs())
 		})
 	}
+}
+
+func TestICEConfigChangedReportsOnlyLearned(t *testing.T) {
+	p := newParticipantForTest("test")
+	defer p.Close(false, types.ParticipantCloseReasonNone, false)
+
+	var reported []*livekit.ICEConfig
+	p.OnICEConfigChanged(func(_ types.LocalParticipant, iceConfig *livekit.ICEConfig) {
+		reported = append(reported, iceConfig)
+	})
+
+	tls := &livekit.ICEConfig{PreferenceSubscriber: livekit.ICECandidateType_ICT_TLS, PreferencePublisher: livekit.ICECandidateType_ICT_TLS}
+	p.SetICEConfig(tls)
+	require.Empty(t, reported, "explicit config must not be reported as learned")
+	require.Equal(t, livekit.ClientConfigSetting_ENABLED, p.GetClientConfiguration().GetForceRelay())
+
+	tcp := &livekit.ICEConfig{PreferenceSubscriber: livekit.ICECandidateType_ICT_TCP, PreferencePublisher: livekit.ICECandidateType_ICT_TCP}
+	p.TransportManager.configureICE(tcp, false)
+	require.Len(t, reported, 1)
+	require.True(t, proto.Equal(tcp, reported[0]))
+	require.Equal(t, livekit.ClientConfigSetting_UNSET, p.GetClientConfiguration().GetForceRelay())
+
+	// a simulated transport that the node does not offer is not kept for the rejoin
+	p.SimulateICEFallback(tls)
+	require.True(t, proto.Equal(tls, p.GetICEConfig()))
+	p.SimulateICEFallback(tcp)
+	require.True(t, proto.Equal(tcp, p.GetICEConfig()))
+	require.Len(t, reported, 1)
+
+	// the client rejoins after the simulate, so its config is kept like a learned fallback
+	p.params.TURNSEnabled = true
+	p.SimulateICEFallback(tls)
+	require.Len(t, reported, 2)
+	require.True(t, proto.Equal(tls, reported[1]))
+	require.Equal(t, livekit.ClientConfigSetting_ENABLED, p.GetClientConfiguration().GetForceRelay())
+
+	p.params.Config.TCPMuxListener = &net.TCPListener{}
+	p.SimulateICEFallback(tcp)
+	require.Len(t, reported, 3)
+	require.True(t, proto.Equal(tcp, reported[2]))
+
+	// a config equal to the current one is reported too, the cache can be empty
+	p.SimulateICEFallback(tcp)
+	require.Len(t, reported, 4)
+
+	// no preference and an unknown value do not replace a cached fallback
+	p.SimulateICEFallback(&livekit.ICEConfig{})
+	p.SimulateICEFallback(&livekit.ICEConfig{PreferenceSubscriber: 99, PreferencePublisher: 99})
+	require.Len(t, reported, 4)
 }

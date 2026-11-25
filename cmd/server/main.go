@@ -305,6 +305,9 @@ func startServer(ctx context.Context, c *cli.Command) error {
 	if err := prometheus.Init(string(currentNode.NodeID()), currentNode.NodeType(), cpuStatsOpts...); err != nil {
 		return err
 	}
+	if err := prometheus.InitRoomIncludedStats(string(currentNode.NodeID()), currentNode.NodeType(), conf.Prometheus.RoomExcludeRegex); err != nil {
+		return fmt.Errorf("invalid prometheus.room_exclude_regex: %w", err)
+	}
 
 	server, err := service.InitializeServer(conf, currentNode)
 	if err != nil {

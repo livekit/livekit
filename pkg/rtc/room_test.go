@@ -16,6 +16,7 @@ package rtc
 
 import (
 	"fmt"
+	"net"
 	"runtime"
 	"strings"
 	"sync"
@@ -33,6 +34,7 @@ import (
 	"github.com/livekit/livekit-server/version"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -508,6 +510,51 @@ func TestNewTrack(t *testing.T) {
 		// only p1 should've been subscribed to
 		require.Equal(t, 0, p0.SubscribeToTrackCallCount())
 		require.Equal(t, 1, p1.SubscribeToTrackCallCount())
+	})
+
+	// a one-shot signalling participant (WHIP) subscribes synchronously and the track
+	// resolver takes the room lock again; holding it across SubscribeToTrack deadlocks
+	// the room as soon as a writer queues in between
+	t.Run("subscribes without holding the room lock", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 3})
+		lpl := rm.LocalParticipantListener()
+
+		noAutoSub := NewMockParticipant("noAutoSub", types.CurrentProtocol, false, true, lpl)
+		require.NoError(t, rm.Join(noAutoSub, nil, &ParticipantOptions{AutoSubscribe: false}, iceServersForRoom))
+		noAutoSub.StateReturns(livekit.ParticipantInfo_ACTIVE)
+
+		pub := rm.GetParticipant("p0").(*typesfakes.FakeLocalParticipant)
+		subs := []*typesfakes.FakeLocalParticipant{
+			rm.GetParticipant("p1").(*typesfakes.FakeLocalParticipant),
+			rm.GetParticipant("p2").(*typesfakes.FakeLocalParticipant),
+		}
+		var blocked atomic.Int32
+		for _, p := range rm.GetParticipants() {
+			p.(*typesfakes.FakeLocalParticipant).SubscribeToTrackCalls(func(livekit.TrackID, bool) {
+				// a writer has to get through while the subscribe runs
+				acquired := make(chan struct{})
+				go func() {
+					rm.lock.Lock()
+					close(acquired)
+					rm.lock.Unlock()
+				}()
+				select {
+				case <-acquired:
+				case <-time.After(time.Second):
+					blocked.Inc()
+				}
+			})
+		}
+
+		track := NewMockTrack(livekit.TrackType_VIDEO, "webcam")
+		lpl.OnTrackPublished(pub, track)
+
+		for _, sub := range subs {
+			require.Equal(t, 1, sub.SubscribeToTrackCallCount())
+		}
+		require.Equal(t, 0, pub.SubscribeToTrackCallCount())
+		require.Equal(t, 0, noAutoSub.SubscribeToTrackCallCount())
+		require.Zero(t, blocked.Load(), "SubscribeToTrack called with the room lock held")
 	})
 }
 
@@ -1029,4 +1076,149 @@ func TestSyncStateWhileTrackMovesToPublished(t *testing.T) {
 	release()
 	wg.Wait()
 	require.False(t, p.IsClosed(), "resume forced a full reconnect for a track that moved to published")
+}
+
+func TestParticipantEgressGuardOnRemove(t *testing.T) {
+	setGuards := func(rm *Room, identity livekit.ParticipantIdentity) {
+		rm.lock.Lock()
+		rm.hasPublished[identity] = true
+		rm.launchedParticipantEgress[identity] = true
+		rm.lock.Unlock()
+	}
+
+	t.Run("duplicate identity eviction keeps the egress guard and clears the publish guard", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
+		p := rm.GetParticipants()[0]
+		setGuards(rm, p.Identity())
+
+		rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonDuplicateIdentity)
+
+		rm.lock.RLock()
+		defer rm.lock.RUnlock()
+		require.True(t, rm.launchedParticipantEgress[p.Identity()])
+		require.False(t, rm.hasPublished[p.Identity()])
+	})
+
+	t.Run("a normal leave clears both guards", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
+		p := rm.GetParticipants()[0]
+		setGuards(rm, p.Identity())
+
+		rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonClientRequestLeave)
+
+		rm.lock.RLock()
+		defer rm.lock.RUnlock()
+		require.False(t, rm.launchedParticipantEgress[p.Identity()])
+		require.False(t, rm.hasPublished[p.Identity()])
+	})
+}
+
+func TestSimulateSwitchCandidateProtocolKeepsConfig(t *testing.T) {
+	rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
+	p := rm.GetParticipants()[0].(*typesfakes.FakeLocalParticipant)
+
+	require.NoError(t, rm.onSimulateScenario(p, &livekit.SimulateScenario{
+		Scenario: &livekit.SimulateScenario_SwitchCandidateProtocol{SwitchCandidateProtocol: livekit.CandidateProtocol_TLS},
+	}))
+
+	// the client rejoins after the simulate, so the config must be reported for that join
+	require.Equal(t, 1, p.SimulateICEFallbackCallCount())
+	iceConfig := p.SimulateICEFallbackArgsForCall(0)
+	require.Equal(t, livekit.ICECandidateType_ICT_TLS, iceConfig.PreferenceSubscriber)
+	require.Equal(t, livekit.ICECandidateType_ICT_TLS, iceConfig.PreferencePublisher)
+}
+
+func TestResumeUsesFallbackLearnedOnReconnect(t *testing.T) {
+	const (
+		none = livekit.ICECandidateType_ICT_NONE
+		tcp  = livekit.ICECandidateType_ICT_TCP
+		tls  = livekit.ICECandidateType_ICT_TLS
+	)
+	cases := []struct {
+		name string
+		// connection type of the pair that failed right after it connected
+		failed      types.ICEConnectionType
+		tcpListener bool
+		turns       bool
+		// the server saw the failure and chose the fallback before the client resumed
+		serverSawFailure bool
+		expected         livekit.ICECandidateType
+	}{
+		{"TCP failure reported by the client", types.ICEConnectionTypeTCP, true, true, false, tls},
+		{"UDP failure reported by the client", types.ICEConnectionTypeUDP, true, true, false, tcp},
+		{"UDP failure reported by the client, no ICE/TCP", types.ICEConnectionTypeUDP, false, true, false, tls},
+		{"UDP failure reported by the client, no ICE/TCP, no TURN/TLS", types.ICEConnectionTypeUDP, false, false, false, none},
+		{"UDP failure seen by the server before the resume", types.ICEConnectionTypeUDP, true, true, true, tcp},
+		{"UDP failure seen by the server before the resume, no ICE/TCP", types.ICEConnectionTypeUDP, false, true, true, tls},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			room := newRoomWithParticipants(t, testRoomOpts{})
+			p := newParticipantForTestWithOpts("resumer", &participantOpts{
+				protocolVersion: 17,
+				clientInfo:      &livekit.ClientInfo{Sdk: livekit.ClientInfo_JS, Version: "2.15.2"},
+			})
+			t.Cleanup(func() { p.Close(false, types.ParticipantCloseReasonNone, false) })
+
+			tm := p.TransportManager
+			tm.params.AllowTCPFallback = true
+			tm.params.TURNSEnabled = c.turns
+			if c.tcpListener {
+				tm.params.Config.TCPMuxListener = &net.TCPListener{}
+			}
+			for _, pc := range []*PCTransport{tm.publisher, tm.subscriber} {
+				pc.connectionDetails.Type = c.failed
+			}
+			tm.subscriber.iceFirstConnectedAt = time.Now()
+			p.UpdateLastSeenSignal()
+
+			// resolves the config like the room manager: the learned fallback, else no preference
+			var learned *livekit.ICEConfig
+			p.OnICEConfigChanged(func(_ types.LocalParticipant, iceConfig *livekit.ICEConfig) { learned = iceConfig })
+			tlsServers := []*livekit.ICEServer{{Urls: []string{"turns:turn.example.com:443?transport=tcp"}}}
+			resolveICE := func() (*livekit.ICEConfig, []*livekit.ICEServer) {
+				iceConfig := &livekit.ICEConfig{}
+				if learned != nil {
+					iceConfig = learned
+				}
+				p.SetICEConfig(iceConfig)
+				if iceConfig.PreferenceSubscriber == tls {
+					return iceConfig, tlsServers
+				}
+				return iceConfig, iceServersForRoom
+			}
+
+			if c.serverSawFailure {
+				tm.handleConnectionFailed(true, c.failed)
+				require.Equal(t, c.expected, learned.GetPreferenceSubscriber())
+			}
+			// the previous signal connection closed before the client resumed
+			p.SetSignalSourceValid(false)
+
+			sink := &routingfakes.FakeMessageSink{}
+			require.NoError(t, room.ResumeParticipant(p, &routingfakes.FakeMessageSource{}, sink, resolveICE, livekit.ReconnectReason_RR_SUBSCRIBER_FAILED))
+
+			var res *livekit.ReconnectResponse
+			for i := range sink.WriteMessageCallCount() {
+				if r := sink.WriteMessageArgsForCall(i).(*livekit.SignalResponse).GetReconnect(); r != nil {
+					res = r
+					break
+				}
+			}
+			require.NotNil(t, res)
+			if c.expected == tls {
+				require.Equal(t, livekit.ClientConfigSetting_ENABLED, res.GetClientConfiguration().GetForceRelay())
+				require.Equal(t, tlsServers, res.IceServers)
+			} else {
+				require.Equal(t, livekit.ClientConfigSetting_UNSET, res.GetClientConfiguration().GetForceRelay())
+				require.Equal(t, iceServersForRoom, res.IceServers)
+			}
+			require.Equal(t, c.expected, p.GetICEConfig().GetPreferenceSubscriber())
+
+			// the publisher has the pair from before the resume, a late failure of it keeps the fallback
+			tm.handleConnectionFailed(true, c.failed)
+			require.Equal(t, c.expected, p.GetICEConfig().GetPreferenceSubscriber())
+			require.Equal(t, c.expected, learned.GetPreferenceSubscriber())
+		})
+	}
 }

@@ -96,7 +96,9 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(limitConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, v2, v3)
+	tokenRevocationStore := getTokenRevocationStore(conf, objectStore)
+	revokeTokenClient := getRevokeTokenClient(conf, tokenRevocationStore)
+	roomService, err := NewRoomService(limitConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, v2, v3, revokeTokenClient)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +160,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, agentDispatchService, egressService, ingressService, sipService, ioInfoService, rtcService, serviceWHIPService, agentWSService, agentWTService, agentEndpointService, keyProvider, router, roomManager, telemetryService, signalServer, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, agentDispatchService, egressService, ingressService, sipService, ioInfoService, rtcService, serviceWHIPService, agentWSService, agentWTService, agentEndpointService, keyProvider, router, roomManager, telemetryService, signalServer, server, tokenRevocationStore, currentNode)
 	if err != nil {
 		return nil, err
 	}
@@ -296,6 +298,27 @@ func getAgentStore(s ObjectStore) AgentStore {
 	default:
 		return nil
 	}
+}
+
+func getTokenRevocationStore(conf *config.Config, s ObjectStore) TokenRevocationStore {
+	if !conf.TokenRevocation.Enabled {
+		return nil
+	}
+	switch store := s.(type) {
+	case *RedisStore:
+		return store
+	case *LocalStore:
+		return store
+	default:
+		return nil
+	}
+}
+
+func getRevokeTokenClient(conf *config.Config, store TokenRevocationStore) RevokeTokenClient {
+	if store == nil {
+		return NilRevokeTokenClient{}
+	}
+	return newStoreRevokeTokenClient(store, conf.TokenRevocation.TTL)
 }
 
 func getIngressConfig(conf *config.Config) *config.IngressConfig {

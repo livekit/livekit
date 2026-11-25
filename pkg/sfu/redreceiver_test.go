@@ -23,8 +23,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/mediatransportutil/pkg/bucket"
 	"github.com/livekit/mediatransportutil/pkg/red"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -505,4 +507,52 @@ func TestExtractPrimaryEncodingForRED(t *testing.T) {
 	}
 
 	verifyPktsEqual(t, pkts, primaryPkts)
+}
+
+func TestRedReceiverReadRTPGeneration(t *testing.T) {
+	codec := webrtc.RTPCodecParameters{
+		RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: "audio/red", ClockRate: 48000, Channels: 2},
+		PayloadType:        63,
+	}
+	r := NewReceiverBase(ReceiverBaseParams{Kind: webrtc.RTPCodecTypeAudio, Codec: codec, Logger: logger.GetLogger()},
+		&livekit.TrackInfo{Type: livekit.TrackType_AUDIO}, ReceiverCodecStateNormal)
+	t.Cleanup(func() { r.Close("test", true) })
+	b := buffer.NewBuffer(123, 100, 100)
+	require.NoError(t, b.Bind(webrtc.RTPParameters{Codecs: []webrtc.RTPCodecParameters{codec}}, codec.RTPCodecCapability, 0))
+	r.AddBuffer(b, 0)
+	primary := r.GetPrimaryReceiverForRed()
+	write := func(tail byte) uint64 {
+		raw, err := (&rtp.Packet{
+			Header:  rtp.Header{Version: 2, PayloadType: 63, SSRC: 123, SequenceNumber: 6000, Timestamp: 90000},
+			Payload: []byte{111, tail}, // a RED packet containing only its primary Opus block
+		}).Marshal()
+		require.NoError(t, err)
+		_, err = b.Write(raw)
+		require.NoError(t, err)
+		ep, err := b.ReadExtended(make([]byte, 1500))
+		require.NoError(t, err)
+		defer buffer.ReleaseExtPacket(ep)
+		return ep.StreamGeneration
+	}
+	buf := make([]byte, 1500)
+	old := write(0x11)
+	n, err := primary.ReadRTP(buf, 0, 6000, old)
+	require.NoError(t, err)
+	var pkt rtp.Packet
+	require.NoError(t, pkt.Unmarshal(buf[:n]))
+	require.Equal(t, []byte{0x11}, pkt.Payload)
+
+	b.RestartStream("test")
+	fresh := write(0x22)
+	_, err = primary.ReadRTP(buf, 0, 6000, old)
+	require.ErrorIs(t, err, bucket.ErrPacketMismatch)
+	n, err = primary.ReadRTP(buf, 0, 6000, fresh)
+	require.NoError(t, err)
+	require.NoError(t, pkt.Unmarshal(buf[:n]))
+	require.Equal(t, []byte{0x22}, pkt.Payload)
+
+	// Encoding RED still does not support cache-backed retransmission.
+	encoded := NewRedReceiver(r, utils.DownTrackSpreaderParams{Logger: logger.GetLogger()})
+	_, err = encoded.ReadRTP(buf, 0, 6000, fresh)
+	require.ErrorIs(t, err, bucket.ErrPacketMismatch)
 }

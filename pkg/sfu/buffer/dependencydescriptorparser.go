@@ -111,6 +111,8 @@ type ExtDependencyDescriptor struct {
 	// increase when the stream restarts, clear and reinitialize all dd state includes
 	// attached structure, frame chain, decode target.
 	RestartGeneration int
+	// set on the packet that restarted the stream
+	Restarted bool
 
 	// storage for Descriptor, zeroed with the rest of the struct on release,
 	// a frame with more than 8 frame diffs spills to the heap
@@ -202,6 +204,7 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 	extDD.ExtFrameNum = extFN
 	extDD.Integrity = r.frameChecker.FrameIntegrity(extFN)
 	extDD.RestartGeneration = r.restartGeneration
+	extDD.Restarted = restart
 
 	if ddVal.AttachedStructure != nil {
 		if !ddVal.FirstPacketInFrame {

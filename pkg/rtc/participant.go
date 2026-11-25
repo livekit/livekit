@@ -95,6 +95,8 @@ const (
 
 var (
 	ErrMoveOldClientVersion = psrpc.NewErrorf(psrpc.FailedPrecondition, "participant client version does not support moving")
+
+	errLKAttributesExceedsLimits = fmt.Errorf("%w: lk. attributes", signalling.ErrAttributesExceedsLimits)
 )
 
 // -------------------------------------------------
@@ -238,6 +240,7 @@ type ParticipantParams struct {
 	Country                           string
 	PreferVideoSizeFromMedia          bool
 	UseSinglePeerConnection           bool
+	CandidateProtocol                 livekit.CandidateProtocol
 	EnableDataTracks                  bool
 	EnableRTPStreamRestartDetection   bool
 	ForceBackupCodecPolicySimulcast   bool
@@ -267,6 +270,7 @@ type ParticipantImpl struct {
 
 	state        atomic.Value // livekit.ParticipantInfo_State
 	disconnected chan struct{}
+	closeDone    chan struct{}
 
 	// a migrating in participant resumes on a reconnect response, the client takes it
 	// only as the first message on the resumed signal connection
@@ -387,6 +391,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p := &ParticipantImpl{
 		params:       params,
 		disconnected: make(chan struct{}),
+		closeDone:    make(chan struct{}),
 		pubRTCPQueue: sutils.NewTypedOpsQueue[postRtcpOp](sutils.OpsQueueParams{
 			Name:    "pub-rtcp",
 			MinSize: 64,
@@ -648,6 +653,11 @@ func (p *ParticipantImpl) Disconnected() <-chan struct{} {
 	return p.disconnected
 }
 
+// CloseDone is closed after Close runs its close callbacks, which a second Close does not wait for
+func (p *ParticipantImpl) CloseDone() <-chan struct{} {
+	return p.closeDone
+}
+
 func (p *ParticipantImpl) IsIdle() bool {
 	// check if there are any published tracks that are subscribed
 	for _, t := range p.GetPublishedTracks() {
@@ -705,6 +715,10 @@ func (p *ParticipantImpl) checkMetadataLimits(
 		return signalling.ErrAttributesExceedsLimits
 	}
 
+	if !p.params.LimitConfig.CheckLKAttributesSize(attributes) {
+		return errLKAttributesExceedsLimits
+	}
+
 	return nil
 }
 
@@ -739,7 +753,8 @@ func (p *ParticipantImpl) UpdateMetadata(update *livekit.UpdateParticipantMetada
 		return sendRequestResponse()
 	}
 
-	if err = p.checkMetadataLimits(update.Name, update.Metadata, update.Attributes); err != nil {
+	// shortcut: two concurrent updates can each pass before either is stored, serialize check and store if that matters
+	if err = p.checkMetadataLimits(update.Name, update.Metadata, p.mergedAttributes(update.Attributes)); err != nil {
 		switch err {
 		case signalling.ErrNameExceedsLimits:
 			requestResponse.Reason = livekit.RequestResponse_LIMIT_EXCEEDED
@@ -752,6 +767,10 @@ func (p *ParticipantImpl) UpdateMetadata(update *livekit.UpdateParticipantMetada
 		case signalling.ErrAttributesExceedsLimits:
 			requestResponse.Reason = livekit.RequestResponse_LIMIT_EXCEEDED
 			requestResponse.Message = "exceeds attributes size limit"
+
+		case errLKAttributesExceedsLimits:
+			requestResponse.Reason = livekit.RequestResponse_LIMIT_EXCEEDED
+			requestResponse.Message = "exceeds lk. attributes size limit"
 		}
 		return sendRequestResponse()
 	}
@@ -815,6 +834,26 @@ func (p *ParticipantImpl) SetMetadata(metadata string) {
 	if onClaimsChanged != nil {
 		onClaimsChanged(p)
 	}
+}
+
+// mergedAttributes returns the attributes that SetAttributes(update) would store, so limits check the result
+func (p *ParticipantImpl) mergedAttributes(update map[string]string) map[string]string {
+	if len(update) == 0 {
+		return nil
+	}
+
+	merged := maps.Clone(p.grants.Load().Attributes)
+	if merged == nil {
+		merged = make(map[string]string, len(update))
+	}
+	for k, v := range update {
+		if v == "" {
+			delete(merged, k)
+		} else {
+			merged[k] = v
+		}
+	}
+	return merged
 }
 
 func (p *ParticipantImpl) SetAttributes(attrs map[string]string) {
@@ -1647,6 +1686,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	for _, cb := range onClose {
 		cb(p)
 	}
+	close(p.closeDone)
 
 	// Close peer connections without blocking participant Close. If peer connections are gathering candidates
 	// Close will block.
@@ -1865,6 +1905,36 @@ func (p *ParticipantImpl) ICERestart(iceConfig *livekit.ICEConfig) {
 
 	if err := p.TransportManager.ICERestart(iceConfig); err != nil {
 		p.IssueFullReconnect(types.ParticipantCloseReasonNegotiateFailed)
+	}
+}
+
+// SimulateICEFallback restarts ICE with the config and reports it like a learned fallback, so the rejoin that follows keeps it.
+func (p *ParticipantImpl) SimulateICEFallback(iceConfig *livekit.ICEConfig) {
+	if p.params.UseOneShotSignallingMode {
+		return
+	}
+
+	p.ICERestart(iceConfig)
+
+	// only a transport the node offers stays for the rejoin
+	switch iceConfig.GetPreferenceSubscriber() {
+	case livekit.ICECandidateType_ICT_TCP:
+		if p.params.Config.TCPMuxListener == nil {
+			return
+		}
+	case livekit.ICECandidateType_ICT_TLS:
+		if !p.params.TURNSEnabled {
+			return
+		}
+	default:
+		return
+	}
+
+	p.lock.RLock()
+	onICEConfigChanged := p.onICEConfigChanged
+	p.lock.RUnlock()
+	if onICEConfigChanged != nil {
+		onICEConfigChanged(p, iceConfig)
 	}
 }
 
@@ -2202,7 +2272,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		return err
 	}
 
-	tm.OnICEConfigChanged(func(iceConfig *livekit.ICEConfig) {
+	tm.OnICEConfigChanged(func(iceConfig *livekit.ICEConfig, learned bool) {
 		p.lock.Lock()
 		onICEConfigChanged := p.onICEConfigChanged
 
@@ -2217,7 +2287,8 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		}
 		p.lock.Unlock()
 
-		if onICEConfigChanged != nil {
+		// only learned fallbacks are reported, an explicit config comes from the client preference
+		if learned && onICEConfigChanged != nil {
 			onICEConfigChanged(p, iceConfig)
 		}
 	})
@@ -3011,10 +3082,10 @@ func (p *ParticipantImpl) onSubscribedAudioCodecChange(
 
 // releasePendingTrackLocked drops every pending entry of a track whose media never arrived,
 // so it stops counting against cMaxPendingTracks. Must be called with pendingTracksLock held.
-func (p *ParticipantImpl) releasePendingTrackLocked(trackID livekit.TrackID) {
+func (p *ParticipantImpl) releasePendingTrackLocked(trackID livekit.TrackID, extraCids ...string) {
 	var (
 		released     *livekit.TrackInfo
-		releasedCids []string
+		releasedCids = slices.Clone(extraCids)
 	)
 	for cid, pti := range p.pendingTracks {
 		remaining := pti.trackInfos[:0]
@@ -3053,6 +3124,36 @@ func (p *ParticipantImpl) releasePendingTrackLocked(trackID livekit.TrackID) {
 	} else {
 		p.sendTrackMuted(trackID, true)
 	}
+}
+
+// releasePendingTrackOnUnknownCodecLocked releases a pending track whose media arrived in a codec that
+// its track info does not list, as it could never be forwarded. Must be called with pendingTracksLock held.
+func (p *ParticipantImpl) releasePendingTrackOnUnknownCodecLocked(signalCid string, ti *livekit.TrackInfo, webrtcTrackID string, mimeType string) bool {
+	if codecPriority(ti, mimeType) >= 0 {
+		return false
+	}
+	// a replacement queued on the cid shares the track id, releasing would drop it too
+	if pti := p.pendingTracks[signalCid]; pti != nil && len(pti.trackInfos) > 1 {
+		p.pubLogger.Warnw(
+			"not releasing pending track with a queued replacement, received codec is not in track info", nil,
+			"trackID", ti.Sid,
+			"mime", mimeType,
+			"trackInfo", logger.Proto(ti),
+		)
+		return false
+	}
+
+	p.pubLogger.Warnw(
+		"releasing pending track, received codec is not in track info", nil,
+		"trackID", ti.Sid,
+		"webrtcTrackID", webrtcTrackID,
+		"mime", mimeType,
+		"trackInfo", logger.Proto(ti),
+	)
+	// later layers of this webrtc track must not claim another pending track, a new request
+	// for the track clears the webrtc track id along with its other cids
+	p.releasePendingTrackLocked(livekit.TrackID(ti.Sid), webrtcTrackID)
+	return true
 }
 
 // must be called with pendingTracksLock held
@@ -3568,6 +3669,11 @@ func (p *ParticipantImpl) mediaTrackReceived(
 				p.IssueFullReconnect(types.ParticipantCloseReasonMigrateCodecMismatch)
 				return nil, false, false, ridsFromSdp
 			}
+		}
+
+		if !isMigrated && p.releasePendingTrackOnUnknownCodecLocked(signalCid, ti, track.ID(), track.Codec().MimeType) {
+			p.pendingTracksLock.Unlock()
+			return nil, false, false, ridsFromSdp
 		}
 
 		ti.MimeType = track.Codec().MimeType
@@ -4236,12 +4342,15 @@ func (p *ParticipantImpl) SupportsSyncStreamID() bool {
 }
 
 func (p *ParticipantImpl) SupportsTransceiverReuse(mt types.MediaTrack) bool {
-	if !p.params.ClientInfo.SupportsTransceiverReuse() {
-		return false
-	}
-
+	// ONE-SHOT-SIGNALLING-MODE: the client cannot negotiate again, so the transceivers of its offer
+	// are the only place for a subscribed track. This holds for every client, also for one that
+	// does not re-use transceivers in regular signalling.
 	if p.params.UseOneShotSignallingMode {
 		return p.ProtocolVersion().SupportsTransceiverReuse()
+	}
+
+	if !p.params.ClientInfo.SupportsTransceiverReuse() {
+		return false
 	}
 
 	return p.ProtocolVersion().SupportsTransceiverReuse() && !p.SupportsSyncStreamID() && (!mt.IsEncrypted() || !p.params.DisableTransceiverReuseForE2EE)
@@ -4441,7 +4550,8 @@ func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack
 	p.pendingTracksLock.Lock()
 	for _, pti := range p.pendingTracks {
 		for i, ti := range pti.trackInfos {
-			if ti.Sid == update.TrackSid {
+			// an update of the other kind does not match, as MediaTrackReceiver ignores it for a published track
+			if ti.Sid == update.TrackSid && ti.Type == livekit.TrackType_AUDIO {
 				isPending = true
 
 				ti = proto.CloneOf(ti)
@@ -4484,7 +4594,8 @@ func (p *ParticipantImpl) UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack
 	p.pendingTracksLock.Lock()
 	for _, pti := range p.pendingTracks {
 		for i, ti := range pti.trackInfos {
-			if ti.Sid == update.TrackSid {
+			// an update of the other kind does not match, as MediaTrackReceiver ignores it for a published track
+			if ti.Sid == update.TrackSid && ti.Type == livekit.TrackType_VIDEO {
 				isPending = true
 
 				ti = proto.CloneOf(ti)
@@ -4676,6 +4787,10 @@ func (p *ParticipantImpl) HandleSignalMessage(msg proto.Message) error {
 
 func (p *ParticipantImpl) IsUsingSinglePeerConnection() bool {
 	return p.params.UseSinglePeerConnection
+}
+
+func (p *ParticipantImpl) GetCandidateProtocol() livekit.CandidateProtocol {
+	return p.params.CandidateProtocol
 }
 
 func (p *ParticipantImpl) AddTrackLocal(

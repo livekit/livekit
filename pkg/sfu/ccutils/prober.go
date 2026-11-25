@@ -555,7 +555,7 @@ func (c *Cluster) Process() time.Duration {
 		c.startTime = mono.Now()
 		bytesToSend = cBytesPerProbe
 	} else {
-		sinceStart := time.Since(c.startTime)
+		sinceStart := mono.Now().Sub(c.startTime)
 		if sinceStart > c.buckets[c.bucketIdx].expectedElapsedDuration {
 			c.bucketIdx++
 			overflow := false
@@ -587,7 +587,7 @@ func (c *Cluster) MarshalLogObject(e zapcore.ObjectEncoder) error {
 		e.AddInt("bucketIdx", c.bucketIdx)
 		e.AddInt("probeBytesSent", c.probeBytesSent)
 		e.AddTime("startTime", c.startTime)
-		e.AddDuration("elapsed", time.Since(c.startTime))
+		e.AddDuration("elapsed", mono.Now().Sub(c.startTime))
 		e.AddBool("isComplete", c.isComplete)
 	}
 	return nil

@@ -231,11 +231,15 @@ func (d *DummyReceiver) Receiver() sfu.TrackReceiver {
 }
 
 func (d *DummyReceiver) Upgrade(receiver sfu.TrackReceiver) {
+	// publish the receiver under downTrackLock: a DeleteDownTrack that saw it before the
+	// pending down tracks moved would delete from the receiver, not the pending map, and
+	// the move below would then register the deleted down track on the receiver
+	d.downTrackLock.Lock()
 	if !d.receiver.CompareAndSwap(nil, receiver) {
+		d.downTrackLock.Unlock()
 		return
 	}
 
-	d.downTrackLock.Lock()
 	for _, t := range d.downTracks {
 		receiver.AddDownTrack(t)
 	}
@@ -311,9 +315,9 @@ func (d *DummyReceiver) HeaderExtensions() []webrtc.RTPHeaderExtensionParameter 
 	return d.headerExtensions
 }
 
-func (d *DummyReceiver) ReadRTP(buf []byte, layer uint8, esn uint64) (int, error) {
+func (d *DummyReceiver) ReadRTP(buf []byte, layer uint8, esn uint64, streamGeneration uint64) (int, error) {
 	if receiver := d.getReceiver(); receiver != nil {
-		return receiver.ReadRTP(buf, layer, esn)
+		return receiver.ReadRTP(buf, layer, esn, streamGeneration)
 	}
 	return 0, errors.New("no receiver")
 }
@@ -560,9 +564,9 @@ func (d *DummyRedReceiver) GetDownTracks() []sfu.TrackSender {
 	return slices.Collect(maps.Values(d.downTracks))
 }
 
-func (d *DummyRedReceiver) ReadRTP(buf []byte, layer uint8, esn uint64) (int, error) {
+func (d *DummyRedReceiver) ReadRTP(buf []byte, layer uint8, esn uint64, streamGeneration uint64) (int, error) {
 	if r, ok := d.redReceiver.Load().(sfu.TrackReceiver); ok {
-		return r.ReadRTP(buf, layer, esn)
+		return r.ReadRTP(buf, layer, esn, streamGeneration)
 	}
 	return 0, errors.New("no receiver")
 }
@@ -574,9 +578,11 @@ func (d *DummyRedReceiver) upgrade(receiver sfu.TrackReceiver) {
 	} else {
 		redReceiver = receiver.GetPrimaryReceiverForRed()
 	}
+	// same as DummyReceiver.Upgrade, publish under downTrackLock so that a concurrent
+	// DeleteDownTrack can't miss a down track that is about to move
+	d.downTrackLock.Lock()
 	d.redReceiver.Store(redReceiver)
 
-	d.downTrackLock.Lock()
 	for _, t := range d.downTracks {
 		redReceiver.AddDownTrack(t)
 	}

@@ -28,6 +28,8 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
+	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/sfufakes"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -259,6 +261,96 @@ func TestUnsubscribe(t *testing.T) {
 
 	tl := sm.params.Participant.GetTelemetryListener().(*typesfakes.FakeParticipantTelemetryListener)
 	require.Equal(t, 1, tl.OnTrackUnsubscribedCallCount())
+}
+
+func TestSubscribedTrackCloseDuringInstall(t *testing.T) {
+	for _, closeAt := range []string{"add", "recheck", "recheck rejects"} {
+		t.Run(closeAt, func(t *testing.T) {
+			sm := newTestSubscriptionManager()
+			defer sm.Close(false)
+			resolver := newTestResolver(true, true, "pub", "pubID")
+
+			var once sync.Once
+			var installing atomic.Pointer[SubscribedTrack]
+			closeAndRevoke := func(st *SubscribedTrack) {
+				once.Do(func() {
+					resolver.SetHasPermission(false)
+					st.Close(false)
+				})
+			}
+			sm.params.TrackResolver = func(sub types.LocalParticipant, trackID livekit.TrackID) types.MediaResolverResult {
+				res := resolver.Resolve(sub, trackID)
+				if mt, ok := res.Track.(*typesfakes.FakeMediaTrack); ok {
+					mt.IDReturns(trackID)
+					mt.KindReturns(livekit.TrackType_AUDIO)
+					mt.AddSubscriberCalls(func(types.LocalParticipant) (types.SubscribedTrack, error) {
+						dt, err := sfu.NewDownTrack(sfu.DownTrackParams{
+							Codecs: []webrtc.RTPCodecParameters{{
+								RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000},
+								PayloadType:        111,
+							}},
+							Receiver: &sfufakes.FakeTrackReceiver{},
+							Logger:   logger.GetLogger(),
+							Listener: &sfufakes.FakeDownTrackListener{},
+						})
+						if err != nil {
+							return nil, err
+						}
+						t.Cleanup(dt.Close)
+						st := &SubscribedTrack{params: SubscribedTrackParams{MediaTrack: mt}, logger: logger.GetLogger(), downTrack: dt}
+						if closeAt == "add" {
+							closeAndRevoke(st)
+						}
+						installing.Store(st)
+						return st, nil
+					})
+					// the real track closes the subscribed track it removes
+					mt.RemoveSubscriberCalls(func(livekit.ParticipantID, bool) {
+						if st := installing.Load(); st != nil {
+							st.Close(false)
+						}
+					})
+				}
+				return res
+			}
+			p := sm.params.Participant.(*typesfakes.FakeLocalParticipant)
+			// the recheck after the subscribed track is stored is the first CanSubscribe call that sees it
+			p.CanSubscribeCalls(func() bool {
+				st := installing.Load()
+				if st == nil {
+					return true
+				}
+				switch closeAt {
+				case "recheck":
+					closeAndRevoke(st)
+				case "recheck rejects":
+					// the rejected install removes the subscriber, which closes the track
+					reject := false
+					once.Do(func() {
+						reject = true
+						resolver.SetHasPermission(false)
+					})
+					return !reject
+				}
+				return true
+			})
+
+			sm.SubscribeToTrack("track", false)
+
+			// a denied permission update comes from the next attempt, after the closed one finished
+			deniedUpdateSent := func() bool {
+				for i := 0; i < p.SendSubscriptionPermissionUpdateCallCount(); i++ {
+					if _, _, allowed := p.SendSubscriptionPermissionUpdateArgsForCall(i); !allowed {
+						return true
+					}
+				}
+				return false
+			}
+			require.Eventually(t, func() bool {
+				return deniedUpdateSent() && len(sm.GetSubscribedTracks()) == 0 && !sm.IsSubscribedTo("pubID")
+			}, subSettleTimeout, subCheckInterval, "closed subscribed track must be cleared and must not mark the publisher")
+		})
+	}
 }
 
 func TestSubscribeStatusChanged(t *testing.T) {
@@ -949,6 +1041,128 @@ func TestSubscribeRevokedInFlight(t *testing.T) {
 		require.Equal(t, sm.params.Participant.ID(), resolver.dataTrack.RemoveSubscriberArgsForCall(0))
 		require.Empty(t, sm.GetSubscribedParticipants())
 	})
+
+	// the publisher revoking this track's permission has the same blind spot
+	t.Run("media track permission", func(t *testing.T) {
+		sm := newTestSubscriptionManager()
+		defer sm.Close(false)
+
+		resolver := newTestResolver(true, true, "pub", "pubID")
+		var lock sync.Mutex
+		var track *typesfakes.FakeMediaTrack
+		sm.params.TrackResolver = func(sub types.LocalParticipant, trackID livekit.TrackID) types.MediaResolverResult {
+			res := resolver.Resolve(sub, trackID)
+			lock.Lock()
+			defer lock.Unlock()
+			if track == nil {
+				// revoked once the subscribe is past its permission check
+				track = res.Track.(*typesfakes.FakeMediaTrack)
+				track.IDReturns(trackID)
+				addSubscriber := track.AddSubscriberStub
+				track.AddSubscriberCalls(func(sub types.LocalParticipant) (types.SubscribedTrack, error) {
+					resolver.lock.Lock()
+					resolver.hasPermission = false
+					resolver.lock.Unlock()
+					return addSubscriber(sub)
+				})
+			}
+			// the room resolves the same published track every time
+			res.Track = track
+			return res
+		}
+		subscribed := atomic.Bool{}
+		sm.params.OnTrackSubscribed = func(subTrack types.SubscribedTrack) {
+			subscribed.Store(true)
+		}
+
+		sm.SubscribeToTrack("track", false)
+		require.Eventually(t, func() bool {
+			lock.Lock()
+			defer lock.Unlock()
+			return track != nil && track.RemoveSubscriberCallCount() == 1
+		}, subSettleTimeout, subCheckInterval, "the subscriber should be removed")
+
+		subID, isExpectedToResume := track.RemoveSubscriberArgsForCall(0)
+		require.Equal(t, sm.params.Participant.ID(), subID)
+		require.False(t, isExpectedToResume)
+		require.Empty(t, sm.GetSubscribedParticipants())
+		require.False(t, subscribed.Load())
+
+		// the real RemoveSubscriber closes the subscribed track; the reconcile that follows
+		// records the denial, tells the client and keeps waiting without adding it again
+		sm.lock.RLock()
+		s := sm.subscriptions["track"]
+		sm.lock.RUnlock()
+		// the close callback is installed when addSubscriber returns
+		require.Eventually(t, func() bool {
+			st, ok := s.getSubscribedTrack().(*typesfakes.FakeSubscribedTrack)
+			return ok && st.OnCloseCallCount() == 1
+		}, subSettleTimeout, subCheckInterval, "the close callback should be installed")
+		setTestSubscribedTrackClosed(t, s.getSubscribedTrack(), false)
+		// granted by the first subscribe, denied by this one
+		p := sm.params.Participant.(*typesfakes.FakeLocalParticipant)
+		require.Eventually(t, func() bool {
+			return p.SendSubscriptionPermissionUpdateCallCount() == 2
+		}, subSettleTimeout, subCheckInterval, "the client should be told about the denial")
+		_, _, allowed := p.SendSubscriptionPermissionUpdateArgsForCall(1)
+		require.False(t, allowed)
+		require.False(t, s.getHasPermission())
+		require.True(t, s.isDesired())
+		require.True(t, s.needsSubscribe())
+		require.Equal(t, 1, track.AddSubscriberCallCount())
+	})
+
+	// the publisher revoking the data track's permission only removes subscribers already
+	// recorded on the track, the same blind spot as a canSubscribe revoke
+	t.Run("data track permission", func(t *testing.T) {
+		sm := newTestSubscriptionManager()
+		defer sm.Close(false)
+
+		resolver := newTestDataTrackResolver(true, true, "pub", "pubID")
+		sm.params.DataTrackResolver = resolver.Resolve
+		addSubscriber := resolver.dataTrack.AddSubscriberStub
+		var ddtLock sync.Mutex
+		var ddt *typesfakes.FakeDataDownTrack
+		resolver.dataTrack.AddSubscriberCalls(func(sub types.LocalParticipant) (types.DataDownTrack, error) {
+			// revoked once the subscribe is past its permission check
+			resolver.SetHasPermission(false)
+			dt, err := addSubscriber(sub)
+			ddtLock.Lock()
+			ddt = dt.(*typesfakes.FakeDataDownTrack)
+			ddtLock.Unlock()
+			return dt, err
+		})
+
+		sm.SubscribeToDataTrack("track")
+		require.Eventually(t, func() bool {
+			return resolver.dataTrack.RemoveSubscriberCallCount() == 1
+		}, subSettleTimeout, subCheckInterval, "the subscriber should be removed")
+
+		require.Equal(t, sm.params.Participant.ID(), resolver.dataTrack.RemoveSubscriberArgsForCall(0))
+		require.Empty(t, sm.GetSubscribedParticipants())
+
+		// the real RemoveSubscriber closes the data down track; the reconcile that follows
+		// records the denial, tells the client and keeps waiting without adding it again
+		ddtLock.Lock()
+		onClose := ddt.OnCloseArgsForCall(0)
+		ddtLock.Unlock()
+		onClose()
+		// granted by the first subscribe, denied by this one
+		p := sm.params.Participant.(*typesfakes.FakeLocalParticipant)
+		require.Eventually(t, func() bool {
+			return p.SendSubscriptionPermissionUpdateCallCount() == 2
+		}, subSettleTimeout, subCheckInterval, "the client should be told about the denial")
+		_, _, allowed := p.SendSubscriptionPermissionUpdateArgsForCall(1)
+		require.False(t, allowed)
+
+		sm.lock.RLock()
+		s := sm.dataTrackSubscriptions["track"]
+		sm.lock.RUnlock()
+		require.False(t, s.getHasPermission())
+		require.True(t, s.isDesired())
+		require.True(t, s.needsSubscribe())
+		require.Equal(t, 1, resolver.dataTrack.AddSubscriberCallCount())
+	})
 }
 
 type testSubscriptionParams struct {
@@ -1001,6 +1215,12 @@ func newTestResolver(hasPermission bool, hasTrack bool, pubIdentity livekit.Part
 		pubIdentity:   pubIdentity,
 		pubID:         pubID,
 	}
+}
+
+func (t *testResolver) SetHasPermission(hasPermission bool) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	t.hasPermission = hasPermission
 }
 
 func (t *testResolver) SetPause(paused bool) {
@@ -1099,6 +1319,10 @@ func setTestSubscribedTrackClosed(t *testing.T, st types.SubscribedTrack, isExpe
 	fst, ok := st.(*typesfakes.FakeSubscribedTrack)
 	require.True(t, ok)
 
+	// the subscription manager registers the close callback when the install returns
+	require.Eventually(t, func() bool {
+		return fst.OnCloseCallCount() > 0
+	}, subSettleTimeout, subCheckInterval, "close callback not registered")
 	fst.OnCloseArgsForCall(0)(isExpectedToResume)
 }
 
@@ -1106,5 +1330,9 @@ func setTestDataDownTrackClosed(t *testing.T, ddt types.DataDownTrack) {
 	fddt, ok := ddt.(*typesfakes.FakeDataDownTrack)
 	require.True(t, ok)
 
+	// the subscription manager registers the close callback when the install returns
+	require.Eventually(t, func() bool {
+		return fddt.OnCloseCallCount() > 0
+	}, subSettleTimeout, subCheckInterval, "close callback not registered")
 	fddt.OnCloseArgsForCall(0)()
 }
