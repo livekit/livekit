@@ -1319,6 +1319,10 @@ func setTestSubscribedTrackClosed(t *testing.T, st types.SubscribedTrack, isExpe
 	fst, ok := st.(*typesfakes.FakeSubscribedTrack)
 	require.True(t, ok)
 
+	// the subscription manager registers the close callback when the install returns
+	require.Eventually(t, func() bool {
+		return fst.OnCloseCallCount() > 0
+	}, subSettleTimeout, subCheckInterval, "close callback not registered")
 	fst.OnCloseArgsForCall(0)(isExpectedToResume)
 }
 
@@ -1326,5 +1330,9 @@ func setTestDataDownTrackClosed(t *testing.T, ddt types.DataDownTrack) {
 	fddt, ok := ddt.(*typesfakes.FakeDataDownTrack)
 	require.True(t, ok)
 
+	// the subscription manager registers the close callback when the install returns
+	require.Eventually(t, func() bool {
+		return fddt.OnCloseCallCount() > 0
+	}, subSettleTimeout, subCheckInterval, "close callback not registered")
 	fddt.OnCloseArgsForCall(0)()
 }
