@@ -936,11 +936,12 @@ func TestTrimmedPublisherAnswerKeepsOfferedRTX(t *testing.T) {
 	parsed, err := answer.Load().Unmarshal()
 	require.NoError(t, err)
 
-	var rtpmaps, fmtps []string
+	var payloads, rtpmaps, fmtps []string
 	for _, m := range parsed.MediaDescriptions {
 		if m.MediaName.Media != "video" {
 			continue
 		}
+		payloads = append(payloads, m.MediaName.Formats...)
 		for _, a := range m.Attributes {
 			switch a.Key {
 			case "rtpmap":
@@ -950,6 +951,7 @@ func TestTrimmedPublisherAnswerKeepsOfferedRTX(t *testing.T) {
 			}
 		}
 	}
+	require.ElementsMatch(t, []string{"120", "124"}, payloads, "video m-line must list only VP8 and its RTX")
 	require.Contains(t, rtpmaps, "120 VP8/90000")
 	require.Contains(t, rtpmaps, "124 rtx/90000")
 	require.Contains(t, fmtps, "124 apt=120")
