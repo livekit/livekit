@@ -975,7 +975,7 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 				n, _, err := rawDC.ReadDataChannel(buffer)
 				if err != nil {
 					if !errors.Is(err, io.EOF) && !strings.Contains(err.Error(), "state=Closed") {
-						t.params.Logger.Warnw("error reading data channel", err, "label", dc.Label())
+						t.params.Logger.Debugw("error reading data channel", "error", err, "label", dc.Label())
 					}
 					return
 				}
@@ -1352,7 +1352,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 				n, _, err := rawDC.ReadDataChannel(buffer)
 				if err != nil {
 					if !errors.Is(err, io.EOF) && !strings.Contains(err.Error(), "state=Closed") {
-						t.params.Logger.Warnw("error reading data channel", err, "label", dc.Label())
+						t.params.Logger.Debugw("error reading data channel", "error", err, "label", dc.Label())
 					}
 					return
 				}
@@ -1405,7 +1405,7 @@ func (t *PCTransport) CreateReadableDataChannel(label string, dci *webrtc.DataCh
 				n, _, err := rawDC.ReadDataChannel(buffer)
 				if err != nil {
 					if !errors.Is(err, io.EOF) && !strings.Contains(err.Error(), "state=Closed") {
-						t.params.Logger.Warnw("error reading data channel", err, "label", dc.Label())
+						t.params.Logger.Debugw("error reading data channel", "error", err, "label", dc.Label())
 					}
 					return
 				}
