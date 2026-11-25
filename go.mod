@@ -23,7 +23,7 @@ require (
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/mediatransportutil v0.0.0-20261116220501-6af81419a977
 	github.com/livekit/protocol v1.54.3-0.20261124075400-36e1b27375d9
-	github.com/livekit/psrpc v0.8.2
+	github.com/livekit/psrpc v0.8.3-0.20261124192832-2826b474becf
 	github.com/mackerelio/go-osstat v0.2.8
 	github.com/magefile/mage v1.17.2
 	github.com/mitchellh/go-homedir v1.1.0
