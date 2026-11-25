@@ -99,10 +99,10 @@ func NewWebTransportServer(tlsConf *tls.Config) *WebTransportServer {
 
 // NewWebTransportHandler builds the listener's handler: mux behind api-key auth,
 // with wt in each request's context.
-func NewWebTransportHandler(keyProvider auth.KeyProvider, wt *WebTransportServer, mux http.Handler) http.Handler {
+func NewWebTransportHandler(keyProvider auth.KeyProvider, tokenRevocationStore TokenRevocationStore, wt *WebTransportServer, mux http.Handler) http.Handler {
 	middlewares := []negroni.Handler{negroni.NewRecovery()}
 	if keyProvider != nil {
-		middlewares = append(middlewares, NewAPIKeyAuthMiddleware(keyProvider))
+		middlewares = append(middlewares, NewAPIKeyAuthMiddleware(keyProvider, tokenRevocationStore))
 	}
 	return WithWebTransportServer(wt, WithPathNormalization(configureMiddlewares(mux, middlewares...)))
 }

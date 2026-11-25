@@ -51,6 +51,9 @@ const (
 
 	generatedCLIFlagUsage = "generated"
 
+	// LKAttributePrefix marks participant attributes that LiveKit services set
+	LKAttributePrefix = "lk."
+
 	// TURNMaxTTLSeconds is the operational maximum for TURN credential TTLs (24 hours).
 	// It bounds credential lifetime and prevents time.Duration overflow when multiplying
 	// by time.Second (values above ~9.2e9 seconds wrap on 64-bit builds).
@@ -121,6 +124,8 @@ type Config struct {
 	EnableParticipantDataBlob bool `yaml:"enable_participant_data_blob,omitempty"`
 
 	API APIConfig `yaml:"api,omitempty"`
+
+	TokenRevocation TokenRevocationConfig `yaml:"token_revocation,omitempty"`
 }
 
 // WebTransportConfig is the node's HTTP/3 listener. QUIC has no plaintext mode,
@@ -388,8 +393,10 @@ type LimitConfig struct {
 	SubscriptionLimitVideo int32   `yaml:"subscription_limit_video,omitempty"`
 	SubscriptionLimitAudio int32   `yaml:"subscription_limit_audio,omitempty"`
 	MaxMetadataSize        uint32  `yaml:"max_metadata_size,omitempty"`
-	// total size of all attributes on a participant
-	MaxAttributesSize            uint32 `yaml:"max_attributes_size,omitempty"`
+	// total size of all attributes on a participant, except those with the lk. prefix
+	MaxAttributesSize uint32 `yaml:"max_attributes_size,omitempty"`
+	// total size of attributes with the lk. prefix, which LiveKit services set
+	MaxLKAttributesSize          uint32 `yaml:"max_lk_attributes_size,omitempty"`
 	MaxRoomNameLength            int    `yaml:"max_room_name_length,omitempty"`
 	MaxParticipantIdentityLength int    `yaml:"max_participant_identity_length,omitempty"`
 	MaxParticipantNameLength     int    `yaml:"max_participant_name_length,omitempty"`
@@ -434,16 +441,28 @@ func (l LimitConfig) CheckMetadataSize(metadata string) bool {
 	return l.MaxMetadataSize == 0 || uint32(len(metadata)) <= l.MaxMetadataSize
 }
 
+// CheckAttributesSize checks attributes without the lk. prefix against MaxAttributesSize.
 func (l LimitConfig) CheckAttributesSize(attributes map[string]string) bool {
-	if l.MaxAttributesSize == 0 {
+	return checkAttributesSize(attributes, false, l.MaxAttributesSize)
+}
+
+// CheckLKAttributesSize checks attributes with the lk. prefix against MaxLKAttributesSize.
+func (l LimitConfig) CheckLKAttributesSize(attributes map[string]string) bool {
+	return checkAttributesSize(attributes, true, l.MaxLKAttributesSize)
+}
+
+func checkAttributesSize(attributes map[string]string, lk bool, limit uint32) bool {
+	if limit == 0 {
 		return true
 	}
 
 	total := 0
 	for k, v := range attributes {
-		total += len(k) + len(v)
+		if strings.HasPrefix(k, LKAttributePrefix) == lk {
+			total += len(k) + len(v)
+		}
 	}
-	return uint32(total) <= l.MaxAttributesSize
+	return uint32(total) <= limit
 }
 
 // DataBlobKeyLength returns the length of the identifying content of a data blob key.
@@ -545,10 +564,22 @@ type APIConfig struct {
 	EnablePsrpcForGetListParticpants bool `yaml:"enable_psrpc_for_get_list_participants,omitempty"`
 }
 
+type TokenRevocationConfig struct {
+	// revoke the existing tokens of a participant on RemoveParticipant and on permission updates, default false
+	Enabled bool `yaml:"enabled,omitempty"`
+
+	// how long a revocation is kept, default 11m10s.
+	// Set it above the validity of the tokens handed out to participants to keep removed participants out for good.
+	TTL time.Duration `yaml:"ttl,omitempty"`
+}
+
 type PrometheusConfig struct {
 	Port     uint32 `yaml:"port,omitempty"`
 	Username string `yaml:"username,omitempty"`
 	Password string `yaml:"password,omitempty"`
+	// RoomExcludeRegex, when set, enables livekit_room_included_total: the number of active rooms
+	// whose name does NOT match this regex (RE2 syntax, unanchored). livekit_room_total is unaffected.
+	RoomExcludeRegex string `yaml:"room_exclude_regex,omitempty"`
 }
 
 type DebugHandlerConfig struct {
@@ -647,6 +678,7 @@ var DefaultConfig = Config{
 	Limit: LimitConfig{
 		MaxMetadataSize:                  512 * 1024,
 		MaxAttributesSize:                64 * 1024,
+		MaxLKAttributesSize:              2 * 1024,
 		MaxRoomNameLength:                256,
 		MaxParticipantIdentityLength:     256,
 		MaxParticipantNameLength:         256,

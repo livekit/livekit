@@ -189,7 +189,6 @@ type BytesSignalStats struct {
 	ctx context.Context
 
 	telemetry telemetry.TelemetryService
-	guard     *telemetry.ReferenceGuard
 
 	participantResolver roomobs.ParticipantReporterResolver
 	trackResolver       roomobs.KeyResolver
@@ -212,7 +211,6 @@ func NewBytesSignalStats(
 	b := &BytesSignalStats{
 		ctx:                 ctx,
 		telemetry:           telemetryService,
-		guard:               &telemetry.ReferenceGuard{},
 		participantResolver: participantReporterResolver,
 		trackResolver:       trackReporterResolver,
 	}
@@ -259,7 +257,6 @@ func (s *BytesSignalStats) Reset() {
 		<-s.stopped
 		s.stopped = nil
 		s.done = core.Fuse{}
-		s.guard = &telemetry.ReferenceGuard{}
 	}
 	s.ri = nil
 	s.pi = nil
@@ -284,14 +281,12 @@ func (s *BytesSignalStats) maybeStart() {
 	)
 	s.trackResolver.Resolve(string(s.trackID))
 
-	s.telemetry.ParticipantJoined(s.ctx, s.ri, s.pi, nil, nil, false, s.guard)
 	s.stopped = make(chan struct{})
 	go s.worker()
 }
 
 func (s *BytesSignalStats) worker() {
 	s.BytesTrackStats.worker()
-	s.telemetry.ParticipantLeft(s.ctx, s.ri, s.pi, false, s.guard)
 	close(s.stopped)
 }
 

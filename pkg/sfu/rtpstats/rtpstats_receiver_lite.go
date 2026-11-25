@@ -138,15 +138,15 @@ func (r *RTPStatsReceiverLite) MarshalLogObject(e zapcore.ObjectEncoder) error {
 		return nil
 	}
 
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	return lockedRTPStatsReceiverLiteLogEncoder{r}.MarshalLogObject(e)
 }
 
 func (r *RTPStatsReceiverLite) ToProto() *livekit.RTPStats {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	return r.rtpStatsBaseLite.toProto(r.sequenceNumber.GetExtendedStart(), r.sequenceNumber.GetExtendedHighest(), r.packetsLost)
 }

@@ -23,7 +23,6 @@ import (
 	"math"
 	"math/rand"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -511,12 +510,10 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			return
 		}
 
-		isFECEnabled := false
+		isFECEnabled := utils.IsFECEnabled(matchedUpstreamCodec, d.upstreamCodecs)
 		if mime.IsMimeTypeStringRED(matchedUpstreamCodec.MimeType) {
 			d.isRED = true
 			for _, c := range d.upstreamCodecs {
-				isFECEnabled = strings.Contains(strings.ToLower(c.SDPFmtpLine), "useinbandfec=1")
-
 				// assume upstream primary codec is opus since we only support it for audio now
 				if mime.IsMimeTypeStringOpus(c.MimeType) {
 					d.upstreamPrimaryPT = uint8(c.PayloadType)
@@ -539,8 +536,6 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 				)
 			}
 			d.primaryPT = uint8(primaryPT)
-		} else if mime.IsMimeTypeStringAudio(matchedUpstreamCodec.MimeType) {
-			isFECEnabled = strings.Contains(strings.ToLower(matchedUpstreamCodec.SDPFmtpLine), "fec")
 		}
 
 		logFields := []any{
@@ -666,7 +661,7 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 
 	oldPT, oldRtxPT, oldCodec := d.payloadType.Load(), d.payloadTypeRTX.Load(), d.codec.Load().(webrtc.RTPCodecCapability)
 
-	var codec webrtc.RTPCodecParameters
+	var codec, matchedUpstreamCodec webrtc.RTPCodecParameters
 	for _, c := range d.upstreamCodecs {
 		if !mime.IsMimeTypeStringEqual(c.MimeType, mimeType) {
 			continue
@@ -675,6 +670,7 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 		matchCodec, err := utils.CodecParametersFuzzySearch(c, d.negotiatedCodecParameters)
 		if err == nil {
 			codec = matchCodec
+			matchedUpstreamCodec = c
 			break
 		}
 	}
@@ -698,7 +694,8 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 	d.rtpStats.SetClockRate(codec.RTPCodecCapability.ClockRate)
 	d.rtpStatsRTX.SetClockRate(codec.RTPCodecCapability.ClockRate)
 
-	isFECEnabled := strings.Contains(strings.ToLower(codec.SDPFmtpLine), "fec")
+	// FEC is what the publisher encodes, so check the upstream codec, not the negotiated one
+	isFECEnabled := utils.IsFECEnabled(matchedUpstreamCodec, d.upstreamCodecs)
 	d.bindLock.Unlock()
 
 	d.params.Logger.Infow(
@@ -706,6 +703,7 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 		"oldPT", oldPT, "newPT", d.payloadType.Load(),
 		"oldRTXPT", oldRtxPT, "newRTXPT", d.payloadTypeRTX.Load(),
 		"oldCodec", oldCodec, "newCodec", codec.RTPCodecCapability,
+		"isFECEnabled", isFECEnabled,
 	)
 
 	receiver := d.Receiver()
@@ -809,6 +807,12 @@ func (d *DownTrack) SetReceiver(r TrackReceiver) {
 	d.handleUpstreamCodecChange(r.Codec().MimeType)
 
 	d.bindLock.Lock()
+	// a close that ran while bindLock was released may already have removed the down
+	// track from r, adding it now would leave a closed down track registered there
+	if d.IsClosed() {
+		d.bindLock.Unlock()
+		return
+	}
 	if err := r.AddDownTrack(d); err != nil {
 		d.params.Logger.Warnw("failed to add downtrack to receiver", err)
 	}
@@ -1179,6 +1183,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 			ddBytes,
 			actBytes,
 			trailerStripped,
+			extPkt.StreamGeneration,
 		)
 	}
 
@@ -2504,7 +2509,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		nackAcks++
 
 		pktBuff := *src
-		n, err := receiver.ReadRTP(pktBuff, uint8(epm.layer), epm.sourceSeqNo)
+		n, err := receiver.ReadRTP(pktBuff, uint8(epm.layer), epm.sourceSeqNo, epm.sourceStreamGeneration)
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -2611,7 +2616,7 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 			}
 
 			pktBuff := *src
-			n, err := receiver.ReadRTP(pktBuff, uint8(epm.layer), epm.sourceSeqNo)
+			n, err := receiver.ReadRTP(pktBuff, uint8(epm.layer), epm.sourceSeqNo, epm.sourceStreamGeneration)
 			if err != nil {
 				if err == io.EOF {
 					break
@@ -2724,7 +2729,13 @@ func (d *DownTrack) GetDeltaStatsSender() map[uint32]*buffer.StreamStatsWithLaye
 }
 
 func (d *DownTrack) GetPrimaryStreamLastReceiverReportTime() time.Time {
-	return time.Unix(0, d.rtpStats.LastReceiverReportTime())
+	at := d.rtpStats.LastReceiverReportTime()
+	if at == 0 {
+		return time.Time{}
+	}
+
+	// at is a mono timestamp, convert to wall time for comparison with time.Now()
+	return time.Now().Add(-time.Duration(mono.UnixNano() - at))
 }
 
 func (d *DownTrack) GetPrimaryStreamPacketsSent() uint64 {

@@ -300,7 +300,8 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 		return nil, twirpAuthError(err)
 	}
 
-	if s.psrpcClient == nil {
+	// without redis there is a client, on the local message bus, but no store
+	if s.psrpcClient == nil || s.store == nil {
 		return nil, ErrIngressNotConnected
 	}
 
@@ -395,7 +396,8 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 		return nil, twirpAuthError(err)
 	}
 
-	if s.psrpcClient == nil {
+	// without redis there is a client, on the local message bus, but no store
+	if s.psrpcClient == nil || s.store == nil {
 		return nil, ErrIngressNotConnected
 	}
 

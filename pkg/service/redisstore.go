@@ -950,6 +950,40 @@ func (s *RedisStore) DeleteAgentJob(_ context.Context, job *livekit.Job) error {
 	return s.rc.HDel(s.ctx, key, job.Id).Err()
 }
 
+// keeps the later notBefore and expiry of an existing revocation
+var revokeRoomParticipantScript = redis.NewScript(`
+local notBefore = tonumber(ARGV[1])
+local ttl = tonumber(ARGV[2])
+local current = tonumber(redis.call("GET", KEYS[1]))
+if current ~= nil and current > notBefore then
+	notBefore = current
+end
+local currentTTL = redis.call("PTTL", KEYS[1])
+if currentTTL > ttl then
+	ttl = currentTTL
+end
+redis.call("SET", KEYS[1], notBefore, "PX", ttl)
+return 1
+`)
+
+func (s *RedisStore) RevokeRoomParticipant(ctx context.Context, room livekit.RoomName, identity livekit.ParticipantIdentity, notBefore time.Time, ttl time.Duration) error {
+	key := GenRoomParticipantRevocationIdentifier(identity, room)
+	return revokeRoomParticipantScript.Run(ctx, s.rc, []string{key}, notBefore.Unix(), ttl.Milliseconds()).Err()
+}
+
+func (s *RedisStore) IsRoomParticipantRevoked(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) (bool, *time.Time, error) {
+	revocationTimeInt, err := s.rc.Get(ctx, GenRoomParticipantRevocationIdentifier(identity, room)).Int64()
+	if err == redis.Nil {
+		return false, nil, nil
+	}
+	if err != nil {
+		return false, nil, err
+	}
+
+	revocationTime := time.Unix(revocationTimeInt, 0)
+	return true, &revocationTime, nil
+}
+
 func redisStoreOne(ctx context.Context, s *RedisStore, key, id string, p proto.Message) error {
 	if id == "" {
 		return errors.New("id is not set")

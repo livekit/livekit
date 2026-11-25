@@ -38,7 +38,10 @@ func (c ClientInfo) isWebKit() bool {
 	if c.isSafari() {
 		return true
 	}
-	return c.ClientInfo != nil && c.ClientInfo.Sdk == livekit.ClientInfo_JS && strings.EqualFold(c.ClientInfo.Os, "ios")
+	// Unity WebGL runs livekit-client in the browser, so it is subject to the same WebKit limitations as JS
+	return c.ClientInfo != nil &&
+		(c.ClientInfo.Sdk == livekit.ClientInfo_JS || c.ClientInfo.Sdk == livekit.ClientInfo_UNITY_WEB) &&
+		strings.EqualFold(c.ClientInfo.Os, "ios")
 }
 
 func (c ClientInfo) isGo() bool {

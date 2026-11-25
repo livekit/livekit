@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: shogo82148/actions-setup-redis@ffaf3c39499b2917543d84f6acc818277580b531 # v1.58.1
+      - uses: shogo82148/actions-setup-redis@d566e806806d1bac2b414538d57b2b7f721e1d83 # v1.60.0
         with:
           redis-version: "6.x"
           auto-start: true
@@ -72,10 +72,11 @@ jobs:
       - name: Test
         run: |
           set -euo pipefail
-          MallocNanoZone=0 go test -race -json -v ./... 2>&1 | tee /tmp/gotest.log | go tool gotestfmt
+          # stderr stays out of the pipe: tparse rejects the whole stream if a
+          # non-JSON line follows the first JSON event.
+          MallocNanoZone=0 go test -race -json ./... | tee /tmp/gotest.log | go tool tparse -progress
 
-      # gotestfmt folds every test into a collapsed group, which hides a failure in a long log.
-      # List the failed tests in the log and on the run summary page.
+      # List the failed tests on the run summary page.
       - name: Failed tests
         if: failure()
         run: |

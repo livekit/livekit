@@ -206,12 +206,9 @@ func (p *ParticipantImpl) SendRoomMovedResponse(roomMovedResponse *livekit.RoomM
 }
 
 func (p *ParticipantImpl) HandleReconnectAndSendResponse(
-	reconnectReason livekit.ReconnectReason,
 	reconnectResponse *livekit.ReconnectResponse,
 	recentlyDisconnectedParticipants []*livekit.ParticipantInfo, // when migrating in, these are the participants disconnected received from migrate out node
 ) error {
-	p.TransportManager.HandleClientReconnect(reconnectReason)
-
 	if !p.params.ClientInfo.CanHandleReconnectResponse() {
 		// no ReconnectResponse opens this connection, so nothing to hold back
 		return p.reconnectResponseSentAndFlush()

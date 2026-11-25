@@ -128,3 +128,37 @@ func TestBitrateCalculatorWallClock(t *testing.T) {
 	require.True(t, ok)
 	require.InDelta(t, 80000, bitrate, 8000)
 }
+
+func TestBitrateCalculatorHighThroughput(t *testing.T) {
+	for _, mode := range []BitrateMode{BitrateModeBusyOnly, BitrateModeExcludeIdleDrain, BitrateModeWallClock} {
+		t.Run(mode.String(), func(t *testing.T) {
+			c := NewBitrateCalculator(BitrateDuration, BitrateWindow, mode)
+			t0 := c.start
+			buffered := 110000
+			if mode == BitrateModeWallClock {
+				buffered = 0
+				c.AddBytes(0, 0, t0)
+			} else {
+				c.AddBytes(100000, buffered, t0)
+			}
+			for i := 1; i <= 10; i++ {
+				c.AddBytes(100000, buffered, t0.Add(time.Duration(i)*100*time.Millisecond))
+			}
+			rate, ok := c.Bitrate(t0.Add(time.Second))
+			require.True(t, ok)
+			require.Equal(t, 8_000_000, rate)
+		})
+	}
+}
+
+func TestBitrateCalculatorLargeWindow(t *testing.T) {
+	c := NewBitrateCalculator(BitrateDuration, BitrateWindow, BitrateModeWallClock)
+	t0 := c.start
+	for i := 0; i < 3; i++ {
+		c.AddBytes(1_000_000_000, 0, t0.Add(time.Duration(i)*500*time.Millisecond))
+	}
+	rate, ok := c.Bitrate(t0.Add(time.Second))
+	require.True(t, ok)
+	want := min(int64(24_000_000_000), int64(^uint(0)>>1))
+	require.Equal(t, int(want), rate)
+}

@@ -173,12 +173,13 @@ type FakeTrackReceiver struct {
 	mimeReturnsOnCall map[int]struct {
 		result1 mime.MimeType
 	}
-	ReadRTPStub        func([]byte, uint8, uint64) (int, error)
+	ReadRTPStub        func([]byte, uint8, uint64, uint64) (int, error)
 	readRTPMutex       sync.RWMutex
 	readRTPArgsForCall []struct {
 		arg1 []byte
 		arg2 uint8
 		arg3 uint64
+		arg4 uint64
 	}
 	readRTPReturns struct {
 		result1 int
@@ -1123,7 +1124,7 @@ func (fake *FakeTrackReceiver) MimeReturnsOnCall(i int, result1 mime.MimeType) {
 	}{result1}
 }
 
-func (fake *FakeTrackReceiver) ReadRTP(arg1 []byte, arg2 uint8, arg3 uint64) (int, error) {
+func (fake *FakeTrackReceiver) ReadRTP(arg1 []byte, arg2 uint8, arg3 uint64, arg4 uint64) (int, error) {
 	var arg1Copy []byte
 	if arg1 != nil {
 		arg1Copy = make([]byte, len(arg1))
@@ -1135,13 +1136,14 @@ func (fake *FakeTrackReceiver) ReadRTP(arg1 []byte, arg2 uint8, arg3 uint64) (in
 		arg1 []byte
 		arg2 uint8
 		arg3 uint64
-	}{arg1Copy, arg2, arg3})
+		arg4 uint64
+	}{arg1Copy, arg2, arg3, arg4})
 	stub := fake.ReadRTPStub
 	fakeReturns := fake.readRTPReturns
-	fake.recordInvocation("ReadRTP", []interface{}{arg1Copy, arg2, arg3})
+	fake.recordInvocation("ReadRTP", []interface{}{arg1Copy, arg2, arg3, arg4})
 	fake.readRTPMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2, arg3)
+		return stub(arg1, arg2, arg3, arg4)
 	}
 	if specificReturn {
 		return ret.result1, ret.result2
@@ -1155,17 +1157,17 @@ func (fake *FakeTrackReceiver) ReadRTPCallCount() int {
 	return len(fake.readRTPArgsForCall)
 }
 
-func (fake *FakeTrackReceiver) ReadRTPCalls(stub func([]byte, uint8, uint64) (int, error)) {
+func (fake *FakeTrackReceiver) ReadRTPCalls(stub func([]byte, uint8, uint64, uint64) (int, error)) {
 	fake.readRTPMutex.Lock()
 	defer fake.readRTPMutex.Unlock()
 	fake.ReadRTPStub = stub
 }
 
-func (fake *FakeTrackReceiver) ReadRTPArgsForCall(i int) ([]byte, uint8, uint64) {
+func (fake *FakeTrackReceiver) ReadRTPArgsForCall(i int) ([]byte, uint8, uint64, uint64) {
 	fake.readRTPMutex.RLock()
 	defer fake.readRTPMutex.RUnlock()
 	argsForCall := fake.readRTPArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
 }
 
 func (fake *FakeTrackReceiver) ReadRTPReturns(result1 int, result2 error) {
