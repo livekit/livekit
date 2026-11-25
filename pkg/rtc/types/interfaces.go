@@ -490,6 +490,7 @@ type LocalParticipant interface {
 	IsReady() bool
 	ActiveAt() time.Time
 	Disconnected() <-chan struct{}
+	CloseDone() <-chan struct{}
 	IsConnectionCanceled(closeReason ParticipantCloseReason) bool
 	IsIdle() bool
 	SubscriberAsPrimary() bool
@@ -525,6 +526,7 @@ type LocalParticipant interface {
 	// permissions
 	ClaimGrants() *auth.ClaimGrants
 	TokenExpiresAt() time.Time
+	APIKey() string
 	SetPermission(permission *livekit.ParticipantPermission) bool
 	CanPublish() bool
 	CanPublishSource(source livekit.TrackSource) bool
@@ -543,6 +545,8 @@ type LocalParticipant interface {
 	HandleAnswer(sd *livekit.SessionDescription)
 	Negotiate(force bool)
 	ICERestart(iceConfig *livekit.ICEConfig)
+	SimulateICEFallback(iceConfig *livekit.ICEConfig)
+	HandleClientReconnect(reason livekit.ReconnectReason)
 	AddTrackLocal(trackLocal webrtc.TrackLocal, params AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
 	AddTransceiverFromTrackLocal(trackLocal webrtc.TrackLocal, params AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
 	RemoveTrackLocal(sender *webrtc.RTPSender) error
@@ -583,7 +587,7 @@ type LocalParticipant interface {
 	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
 	SendSubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool) error
 	SendRefreshToken(token string) error
-	HandleReconnectAndSendResponse(reconnectReason livekit.ReconnectReason, reconnectResponse *livekit.ReconnectResponse, recentlyDisconnectedParticipants []*livekit.ParticipantInfo) error
+	HandleReconnectAndSendResponse(reconnectResponse *livekit.ReconnectResponse, recentlyDisconnectedParticipants []*livekit.ParticipantInfo) error
 	IssueFullReconnect(reason ParticipantCloseReason)
 	SendRoomMovedResponse(moved *livekit.RoomMovedResponse) error
 	SendDataTrackSubscriberHandles(handles map[uint32]*livekit.DataTrackSubscriberHandles_PublishedDataTrack) error
@@ -621,6 +625,9 @@ type LocalParticipant interface {
 
 	SetICEConfig(iceConfig *livekit.ICEConfig)
 	GetICEConfig() *livekit.ICEConfig
+	// client preferred candidate protocol from join
+	GetCandidateProtocol() livekit.CandidateProtocol
+	// called when the transport learns a fallback ICE config after a failure
 	OnICEConfigChanged(callback func(participant LocalParticipant, iceConfig *livekit.ICEConfig))
 
 	UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []SubscribedCodecQuality) error

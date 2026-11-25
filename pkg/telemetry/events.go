@@ -155,14 +155,6 @@ func (t *telemetryService) ParticipantResumed(
 ) {
 	t.enqueue(func() {
 		// create a worker if needed.
-		//
-		// Signalling channel stats collector and media channel stats collector could both call
-		// ParticipantJoined and ParticipantLeft.
-		//
-		// On a resume, the signalling channel collector would call `ParticipantLeft` which would close
-		// the corresponding participant's stats worker.
-		//
-		// So, on a successful resume, create the worker if needed.
 		_, found := t.getOrCreateWorker(
 			ctx,
 			livekit.RoomID(room.Sid),
@@ -259,6 +251,7 @@ func (t *telemetryService) TrackPublished(
 ) {
 	t.enqueue(func() {
 		prometheus.AddPublishedTrack(track.Type.String())
+		prometheus.AddPacketTrailerTrack(track)
 		prometheus.RecordTrackPublishSuccess(track.Type.String())
 		if !shouldSendEvent {
 			return
@@ -390,6 +383,7 @@ func (t *telemetryService) TrackUnpublished(
 	t.enqueue(func() {
 		if wasPublishedLocally {
 			prometheus.SubPublishedTrack(track.Type.String())
+			prometheus.SubPacketTrailerTrack(track)
 		}
 		if !shouldSendEvent {
 			return

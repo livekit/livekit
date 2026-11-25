@@ -45,6 +45,7 @@ import (
 	"encoding/binary"
 	"io"
 	"math"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -69,11 +70,22 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/sfu/packettrailer"
+	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
 	"github.com/livekit/livekit-server/pkg/sfu/sfufakes"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/livekit-server/pkg/sfu/testutils"
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/livekit-server/pkg/testutils/vnettest"
 )
+
+// TestMain sets the global logger once, before any test starts a background
+// goroutine that reads it (prometheus.Init starts an hwstats CPU monitor that
+// logs via the global logger). Calling logger.SetLogger from inside a test while
+// that goroutine runs is a data race on the logger package globals.
+func TestMain(m *testing.M) {
+	logger.InitFromConfig(&logger.Config{Level: "debug"}, "sfu-test")
+	os.Exit(m.Run())
+}
 
 // -----------------------------------------------------------------------------
 // packet capture on the far side
@@ -356,6 +368,54 @@ func TestDownTrackForwardsMedia(t *testing.T) {
 	}
 }
 
+type discardWriteStream struct{}
+
+func (discardWriteStream) WriteRTP(*rtp.Header, []byte) (int, error) { return 0, nil }
+func (discardWriteStream) Write([]byte) (int, error)                 { return 0, nil }
+
+type discardPacer struct {
+	*pacer.PassThrough
+}
+
+func (d discardPacer) Enqueue(p *pacer.Packet) {
+	p.WriteStream = discardWriteStream{}
+	d.PassThrough.Enqueue(p)
+}
+
+func TestDownTrackWriteRTPNoAlloc(t *testing.T) {
+	h := vnettest.NewHosts(t)
+	factory := buffer.NewFactoryOfBufferFactory(500, 500).CreateBufferFactory()
+	p := discardPacer{pacer.NewPassThrough(logger.GetLogger(), newNullBWE())}
+	t.Cleanup(p.Stop)
+
+	dh := newBoundDownTrack(t, h, factory, opusCodecParams, p, vnettest.MediaEngineConfig{})
+	dh.dt.SetAbsCaptureTimeExtIDForTest(5)
+
+	ep, err := testutils.GetTestExtPacket(&testutils.TestExtPacketParams{
+		SequenceNumber: 1000,
+		Timestamp:      5000,
+		SSRC:           0x12345678,
+		PayloadType:    111,
+		PayloadSize:    40,
+	})
+	require.NoError(t, err)
+	ep.AbsCaptureTimeExt = act.AbsCaptureTimeFromValue(0x0102030405060708, 9)
+
+	const runs = 1000
+	forwarded := int32(0)
+	allocs := testing.AllocsPerRun(runs, func() {
+		ep.Packet.SequenceNumber++
+		ep.ExtSequenceNumber++
+		ep.Packet.Timestamp += 960
+		ep.ExtTimestamp += 960
+		forwarded += dh.dt.WriteRTP(ep, 0)
+	})
+	require.EqualValues(t, runs+1, forwarded, "every write, including the AllocsPerRun warm up, should forward")
+	if !utils.RaceEnabled {
+		require.Zero(t, allocs, "allocations per WriteRTP")
+	}
+}
+
 // -----------------------------------------------------------------------------
 // retransmitPacket: RTX / retransmission
 // -----------------------------------------------------------------------------
@@ -433,6 +493,161 @@ func TestDownTrackRetransmitsPacketsAsIs(t *testing.T) {
 	for want := uint16(40000); want < 40000+numPackets; want++ {
 		require.True(t, seen[want], "retransmitted sequence number %d did not arrive", want)
 	}
+}
+
+// TestDownTrackCapsRetransmissions forwards media, NACKs all of it, and checks that an
+// uncapped down track retransmits everything while a capped one retransmits only what its
+// budget allows, newest first, without reading the capped packets from the buffer. Capped
+// packets NACKed again keep failing while the budget is empty, past maxAck, and are
+// retransmitted once media refills it. Repeat NACKs are spaced past the sequencer's
+// duplicate window.
+func TestDownTrackCapsRetransmissions(t *testing.T) {
+	const numPackets = 20
+
+	setup := func(t *testing.T) (*downTrackHarness, *capturingPacer, []byte) {
+		h := vnettest.NewHosts(t)
+		factory := buffer.NewFactoryOfBufferFactory(500, 500).CreateBufferFactory()
+		cp := &capturingPacer{inner: pacer.NewPassThrough(logger.GetLogger(), newNullBWE())}
+		t.Cleanup(cp.Stop)
+
+		// every NACKed packet is read back from the receiver as this source packet
+		source, err := (&rtp.Packet{
+			Header:  rtp.Header{Version: 2, PayloadType: 111, SSRC: 0x44444444},
+			Payload: distinctivePayload(7, 600),
+		}).Marshal()
+		require.NoError(t, err)
+		dh := newBoundDownTrack(t, h, factory, opusCodecParams, cp, vnettest.MediaEngineConfig{}, func(r *sfufakes.FakeTrackReceiver) {
+			r.ReadRTPCalls(func(buf []byte, _ uint8, _ uint64, _ uint64) (int, error) {
+				return copy(buf, source), nil
+			})
+		})
+		return dh, cp, source
+	}
+
+	// extended, so the sequence number can wrap
+	nextSN := uint64(30000)
+	nextTS := uint32(1000)
+	writeMedia := func(t *testing.T, dh *downTrackHarness, payloadSize int) []uint16 {
+		var sns []uint16
+		for i := 0; i < numPackets; i++ {
+			nextTS += 960
+			ep, err := testutils.GetTestExtPacket(&testutils.TestExtPacketParams{
+				SequenceNumber: uint16(nextSN),
+				SNCycles:       int(nextSN >> 16),
+				Timestamp:      nextTS,
+				SSRC:           0x44444444,
+				PayloadType:    111,
+				PayloadSize:    payloadSize,
+			})
+			require.NoError(t, err)
+			require.Equal(t, int32(1), dh.dt.WriteRTP(ep, 0), "packet %d should be forwarded", nextSN)
+			sns = append(sns, uint16(nextSN))
+			nextSN++
+		}
+		return sns
+	}
+	sendNACK := func(t *testing.T, dh *downTrackHarness, sns []uint16) {
+		nack := rtcp.TransportLayerNack{MediaSSRC: dh.dt.SSRC()}
+		for _, sn := range sns {
+			nack.Nacks = append(nack.Nacks, rtcp.NackPair{PacketID: sn})
+		}
+		b, err := nack.Marshal()
+		require.NoError(t, err)
+		dh.dt.HandleRTCPForTest(b)
+	}
+	rtxSeqs := func(cp *capturingPacer) []uint16 {
+		var sns []uint16
+		for _, p := range cp.rtxPackets() {
+			sns = append(sns, p.hdr.SequenceNumber)
+		}
+		return sns
+	}
+
+	t.Run("uncapped", func(t *testing.T) {
+		dh, cp, _ := setup(t)
+		sns := writeMedia(t, dh, 40)
+		sendNACK(t, dh, sns)
+
+		require.Eventually(t, func() bool {
+			return len(cp.rtxPackets()) == numPackets
+		}, 5*time.Second, 20*time.Millisecond, "expected every packet to be retransmitted")
+		require.Equal(t, sns, rtxSeqs(cp), "without a budget the order is unchanged")
+	})
+
+	t.Run("capped", func(t *testing.T) {
+		dh, cp, source := setup(t)
+		// two and a half retransmissions: the third overdraws the budget, a fourth is refused
+		dh.dt.SetRTXBudgetForTest(RTXBudgetLimit{MaxRatio: 0.5, BurstBytes: 5 * len(source) / 2})
+
+		sns := writeMedia(t, dh, 40)
+		sendNACK(t, dh, sns)
+
+		// the capped count is added after the batch, so the retransmissions are all enqueued by then
+		require.Eventually(t, func() bool {
+			return dh.dt.RTXCappedForTest() == numPackets-3
+		}, 5*time.Second, 20*time.Millisecond, "expected the batch to be capped")
+		require.ElementsMatch(t, sns[numPackets-3:], rtxSeqs(cp), "the newest packets go first")
+		require.Equal(t, 3, dh.receiver.ReadRTPCallCount(), "a capped retransmission must not read the publisher's buffer")
+
+		// with the budget empty, the capped packets fail again on every NACK, past maxAck
+		capped := sns[:numPackets-3]
+		for i := 0; i < 4; i++ {
+			time.Sleep(NACKIgnoreWindowForTest + 20*time.Millisecond)
+			sendNACK(t, dh, capped)
+			want := uint64((i + 2) * len(capped))
+			require.Eventually(t, func() bool {
+				return dh.dt.RTXCappedForTest() == want
+			}, 5*time.Second, 20*time.Millisecond, "expected NACK %d to be capped", i+2)
+		}
+
+		// media refills the budget, and the earlier capped packets are retransmitted
+		writeMedia(t, dh, 600)
+		time.Sleep(NACKIgnoreWindowForTest + 20*time.Millisecond)
+		sendNACK(t, dh, capped)
+		require.Eventually(t, func() bool {
+			return len(cp.rtxPackets()) == 6
+		}, 5*time.Second, 20*time.Millisecond, "expected capped packets to be retransmitted after the refill")
+		require.ElementsMatch(t, append(sns[numPackets-3:], capped[len(capped)-3:]...), rtxSeqs(cp))
+	})
+
+	// the budget floor of 1500 bytes sends three 612-byte packets: they must be the three
+	// newest of the NACK, whatever its order
+	newestOf := func(t *testing.T, start uint64, nackIndexes []int, newestIndexes []int) {
+		dh, cp, _ := setup(t)
+		dh.dt.SetRTXBudgetForTest(RTXBudgetLimit{MaxRatio: 0.5})
+
+		nextSN = start
+		sns := writeMedia(t, dh, 40)
+		require.Eventually(t, func() bool {
+			return dh.capture.count() >= numPackets
+		}, 10*time.Second, 20*time.Millisecond, "expected the media to arrive")
+		// past the window the sequencer keeps after a packet is sent
+		time.Sleep(NACKIgnoreWindowForTest + 20*time.Millisecond)
+
+		var nacked []uint16
+		for _, i := range nackIndexes {
+			nacked = append(nacked, sns[i])
+		}
+		sendNACK(t, dh, nacked)
+
+		var want []uint16
+		for _, i := range newestIndexes {
+			want = append(want, sns[i])
+		}
+		require.Eventually(t, func() bool {
+			return dh.dt.RTXCappedForTest() == uint64(len(nacked)-len(want))
+		}, 5*time.Second, 20*time.Millisecond, "expected all but the newest to be capped")
+		require.Equal(t, want, rtxSeqs(cp))
+	}
+
+	t.Run("newest first for a NACK in mixed order", func(t *testing.T) {
+		newestOf(t, 31000, []int{10, 19, 0, 15, 5}, []int{19, 15, 10})
+	})
+
+	t.Run("newest first across the sequence number wrap", func(t *testing.T) {
+		// packets 65530..65535 then 0..13: three before the wrap and three after it, out of order
+		newestOf(t, 65530, []int{4, 8, 1, 6, 9, 2}, []int{9, 8, 6})
+	})
 }
 
 // TestDownTrackRetransmitsPacketsViaRTX exercises the retransmit path when an RTX
@@ -701,12 +916,6 @@ func TestDownTrackSendsPaddingOnlyPackets(t *testing.T) {
 // WriteProbePackets: RTX probe packets (with StreamAllocator + Pacer + BWE)
 // -----------------------------------------------------------------------------
 
-// capturingProbe records what the DownTrack handed the pacer for a probe packet.
-type capturingProbe struct {
-	hdr        rtp.Header
-	payloadLen int
-}
-
 // capturedRTX records what the DownTrack handed the pacer for an RTX packet.
 type capturedRTX struct {
 	hdr     rtp.Header
@@ -720,7 +929,7 @@ type capturingPacer struct {
 	inner pacer.Pacer
 
 	lock   sync.Mutex
-	probes []capturingProbe
+	probes []capturedRTX
 	rtx    []capturedRTX
 }
 
@@ -728,7 +937,7 @@ func (c *capturingPacer) Enqueue(p *pacer.Packet) {
 	if p.Header != nil {
 		switch {
 		case p.IsProbe:
-			cp := capturingProbe{hdr: *p.Header, payloadLen: len(p.Payload)}
+			cp := capturedRTX{hdr: *p.Header, payload: append([]byte(nil), p.Payload...)}
 			c.lock.Lock()
 			c.probes = append(c.probes, cp)
 			c.lock.Unlock()
@@ -741,10 +950,10 @@ func (c *capturingPacer) Enqueue(p *pacer.Packet) {
 	c.inner.Enqueue(p)
 }
 
-func (c *capturingPacer) probePackets() []capturingProbe {
+func (c *capturingPacer) probePackets() []capturedRTX {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	return append([]capturingProbe(nil), c.probes...)
+	return append([]capturedRTX(nil), c.probes...)
 }
 
 func (c *capturingPacer) rtxPackets() []capturedRTX {
@@ -928,7 +1137,7 @@ func TestDownTrackSendsProbePackets(t *testing.T) {
 				require.EqualValues(t, dh.dt.PayloadTypeRTXForTest(), pr.hdr.PayloadType, "probe packet must use the RTX payload type")
 				require.True(t, pr.hdr.Padding, "probe packet must carry padding bit")
 				require.EqualValues(t, RTPPaddingMaxPayloadSize, pr.hdr.PaddingSize, "probe packet must set header.PaddingSize")
-				require.Zero(t, pr.payloadLen, "probe packet must have no payload")
+				require.Zero(t, len(pr.payload), "probe packet must have no payload")
 			}
 
 			// the BWE is wired and exercised (the pacer records every send into it);
@@ -1085,7 +1294,6 @@ func TestDownTrackResumesAfterBandwidthPause(t *testing.T) {
 }
 
 func testResumeAfterBandwidthPause(t *testing.T, allowPause bool) {
-	logger.InitFromConfig(&logger.Config{Level: "debug"}, t.Name())
 	const (
 		layer0Bps = 80_000
 		layer1Bps = 170_000
@@ -1124,7 +1332,7 @@ func testResumeAfterBandwidthPause(t *testing.T, allowPause bool) {
 	for i := range buckets {
 		buckets[i] = bucket.NewBucket[uint64, uint16](500, bucket.RTPMaxPktSize, bucket.RTPSeqNumOffset)
 	}
-	dh.receiver.ReadRTPCalls(func(buf []byte, layer uint8, esn uint64) (int, error) {
+	dh.receiver.ReadRTPCalls(func(buf []byte, layer uint8, esn uint64, _ uint64) (int, error) {
 		bucketsMu.Lock()
 		defer bucketsMu.Unlock()
 		return buckets[layer].GetPacket(buf, esn)

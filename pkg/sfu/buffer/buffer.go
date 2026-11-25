@@ -106,6 +106,9 @@ func NewBuffer(ssrc uint32, maxVideoPkts, maxAudioPkts int) *Buffer {
 		LoggerComponents:   []string{sutils.ComponentPub, sutils.ComponentSFU},
 		SendPLI:            b.sendPLI,
 		IsReportingEnabled: true,
+		// a stream resuming after a gap, e. g. a layer after a dynacast pause, can have a
+		// dependency descriptor frame number more than half the 16 bit range away
+		IsDDRestartEnabled: true,
 	})
 	return b
 }

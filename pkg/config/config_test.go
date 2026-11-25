@@ -16,8 +16,10 @@ package config
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -62,6 +64,29 @@ func TestConfig_SignalMessageSizeLimitOverride(t *testing.T) {
 	require.Equal(t, int64(1024), conf.Limit.SignalMessageSizeLimit)
 	// 0 explicitly disables the limit
 	require.Equal(t, int64(0), conf.Limit.AgentSignalMessageSizeLimit)
+}
+
+func TestCheckAttributesSize(t *testing.T) {
+	conf, err := NewConfig("", true, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, uint32(2*1024), conf.Limit.MaxLKAttributesSize)
+
+	l := LimitConfig{MaxAttributesSize: 5, MaxLKAttributesSize: 10}
+	// "k"+"vvvv" is 5 bytes, "lk.k"+"vvvvvv" is 10 bytes, each at its own limit
+	attrs := map[string]string{"k": "vvvv", "lk.k": "vvvvvv"}
+	require.True(t, l.CheckAttributesSize(attrs))
+	require.True(t, l.CheckLKAttributesSize(attrs))
+
+	attrs["k"] = "vvvvv"
+	require.False(t, l.CheckAttributesSize(attrs))
+	require.True(t, l.CheckLKAttributesSize(attrs))
+
+	attrs["k"] = "vvvv"
+	attrs["lk.k"] = "vvvvvvv"
+	require.True(t, l.CheckAttributesSize(attrs))
+	require.False(t, l.CheckLKAttributesSize(attrs))
+
+	require.True(t, LimitConfig{}.CheckLKAttributesSize(attrs))
 }
 
 func TestConfig_PSRPCCompressionDefaults(t *testing.T) {
@@ -125,25 +150,28 @@ func TestGeneratedFlags(t *testing.T) {
 	require.False(t, *conf.RTC.ReconnectOnSubscriptionError)
 }
 
-func TestGeneratedDurationFlags(t *testing.T) {
-	// run a command with the generated flags, as cmd/server does, so that flag and env var values are parsed
-	run := func(t *testing.T, args ...string) (*Config, error) {
-		generatedFlags, err := GenerateCLIFlags(nil, true)
-		require.NoError(t, err)
+// runWithGeneratedFlags runs a command with the generated flags, as cmd/server does,
+// so that flag and env var values are parsed.
+func runWithGeneratedFlags(t *testing.T, args ...string) (*Config, error) {
+	generatedFlags, err := GenerateCLIFlags(nil, true)
+	require.NoError(t, err)
 
-		var conf *Config
-		c := &cli.Command{
-			Name:  "test",
-			Flags: generatedFlags,
-			Action: func(_ context.Context, c *cli.Command) error {
-				var err error
-				conf, err = NewConfig("", true, c, nil)
-				return err
-			},
-		}
-		err = c.Run(context.Background(), append([]string{"test"}, args...))
-		return conf, err
+	var conf *Config
+	c := &cli.Command{
+		Name:  "test",
+		Flags: generatedFlags,
+		Action: func(_ context.Context, c *cli.Command) error {
+			var err error
+			conf, err = NewConfig("", true, c, nil)
+			return err
+		},
 	}
+	err = c.Run(context.Background(), append([]string{"test"}, args...))
+	return conf, err
+}
+
+func TestGeneratedDurationFlags(t *testing.T) {
+	run := runWithGeneratedFlags
 
 	t.Run("flag", func(t *testing.T) {
 		conf, err := run(t, "--api.execution_timeout=5s")
@@ -164,6 +192,94 @@ func TestGeneratedDurationFlags(t *testing.T) {
 		_, err := run(t)
 		require.ErrorContains(t, err, "LIVEKIT_ROOM_CREATE_ROOM_TIMEOUT")
 	})
+}
+
+func TestGeneratedNarrowNumericFlags(t *testing.T) {
+	t.Run("in range", func(t *testing.T) {
+		t.Setenv("LIVEKIT_TURN_RELAY_RANGE_START", "50000")
+		t.Setenv("LIVEKIT_TURN_RELAY_RANGE_END", "60000")
+		t.Setenv("LIVEKIT_LIMIT_MAX_METADATA_SIZE", "4096")
+		t.Setenv("LIVEKIT_LIMIT_NUM_TRACKS", "-1")
+		t.Setenv("LIVEKIT_LIMIT_BYTES_PER_SEC", "1000000.5")
+		conf, err := runWithGeneratedFlags(t)
+		require.NoError(t, err)
+		require.Equal(t, uint16(50000), conf.TURN.RelayPortRangeStart)
+		require.Equal(t, uint16(60000), conf.TURN.RelayPortRangeEnd)
+		require.Equal(t, uint32(4096), conf.Limit.MaxMetadataSize)
+		require.Equal(t, int32(-1), conf.Limit.NumTracks)
+		require.Equal(t, float32(1000000.5), conf.Limit.BytesPerSec)
+	})
+
+	// values that do not fit the config field are rejected, as in the YAML config,
+	// instead of wrapping around
+	for env, value := range map[string]string{
+		"LIVEKIT_TURN_RELAY_RANGE_START":  "70000",      // uint16, would become 4464
+		"LIVEKIT_LIMIT_MAX_METADATA_SIZE": "4294967296", // uint32, would become 0 (no limit)
+		"LIVEKIT_LIMIT_NUM_TRACKS":        "2147483648", // int32, would become -2147483648
+		"LIVEKIT_LIMIT_BYTES_PER_SEC":     "1e39",       // float32, would become +Inf
+	} {
+		t.Run(env, func(t *testing.T) {
+			t.Setenv(env, value)
+			_, err := runWithGeneratedFlags(t)
+			require.ErrorContains(t, err, env)
+		})
+	}
+}
+
+// numericCLIFlag also covers kinds that no config field uses yet (int8, int16, uint),
+// so check every numeric kind directly rather than through the Config struct.
+func TestNumericCLIFlagWidths(t *testing.T) {
+	cases := []struct {
+		name     string
+		typ      reflect.Type
+		inRange  string
+		want     any
+		tooLarge string
+	}{
+		{"int8", reflect.TypeOf(int8(0)), "-128", int8(-128), "128"},
+		{"int16", reflect.TypeOf(int16(0)), "32767", int16(32767), "32768"},
+		{"int32", reflect.TypeOf(int32(0)), "-2147483648", int32(-2147483648), "2147483648"},
+		{"uint", reflect.TypeOf(uint(0)), "42", uint(42), "-1"},
+		{"uint8", reflect.TypeOf(uint8(0)), "255", uint8(255), "256"},
+		{"uint16", reflect.TypeOf(uint16(0)), "65535", uint16(65535), "65536"},
+		{"uint32", reflect.TypeOf(uint32(0)), "4294967295", uint32(4294967295), "4294967296"},
+		{"float32", reflect.TypeOf(float32(0)), "0.5", float32(0.5), "1e39"},
+	}
+
+	run := func(t *testing.T, typ reflect.Type, value string) (any, error) {
+		const env = "LIVEKIT_TEST_NUMERIC_FLAG"
+		t.Setenv(env, value)
+		var got any
+		flag, err := numericCLIFlag(typ, "test.numeric_flag", env, "", true)
+		require.NoError(t, err)
+		c := &cli.Command{
+			Name:  "test",
+			Flags: []cli.Flag{flag},
+			Action: func(_ context.Context, c *cli.Command) error {
+				got = c.Value("test.numeric_flag")
+				return nil
+			},
+		}
+		err = c.Run(context.Background(), []string{"test"})
+		return got, err
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := run(t, tc.typ, tc.inRange)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+
+			_, err = run(t, tc.typ, tc.tooLarge)
+			require.ErrorContains(t, err, "LIVEKIT_TEST_NUMERIC_FLAG")
+		})
+	}
+}
+
+func TestNumericCLIFlagUnsupportedKind(t *testing.T) {
+	flag, err := numericCLIFlag(reflect.TypeOf(complex64(0)), "test.complex_flag", "LIVEKIT_TEST_COMPLEX_FLAG", "", true)
+	require.Nil(t, flag)
+	require.ErrorContains(t, err, "test.complex_flag is a complex64")
 }
 
 func TestYAMLTag(t *testing.T) {
@@ -324,4 +440,68 @@ func TestLoadTURNSecrets(t *testing.T) {
 		require.NoError(t, conf.LoadTURNSecrets())
 		require.Equal(t, "fromfile", conf.RTC.TURNServers[0].Secret)
 	})
+}
+
+// Exercise the operator-facing YAML path so this test also runs on the upstream
+// branch, where credentials_file is not recognized yet.
+func TestTURNCredentialsFile(t *testing.T) {
+	const (
+		fileName          = "turn-credentials.yaml"
+		username          = "turn-user"
+		credential        = " turn-password "
+		validCredentials  = "username: turn-user\ncredential: ' turn-password '\n"
+		privateValue      = "do-not-log-my-password"
+		redactedPrefix    = "do-not-"
+		configFormat      = "rtc:\n  turn_servers:\n    - host: turn.example.com\n      credentials_file: %q\n%s"
+		inlineCredentials = "      username: inline-user\n      credential: inline-password\n"
+	)
+	cases := []struct {
+		name           string
+		data           string
+		mode           os.FileMode
+		inline         string
+		missing        bool
+		directory      bool
+		wantError      bool
+		wantUser       string
+		wantCredential string
+	}{
+		{name: "pair loaded from one file", data: validCredentials, mode: 0o600, wantUser: username, wantCredential: credential},
+		{name: "group-readable file accepted", data: validCredentials, mode: 0o640, wantUser: username, wantCredential: credential},
+		{name: "inline pair wins without reading missing file", missing: true, inline: inlineCredentials, wantUser: "inline-user", wantCredential: "inline-password"},
+		{name: "inline whitespace preserved", missing: true, inline: "      username: ' u '\n      credential: ' c '\n", wantUser: " u ", wantCredential: " c "},
+		{name: "partial inline username is not mixed with file", data: validCredentials, mode: 0o600, inline: "      username: inline-user\n", wantError: true},
+		{name: "partial inline password is not mixed with file", data: validCredentials, mode: 0o600, inline: "      credential: inline-password\n", wantError: true},
+		{name: "missing file", missing: true, wantError: true},
+		{name: "directory cannot be read", directory: true, wantError: true},
+		{name: "others permissions rejected", data: validCredentials, mode: 0o604, wantError: true},
+		{name: "scalar credentials do not leak in errors", data: privateValue, mode: 0o600, wantError: true},
+		{name: "invalid YAML", data: "username: [", mode: 0o600, wantError: true},
+		{name: "empty file", mode: 0o600, wantError: true},
+		{name: "whitespace file", data: " \n\t", mode: 0o600, wantError: true},
+		{name: "missing username", data: "credential: password\n", mode: 0o600, wantError: true},
+		{name: "missing password", data: "username: user\n", mode: 0o600, wantError: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), fileName)
+			switch {
+			case tc.directory:
+				require.NoError(t, os.Mkdir(path, 0o700))
+			case !tc.missing:
+				require.NoError(t, os.WriteFile(path, []byte(tc.data), tc.mode))
+			}
+			conf, err := NewConfig(fmt.Sprintf(configFormat, path, tc.inline), true, nil, nil)
+			require.NoError(t, err)
+			err = conf.LoadTURNSecrets()
+			if tc.wantError {
+				require.Error(t, err)
+				require.NotContains(t, err.Error(), redactedPrefix)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.wantUser, conf.RTC.TURNServers[0].Username)
+			require.Equal(t, tc.wantCredential, conf.RTC.TURNServers[0].Credential)
+		})
+	}
 }

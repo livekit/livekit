@@ -16,12 +16,13 @@ package rtc
 
 import (
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/pion/dtls/v3/pkg/protocol/handshake"
+	"github.com/pion/dtls/v4/pkg/protocol/handshake"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
@@ -473,6 +474,78 @@ func TestFirstAnswerMissedDuringICERestart(t *testing.T) {
 	transportB.Close()
 }
 
+func TestRestartOfferAnsweredWhileGathering(t *testing.T) {
+	// a STUN server that never answers keeps the server reflexive gathering of the answerer
+	// running until it times out, as for a server that gathers against STUN servers
+	stunConn, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer stunConn.Close()
+	go func() {
+		buf := make([]byte, 1500)
+		for {
+			if _, _, err := stunConn.ReadFrom(buf); err != nil {
+				return
+			}
+		}
+	}()
+
+	handlerA := &transportfakes.FakeHandler{}
+	transportA, err := NewPCTransport(TransportParams{
+		Config:    &WebRTCConfig{},
+		IsOfferer: true,
+		Handler:   handlerA,
+	})
+	require.NoError(t, err)
+	defer transportA.Close()
+	_, err = transportA.pc.CreateDataChannel(ReliableDataChannel, nil)
+	require.NoError(t, err)
+
+	configB := &WebRTCConfig{}
+	configB.Configuration.ICEServers = []webrtc.ICEServer{{URLs: []string{"stun:" + stunConn.LocalAddr().String()}}}
+	handlerB := &transportfakes.FakeHandler{}
+	transportB, err := NewPCTransport(TransportParams{
+		Config:    configB,
+		IsOfferer: false,
+		Handler:   handlerB,
+	})
+	require.NoError(t, err)
+	defer transportB.Close()
+
+	handleICEExchange(t, transportA, transportB, handlerA, handlerB)
+
+	var answerCount atomic.Int32
+	handlerB.OnAnswerCalls(func(answer webrtc.SessionDescription, answerId uint32, _midToTrackID map[string]string) error {
+		answerCount.Inc()
+		transportA.HandleRemoteDescription(answer, answerId)
+		return nil
+	})
+	var offerCount atomic.Int32
+	var gatheringAtRestartOffer atomic.Value
+	handlerA.OnOfferCalls(func(offer webrtc.SessionDescription, offerId uint32, _midToTrackID map[string]string) error {
+		if offerCount.Inc() == 2 {
+			gatheringAtRestartOffer.Store(transportB.pc.ICEGatheringState())
+		}
+		transportB.HandleRemoteDescription(offer, offerId)
+		return nil
+	})
+
+	transportA.Negotiate(true)
+	require.Eventually(t, func() bool {
+		return answerCount.Load() == 1 && iceConnected(transportA.pc) && iceConnected(transportB.pc)
+	}, testutils.ConnectTimeout, 10*time.Millisecond, "transports did not connect")
+
+	// restart while the answerer is still gathering, it should answer without waiting for gathering to complete
+	require.NoError(t, transportA.ICERestart())
+	require.Eventually(t, func() bool {
+		return answerCount.Load() == 2
+	}, 2*time.Second, 10*time.Millisecond, "ICE restart offer not answered while gathering")
+	require.Equal(t, webrtc.ICEGatheringStateGathering, gatheringAtRestartOffer.Load(), "restart offer did not arrive while gathering")
+
+	require.Eventually(t, func() bool {
+		return iceConnected(transportA.pc) && iceConnected(transportB.pc)
+	}, testutils.ConnectTimeout, 10*time.Millisecond, "transports did not reconnect after ICE restart")
+}
+
 func TestNegotiationFailed(t *testing.T) {
 	params := TransportParams{
 		Config:    &WebRTCConfig{},
@@ -709,19 +782,18 @@ func untilTransportsConnected(transports ...*transportfakes.FakeHandler) *sync.W
 	triggered.Add(len(transports))
 
 	for _, t := range transports {
-		var done atomic.Value
-		done.Store(false)
+		var done atomic.Bool
 		hdlr := func() {
-			if val, ok := done.Load().(bool); ok && !val {
-				done.Store(true)
+			if done.CompareAndSwap(false, true) {
 				triggered.Done()
 			}
 		}
 
+		// register before checking the count, so a call in between is not missed
+		t.OnInitialConnectedCalls(hdlr)
 		if t.OnInitialConnectedCallCount() != 0 {
 			hdlr()
 		}
-		t.OnInitialConnectedCalls(hdlr)
 	}
 	return &triggered
 }
@@ -1072,4 +1144,104 @@ func TestRemoteOfferParsedFollowsICERestartFragment(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "restartUfrag", ufrag)
 	require.Equal(t, "restartPwd0123456789abcdef", pwd)
+}
+
+func TestAnsweringDTLSRole(t *testing.T) {
+	sdkInfo := func(sdk livekit.ClientInfo_SDK) ClientInfo {
+		return ClientInfo{ClientInfo: &livekit.ClientInfo{Sdk: sdk}}
+	}
+	cases := []struct {
+		name       string
+		clientInfo ClientInfo
+		expected   sdp.ConnectionRole
+	}{
+		{name: "js", clientInfo: sdkInfo(livekit.ClientInfo_JS), expected: sdp.ConnectionRolePassive},
+		{name: "unknown sdk", clientInfo: ClientInfo{}, expected: sdp.ConnectionRoleActive},
+		{name: "esp32", clientInfo: sdkInfo(livekit.ClientInfo_ESP32), expected: sdp.ConnectionRoleActive},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			conf := &WebRTCConfig{}
+			answerer, err := NewPCTransport(TransportParams{
+				Config:          conf,
+				ProtocolVersion: 16,
+				ClientInfo:      c.clientInfo,
+				Handler:         &transportfakes.FakeHandler{},
+			})
+			require.NoError(t, err)
+			defer answerer.Close()
+
+			offerer, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+			require.NoError(t, err)
+			defer offerer.Close()
+			_, err = offerer.CreateDataChannel("test", nil)
+			require.NoError(t, err)
+			offer, err := offerer.CreateOffer(nil)
+			require.NoError(t, err)
+
+			require.NoError(t, answerer.pc.SetRemoteDescription(offer))
+			answer, err := answerer.pc.CreateAnswer(nil)
+			require.NoError(t, err)
+
+			parsed, err := answer.Unmarshal()
+			require.NoError(t, err)
+			setup, ok := parsed.MediaDescriptions[0].Attribute(sdp.AttrKeyConnectionSetup)
+			require.True(t, ok)
+			require.Equal(t, c.expected.String(), setup)
+		})
+	}
+}
+
+func TestICELitePlacement(t *testing.T) {
+	js := ClientInfo{ClientInfo: &livekit.ClientInfo{Sdk: livekit.ClientInfo_JS}}
+	cases := []struct {
+		name       string
+		configLite bool // server use_ice_lite
+		isOfferer  bool // true = subscriber (SFU offers); false = publisher (SFU answers)
+		expectLite bool
+	}{
+		{name: "subscriber honors lite", configLite: true, isOfferer: true, expectLite: true},
+		{name: "subscriber full when off", configLite: false, isOfferer: true, expectLite: false},
+		{name: "publisher stays full despite lite", configLite: true, isOfferer: false, expectLite: false},
+		{name: "publisher full when off", configLite: false, isOfferer: false, expectLite: false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			conf := &WebRTCConfig{}
+			conf.SettingEngine.SetLite(c.configLite)
+			tr, err := NewPCTransport(TransportParams{
+				Config:          conf,
+				ProtocolVersion: 16,
+				ClientInfo:      js,
+				IsOfferer:       c.isOfferer,
+				Handler:         &transportfakes.FakeHandler{},
+			})
+			require.NoError(t, err)
+			defer tr.Close()
+
+			var desc webrtc.SessionDescription
+			if c.isOfferer {
+				_, err = tr.pc.CreateDataChannel("test", nil)
+				require.NoError(t, err)
+				desc, err = tr.pc.CreateOffer(nil)
+				require.NoError(t, err)
+			} else {
+				offerer, err2 := webrtc.NewPeerConnection(webrtc.Configuration{})
+				require.NoError(t, err2)
+				defer offerer.Close()
+				_, err2 = offerer.CreateDataChannel("test", nil)
+				require.NoError(t, err2)
+				offer, err2 := offerer.CreateOffer(nil)
+				require.NoError(t, err2)
+				require.NoError(t, tr.pc.SetRemoteDescription(offer))
+				desc, err = tr.pc.CreateAnswer(nil)
+				require.NoError(t, err)
+			}
+
+			parsed, err := desc.Unmarshal()
+			require.NoError(t, err)
+			_, hasLite := parsed.Attribute(sdp.AttrKeyICELite)
+			require.Equal(t, c.expectLite, hasLite, "a=ice-lite presence")
+		})
+	}
 }

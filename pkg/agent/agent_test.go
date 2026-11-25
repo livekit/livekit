@@ -60,6 +60,204 @@ func TestAgent(t *testing.T) {
 			require.Fail(t, "job assignment timeout")
 		}
 	})
+
+	t.Run("the token of an assigned job names the job's attempt", func(t *testing.T) {
+		bus := psrpc.NewLocalMessageBus()
+
+		client := must.Get(rpc.NewAgentInternalClient(bus))
+		server := testutils.NewTestServer(bus)
+		t.Cleanup(server.Close)
+
+		worker := server.SimulateAgentWorker()
+		worker.Register(testAgentName, livekit.JobType_JT_ROOM)
+		jobAssignments := worker.JobAssignments.Observe()
+
+		job := &livekit.Job{
+			Id:         guid.New(guid.AgentJobPrefix),
+			DispatchId: guid.New(guid.AgentDispatchPrefix),
+			Type:       livekit.JobType_JT_ROOM,
+			Room:       &livekit.Room{},
+			AgentName:  testAgentName,
+		}
+		var res *rpc.JobRequestResponse
+		require.EventuallyWithT(t, func(c *assert.CollectT) {
+			var err error
+			res, err = client.JobRequest(context.Background(), testAgentName, agent.RoomAgentTopic, job)
+			assert.NoError(c, err)
+		}, 5*time.Second, 50*time.Millisecond)
+
+		var a *livekit.JobAssignment
+		select {
+		case a = <-jobAssignments.Events():
+		case <-time.After(time.Second):
+			require.Fail(t, "job assignment timeout")
+		}
+		v, err := auth.ParseAPIToken(a.Token)
+		require.NoError(t, err)
+		_, claims, err := v.Verify(server.TestAPISecret)
+		require.NoError(t, err)
+
+		// the room knows the attempt by the StartedAt of the state it is answered with
+		jobID, attempt, ok := agent.ParseJobAttempt(claims.Attributes[agent.JobAttemptAttributeKey])
+		require.True(t, ok)
+		require.EqualValues(t, job.Id, jobID)
+		require.NotZero(t, attempt)
+		require.Equal(t, agent.JobAttempt(res.State), attempt)
+	})
+
+	t.Run("an attempt follows the one its job request carries, whatever the clock", func(t *testing.T) {
+		bus := psrpc.NewLocalMessageBus()
+
+		client := must.Get(rpc.NewAgentInternalClient(bus))
+		server := testutils.NewTestServer(bus)
+		t.Cleanup(server.Close)
+
+		worker := server.SimulateAgentWorker()
+		worker.Register(testAgentName, livekit.JobType_JT_ROOM)
+		jobAssignments := worker.JobAssignments.Observe()
+
+		// the previous attempt started, and its state was last written, on a node
+		// whose clock is ahead of this one
+		previous := time.Now().Add(time.Hour).UnixNano()
+		job := &livekit.Job{
+			Id:         guid.New(guid.AgentJobPrefix),
+			DispatchId: guid.New(guid.AgentDispatchPrefix),
+			Type:       livekit.JobType_JT_ROOM,
+			Room:       &livekit.Room{},
+			AgentName:  testAgentName,
+			State:      &livekit.JobState{StartedAt: previous, UpdatedAt: previous, AcceptedAt: previous, AssignedAt: previous},
+		}
+		var res *rpc.JobRequestResponse
+		require.EventuallyWithT(t, func(c *assert.CollectT) {
+			var err error
+			res, err = client.JobRequest(context.Background(), testAgentName, agent.RoomAgentTopic, job)
+			assert.NoError(c, err)
+		}, 5*time.Second, 50*time.Millisecond)
+		require.Greater(t, res.State.StartedAt, previous)
+		require.Greater(t, res.State.UpdatedAt, previous, "the assignment is a later version of the job's state")
+		require.Greater(t, res.State.AcceptedAt, res.State.StartedAt, "the accept is this attempt's")
+		require.GreaterOrEqual(t, res.State.AssignedAt, res.State.AcceptedAt)
+
+		var a *livekit.JobAssignment
+		select {
+		case a = <-jobAssignments.Events():
+		case <-time.After(time.Second):
+			require.Fail(t, "job assignment timeout")
+		}
+		v, err := auth.ParseAPIToken(a.Token)
+		require.NoError(t, err)
+		_, claims, err := v.Verify(server.TestAPISecret)
+		require.NoError(t, err)
+		_, attempt, ok := agent.ParseJobAttempt(claims.Attributes[agent.JobAttemptAttributeKey])
+		require.True(t, ok)
+		require.Equal(t, agent.JobAttempt(res.State), attempt, "the token names the attempt the room is answered with")
+	})
+
+	t.Run("an attempt that started past this node's clock ends after it started", func(t *testing.T) {
+		bus := psrpc.NewLocalMessageBus()
+
+		client := must.Get(rpc.NewAgentInternalClient(bus))
+		server := testutils.NewTestServer(bus)
+		t.Cleanup(server.Close)
+
+		// the worker ends the job as soon as it is offered
+		var worker *testutils.AgentWorker
+		worker = server.SimulateAgentWorker(testutils.WithJobAvailabilityHandler(func(r testutils.AgentJobRequest) {
+			worker.SendAvailability(&livekit.AvailabilityResponse{JobId: r.Job.Id, Terminate: true})
+		}))
+		worker.Register(testAgentName, livekit.JobType_JT_ROOM)
+
+		previous := time.Now().Add(time.Hour).UnixNano()
+		job := &livekit.Job{
+			Id:         guid.New(guid.AgentJobPrefix),
+			DispatchId: guid.New(guid.AgentDispatchPrefix),
+			Type:       livekit.JobType_JT_ROOM,
+			Room:       &livekit.Room{},
+			AgentName:  testAgentName,
+			State:      &livekit.JobState{StartedAt: previous, UpdatedAt: previous},
+		}
+		var res *rpc.JobRequestResponse
+		require.EventuallyWithT(t, func(c *assert.CollectT) {
+			var err error
+			res, err = client.JobRequest(context.Background(), testAgentName, agent.RoomAgentTopic, job)
+			assert.NoError(c, err)
+		}, 5*time.Second, 50*time.Millisecond)
+
+		require.Equal(t, livekit.JobStatus_JS_SUCCESS, res.State.Status)
+		require.Greater(t, res.State.StartedAt, previous)
+		require.Greater(t, res.State.EndedAt, res.State.StartedAt)
+	})
+
+	t.Run("a launched job carries the dispatch's thread", func(t *testing.T) {
+		bus := psrpc.NewLocalMessageBus()
+		server := testutils.NewTestServer(bus)
+		t.Cleanup(server.Close)
+
+		rpcClient := must.Get(rpc.NewAgentInternalClient(bus))
+		registered := must.Get(rpcClient.SubscribeWorkerRegistered(context.Background(), agent.DefaultHandlerNamespace))
+		defer registered.Close()
+
+		worker := server.SimulateAgentWorker()
+		worker.Register(testAgentName, livekit.JobType_JT_ROOM)
+		select {
+		case <-registered.Channel():
+		case <-time.After(time.Second):
+			require.Fail(t, "registration timeout")
+		}
+
+		client := must.Get(agent.NewAgentClient(bus, agent.Config{}))
+		t.Cleanup(func() { _ = client.Stop() })
+
+		threadID := guid.New(guid.AgentThreadPrefix)
+		var launched []*livekit.Job
+		client.LaunchJob(context.Background(), &agent.JobRequest{
+			JobType:   livekit.JobType_JT_ROOM,
+			Room:      &livekit.Room{},
+			AgentName: testAgentName,
+			ThreadId:  threadID,
+		}).ForEach(func(job *livekit.Job) { launched = append(launched, job) })
+		require.Len(t, launched, 1)
+		require.Equal(t, threadID, launched[0].ThreadId)
+
+		jobs := worker.Jobs()
+		require.Len(t, jobs, 1)
+		require.Equal(t, threadID, jobs[0].ThreadId)
+	})
+
+	t.Run("dispatch burst does not wait for the CheckEnabled timeout", func(t *testing.T) {
+		bus := psrpc.NewLocalMessageBus()
+		server := testutils.NewTestServer(bus)
+		t.Cleanup(server.Close)
+
+		rpcClient := must.Get(rpc.NewAgentInternalClient(bus))
+		registered := must.Get(rpcClient.SubscribeWorkerRegistered(context.Background(), agent.DefaultHandlerNamespace))
+		defer registered.Close()
+
+		worker := server.SimulateAgentWorker(testutils.WithJobLoad(testutils.NewStableJobLoad(0)))
+		worker.Register(testAgentName, livekit.JobType_JT_ROOM)
+		select {
+		case <-registered.Channel():
+		case <-time.After(time.Second):
+			require.Fail(t, "registration timeout")
+		}
+
+		client := must.Get(agent.NewAgentClient(bus, agent.Config{}))
+		t.Cleanup(func() { _ = client.Stop() })
+
+		const jobCount = 60 // more than the client's 50 pool workers
+		start := time.Now()
+		for range jobCount {
+			go client.LaunchJob(context.Background(), &agent.JobRequest{
+				JobType:   livekit.JobType_JT_ROOM,
+				Room:      &livekit.Room{},
+				AgentName: testAgentName,
+			})
+		}
+		require.Eventually(t, func() bool {
+			return len(worker.Jobs()) == jobCount
+		}, 2*agent.CheckEnabledTimeout, 10*time.Millisecond)
+		require.Less(t, time.Since(start), 2*time.Second)
+	})
 }
 
 func testBatchJobRequest(t require.TestingT, batchSize int, totalJobs int, client rpc.AgentInternalClient, workers []*testutils.AgentWorker) <-chan struct{} {
@@ -326,23 +524,17 @@ func TestDrainConnectionsDoesNotDeadlock(t *testing.T) {
 			}
 			responses.Stop()
 
-			done := make(chan struct{})
-			go func() {
+			// the register response is sent before the handler adds the worker, so a drain right
+			// after it can miss the worker; drain again until it is closed, a deadlocked drain never returns
+			require.Eventually(t, func() bool {
 				server.DrainConnections(time.Millisecond, force)
-				close(done)
-			}()
-
-			select {
-			case <-done:
-			case <-time.After(5 * time.Second):
-				require.Fail(t, "DrainConnections deadlocked while closing workers")
-			}
-
-			select {
-			case <-worker.Closed():
-			case <-time.After(time.Second):
-				require.Fail(t, "worker should be closed after drain")
-			}
+				select {
+				case <-worker.Closed():
+					return true
+				default:
+					return false
+				}
+			}, 5*time.Second, 10*time.Millisecond, "worker should be closed after drain without deadlock")
 		})
 	}
 }

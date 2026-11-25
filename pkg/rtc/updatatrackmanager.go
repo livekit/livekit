@@ -60,6 +60,8 @@ func (u *UpDataTrackManager) Close() {
 
 	for _, t := range dataTracks {
 		t.Close()
+
+		u.params.Participant.GetParticipantListener().OnDataTrackUnpublished(u.params.Participant, t)
 	}
 }
 

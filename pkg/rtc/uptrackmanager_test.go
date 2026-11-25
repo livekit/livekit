@@ -16,6 +16,7 @@ package rtc
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -213,6 +214,28 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 
 		um.UpdateSubscriptionPermission(&livekit.SubscriptionPermission{}, utils.TimedVersion(0), nil)
 		require.True(t, um.subscriptionPermissionVersion.After(v2), "zero version in updates should use next local version")
+	})
+
+	t.Run("local updates advance past a remote clock", func(t *testing.T) {
+		um := NewUpTrackManager(defaultUptrackManagerParams)
+		remoteVersion := utils.TimedVersionFromTime(time.Now().Add(time.Hour))
+		allow := &livekit.SubscriptionPermission{AllParticipants: true}
+		deny := &livekit.SubscriptionPermission{}
+
+		require.NoError(t, um.UpdateSubscriptionPermission(allow, remoteVersion, nil))
+		require.NoError(t, um.UpdateSubscriptionPermission(deny, 0, nil))
+		_, localVersion := um.SubscriptionPermission()
+		require.True(t, localVersion.After(remoteVersion))
+		require.False(t, um.HasPermission("video", "subscriber"))
+
+		// This update was sent before the local change, with the next remote tick.
+		require.NoError(t, um.UpdateSubscriptionPermission(allow, remoteVersion.Next(), nil))
+		require.False(t, um.HasPermission("video", "subscriber"))
+
+		require.NoError(t, um.UpdateSubscriptionPermission(allow, 0, nil))
+		_, nextLocalVersion := um.SubscriptionPermission()
+		require.True(t, nextLocalVersion.After(localVersion))
+		require.True(t, um.HasPermission("video", "subscriber"))
 	})
 }
 

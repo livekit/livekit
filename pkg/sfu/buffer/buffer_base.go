@@ -48,6 +48,7 @@ import (
 )
 
 var (
+	streamGenerationCounter   atomic.Uint64
 	errFECMediaPacketNotFound = errors.New("fec media packet not found")
 
 	ExtPacketFactory = &sync.Pool{
@@ -81,6 +82,7 @@ type ExtPacket struct {
 	VideoLayer
 	Arrival              int64
 	ExtSequenceNumber    uint64
+	StreamGeneration     uint64 // packet cache identity for GetPacketForStream
 	ExtTimestamp         uint64
 	Packet               *rtp.Packet
 	VP8                  *codec.VP8        // nil when not parsed
@@ -97,9 +99,10 @@ type ExtPacket struct {
 	pkt        rtp.Packet
 	extensions [8]rtp.Extension
 
-	// backing storage for VP8 and VP9, so parsing does not allocate
-	vp8 codec.VP8
-	vp9 codecs.VP9Packet
+	// backing storage for VP8, VP9 and abs-capture-time, so parsing does not allocate
+	vp8            codec.VP8
+	vp9            codecs.VP9Packet
+	absCaptureTime act.AbsCaptureTime
 }
 
 type BufferProvider interface {
@@ -114,6 +117,7 @@ type BufferProvider interface {
 
 	ReadExtended(buf []byte) (*ExtPacket, error)
 	GetPacket(buf []byte, esn uint64) (int, error)
+	GetPacketForStream(buf []byte, esn uint64, streamGeneration uint64) (int, error)
 
 	GetAudioLevel() (float64, bool)
 	GetTemporalLayerFpsForSpatial(layer int32) []float32
@@ -143,7 +147,7 @@ type BufferProvider interface {
 		isRTX bool,
 		skippedSeqs []uint16,
 		oobSequenceNumber uint16,
-	) (uint64, error)
+	) (extSequenceNumber uint64, streamGeneration uint64, err error)
 
 	MarkForRestartStream(reason string)
 	RestartStream(reason string)
@@ -173,6 +177,7 @@ type BufferBase struct {
 
 	readCond *sync.Cond
 
+	streamGeneration     uint64
 	bucket               *bucket.Bucket[uint64, uint16]
 	lastBucketCapCheckAt int64
 
@@ -204,6 +209,7 @@ type BufferBase struct {
 	enableStreamRestartDetection bool
 
 	pliThrottle int64
+	lastPliAt   atomic.Int64
 
 	rtpStats             *rtpstats.RTPStatsReceiver
 	ppsSnapshotId        uint32
@@ -253,6 +259,7 @@ func NewBufferBase(params BufferBaseParams) *BufferBase {
 
 	b := &BufferBase{
 		params:               params,
+		streamGeneration:     streamGenerationCounter.Inc(),
 		lastBucketCapCheckAt: mono.UnixNano(),
 		snRangeMap:           utils.NewRangeMap[uint64, uint64](100),
 		pliThrottle:          int64(500 * time.Millisecond),
@@ -484,6 +491,8 @@ func (b *BufferBase) SetStreamRestartDetection(enable bool) {
 
 func (b *BufferBase) setupRTPStats(clockRate uint32) {
 	b.rtpStats = rtpstats.NewRTPStatsReceiver(rtpstats.RTPStatsParams{})
+	// a new stream has no PLI history, so the PLI throttle starts fresh with it
+	b.lastPliAt.Store(0)
 	b.rtpStats.SetLogger(b.logger)
 	b.rtpStats.SetClockRate(clockRate)
 
@@ -582,6 +591,7 @@ func (b *BufferBase) restartStreamLocked(reason string, isDetected bool) {
 	b.snRangeMap = utils.NewRangeMap[uint64, uint64](100)
 	b.setupRTPStats(b.clockRate)
 
+	b.streamGeneration = streamGenerationCounter.Inc()
 	b.bucket.ResyncOnNextPacket()
 	b.lastBucketCapCheckAt = mono.UnixNano()
 
@@ -690,16 +700,29 @@ func (b *BufferBase) SetPLIThrottle(duration int64) {
 
 func (b *BufferBase) SendPLI(force bool) {
 	b.RLock()
-	if b.codecType != webrtc.RTPCodecTypeVideo {
+	if b.codecType != webrtc.RTPCodecTypeVideo || b.rtpStats == nil {
 		b.RUnlock()
 		return
+	}
+
+	// throttle before the rtpstats lock, every subscriber of a track can ask for a key frame at once,
+	// under the buffer read lock so a stream restart cannot interleave with claiming the window
+	now := mono.UnixNano()
+	if force {
+		b.lastPliAt.Store(now)
+	} else {
+		lastPliAt := b.lastPliAt.Load()
+		if now-lastPliAt < b.pliThrottle || !b.lastPliAt.CompareAndSwap(lastPliAt, now) {
+			b.RUnlock()
+			return
+		}
 	}
 
 	rtpStats := b.rtpStats
 	pliThrottle := b.pliThrottle
 	b.RUnlock()
 
-	if rtpStats == nil || !rtpStats.CheckAndUpdatePli(pliThrottle, force) {
+	if !rtpStats.CheckAndUpdatePli(pliThrottle, force) {
 		return
 	}
 
@@ -733,6 +756,7 @@ func (b *BufferBase) NotifyRead() {
 	b.readCond.Broadcast()
 }
 
+// HandleIncomingPacket returns the extended sequence number and the packet cache identity to use with GetPacketForStream.
 func (b *BufferBase) HandleIncomingPacket(
 	rawPkt []byte,
 	rtpPacket *rtp.Packet,
@@ -741,15 +765,15 @@ func (b *BufferBase) HandleIncomingPacket(
 	isRTX bool,
 	skippedSeqs []uint16,
 	oobSequenceNumber uint16,
-) (uint64, error) {
+) (uint64, uint64, error) {
 	b.Lock()
 	defer b.Unlock()
 
 	if b.isClosed.Load() {
-		return 0, io.EOF
+		return 0, 0, io.EOF
 	}
 
-	return b.HandleIncomingPacketLocked(
+	extSequenceNumber, err := b.HandleIncomingPacketLocked(
 		rawPkt,
 		rtpPacket,
 		arrivalTime,
@@ -758,6 +782,8 @@ func (b *BufferBase) HandleIncomingPacket(
 		skippedSeqs,
 		oobSequenceNumber,
 	)
+	// a restart in the call above happens before the packet is cached, so this is the generation of the packet
+	return extSequenceNumber, b.streamGeneration, err
 }
 
 func (b *BufferBase) HandleIncomingPacketLocked(
@@ -1239,6 +1265,7 @@ func (b *BufferBase) getExtPacket(
 	*ep = ExtPacket{
 		Arrival:           arrivalTime,
 		ExtSequenceNumber: flowState.ExtSequenceNumber,
+		StreamGeneration:  b.streamGeneration,
 		ExtTimestamp:      flowState.ExtTimestamp,
 		pkt:               *rtpPacket,
 		VideoLayer: VideoLayer{
@@ -1265,9 +1292,8 @@ func (b *BufferBase) getExtPacket(
 
 	if b.absCaptureTimeExtID != 0 {
 		if extData := rtpPacket.GetExtension(b.absCaptureTimeExtID); len(extData) != 0 {
-			actExt := &act.AbsCaptureTime{}
-			if err := actExt.Unmarshal(extData); err == nil {
-				ep.AbsCaptureTimeExt = actExt
+			if err := ep.absCaptureTime.Unmarshal(extData); err == nil {
+				ep.AbsCaptureTimeExt = &ep.absCaptureTime
 			}
 		}
 	}
@@ -1295,6 +1321,10 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 				return err
 			}
 		} else if ddVal != nil {
+			if ddVal.Restarted && ddVal.Descriptor.AttachedStructure == nil {
+				// the restart dropped the structure, so later packets cannot be parsed until a key frame
+				b.StartKeyFrameSeeder()
+			}
 			ep.DependencyDescriptor = ddVal
 			ep.VideoLayer = videoLayer
 			videoSize = ExtractDependencyDescriptorVideoSize(ddVal.Descriptor)
@@ -1390,6 +1420,7 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 		if b.rtpStats != nil {
 			b.rtpStats.UpdateKeyFrame(1)
 		}
+		prometheus.IncrementKeyFrames(prometheus.Incoming)
 	}
 
 	if len(videoSize) > 0 {
@@ -1552,10 +1583,27 @@ func (b *BufferBase) GetSenderReportData() *livekit.RTCPSenderReportState {
 }
 
 func (b *BufferBase) GetPacket(buff []byte, esn uint64) (int, error) {
-	b.Lock()
-	defer b.Unlock()
+	// read only, so retransmissions for many subscribers do not serialize
+	b.RLock()
+	defer b.RUnlock()
 
 	return b.getPacketLocked(buff, esn)
+}
+
+// GetPacketForStream rejects metadata from an earlier cache generation. The
+// generation check and packet copy share the lock used to reset and refill the
+// bucket, so a restart cannot substitute new media for an in-flight repair.
+func (b *BufferBase) GetPacketForStream(buff []byte, esn uint64, generation uint64) (int, error) {
+	b.RLock()
+	defer b.RUnlock()
+
+	if b.isClosed.Load() {
+		return 0, io.EOF
+	}
+	if generation == 0 || generation != b.streamGeneration {
+		return 0, bucket.ErrPacketMismatch
+	}
+	return b.bucket.GetPacket(buff, esn)
 }
 
 func (b *BufferBase) getPacketLocked(buff []byte, esn uint64) (int, error) {

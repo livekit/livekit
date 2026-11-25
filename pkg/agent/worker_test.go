@@ -12,6 +12,8 @@ import (
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/agent/endpoint/wire"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 )
 
 type nopSignalConn struct{}
@@ -74,5 +76,54 @@ func TestHandleRegisterWithoutEndpointsIgnoresReservedNames(t *testing.T) {
 			Type:      livekit.JobType_JT_ROOM,
 			AgentName: name,
 		}), name)
+	}
+}
+
+func TestAttachJob(t *testing.T) {
+	w := agent.NewWorker(agent.MakeWorkerRegistration(), "key", "secret", nopSignalConn{}, logger.GetLogger())
+	// the job as another worker was assigned it
+	job := &livekit.Job{
+		Id:    "AJ_attached",
+		State: &livekit.JobState{Status: livekit.JobStatus_JS_RUNNING, StartedAt: 1, UpdatedAt: 1, WorkerId: "AW_previous"},
+	}
+	attached := w.AttachJob(job)
+	require.Equal(t, int64(1), attached.StartedAt, "the job keeps its run")
+	require.Equal(t, w.ID, attached.WorkerId)
+	require.Greater(t, attached.UpdatedAt, int64(1))
+
+	state, err := w.GetJobState("AJ_attached")
+	require.NoError(t, err)
+	require.Equal(t, attached, state)
+
+	state, err = w.UpdateJobStatus(&livekit.UpdateJobStatus{JobId: job.Id, Status: livekit.JobStatus_JS_SUCCESS})
+	require.NoError(t, err)
+	require.Equal(t, livekit.JobStatus_JS_SUCCESS, state.Status)
+	require.Equal(t, int64(1), state.StartedAt)
+	require.Zero(t, w.RunningJobCount())
+}
+
+func TestAttachJobWithoutState(t *testing.T) {
+	w := agent.NewWorker(agent.MakeWorkerRegistration(), "key", "secret", nopSignalConn{}, logger.GetLogger())
+	attached := w.AttachJob(&livekit.Job{Id: "AJ_stateless"})
+	require.Equal(t, livekit.JobStatus_JS_RUNNING, attached.Status)
+	require.NotZero(t, attached.StartedAt)
+	require.Equal(t, w.ID, attached.WorkerId)
+
+	state, err := w.TerminateJob("AJ_stateless", rpc.JobTerminateReason_TERMINATION_REQUESTED)
+	require.NoError(t, err)
+	require.Equal(t, livekit.JobStatus_JS_SUCCESS, state.Status)
+	require.Equal(t, attached.StartedAt, state.StartedAt, "a termination is not the job's start")
+	require.Zero(t, w.RunningJobCount())
+}
+
+func TestParseJobAttempt(t *testing.T) {
+	jobID, attempt, ok := agent.ParseJobAttempt(agent.FormatJobAttempt("AJ_abc", 1761700000000000000))
+	require.True(t, ok)
+	require.EqualValues(t, "AJ_abc", jobID)
+	require.EqualValues(t, 1761700000000000000, attempt)
+
+	for _, s := range []string{"", "AJ_abc", ":123", "AJ_abc:", "AJ_abc:x"} {
+		_, _, ok := agent.ParseJobAttempt(s)
+		require.False(t, ok, s)
 	}
 }

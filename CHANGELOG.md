@@ -2,6 +2,56 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.11] - 2026-10-25
+
+### Changed
+
+- prometheus: count keyframes received and forwarded (#5060)
+- config-sample: add rtc.rtx_budget (#5059)
+- sfu: cap retransmissions per down track (#5054)
+- sfu: read lock for BufferBase.GetPacket (#5055)
+- ci: list failed tests after the test step (#5057)
+- rtc: log the API key that issued the join token (#5050)
+- rtc: measure subscribe pacing delay in shadow (#5046)
+- Add StreamType accessor to telemetry StatsKey (#5047)
+- Extend the TTL of data channel cache to 10s (#5045)
+- agent: run the agent name lookup off the worker pool (#5043)
+- Set the psrpc request timeout for PerformRpc (#5035)
+- Align SFU RPC caller timeouts with client SDK (#5037)
+- Enable upstream FlexFEC03 (#4845)
+- Add metrics for frame metadata use (#4687)
+- pion/webrtc deps for multi codec negotiation when media engine copy is disabled (#5038)
+- Use negotiated data channels in single PC mode (#5017)
+- Use constant data channel ids in proto (#5029)
+- Support file-backed username/credential for external TURN servers (#4784)
+- sfu: use mediatransportutil/pkg/red in RedPrimaryReceiver (#5014)
+- sfu: probe with padding when recent packets are gone (#5009) (#5013)
+- sfu: stop allocating per packet for abs-capture-time and retransmits (#5003)
+- rtc: apply simulcast rids from SDP for WHIP (one-shot) publishers (#5004)
+- Update module github.com/quic-go/quic-go to v0.63.0 (#5028)
+- Update module github.com/dustin/go-humanize to v1.1.0 (#5027)
+- Update module github.com/maxbrunsfeld/counterfeiter/v6 to v6.14.0 (#5025)
+- Update github.com/livekit/protocol digest to c45251b (#4914)
+- Update module github.com/moby/moby/client to v0.6.1 (#5023)
+- Update github workflows (#5024)
+
+### Fixed
+
+- Pick dtls server role when ice-lite is enabled (#5033)
+- Echo offered video payload types in single peer connection answers (#5031)
+- sfu: reset dummy start offset on forwarder restart (#5019)
+- sfu: apply dummy start offset modulo 2^32 on source switch (#5018)
+- rtc: remove data track subscriptions when canSubscribe is revoked (#5011)
+- rtpstats: take mono nanoseconds in GetExpectedRTPTimestamp (#5008)
+- rtpstats: return sender report time in wall clock domain (#5006)
+- Compute RTCP receiver-report DLSR from monotonic clock (#5005)
+- Disable AV1 for Firefox (#5015)
+- Rebuild runtime image on patched alpine (eMudhra CA compromise) (#5044)
+- Build with Go 1.27.3 (eMudhra intermediate CA compromise) (#5034)
+- Fix data race on global logger in sfu downtrack integration test (#5036)
+- agent: fix flaky TestAgent job dispatch (#5002)
+- rtc: fix flaky TestSetPermissionDataTrackSubscriptions (#5056)
+
 ## [1.13.10] - 2026-10-14
 
 ### Changed

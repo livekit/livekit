@@ -25,7 +25,7 @@ import (
 	pionflexfec "github.com/pion/interceptor/pkg/flexfec"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
-	"github.com/pion/transport/v4/packetio"
+	"github.com/pion/transport/v5/packetio"
 	"github.com/pion/webrtc/v4"
 	promclient "github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
@@ -333,7 +333,7 @@ func TestBufferBaseFECRecovery(t *testing.T) {
 				if test.parsePacket {
 					parsed = nil
 				}
-				_, err = base.HandleIncomingPacket(raw, parsed, mono.UnixNano(), false, isRTX, nil, 0)
+				_, _, err = base.HandleIncomingPacket(raw, parsed, mono.UnixNano(), false, isRTX, nil, 0)
 				require.NoError(t, err)
 			}
 			for i := range media {

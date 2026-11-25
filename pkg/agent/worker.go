@@ -15,10 +15,13 @@
 package agent
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"maps"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,6 +30,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	protoagent "github.com/livekit/protocol/agent"
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -47,9 +51,49 @@ var (
 
 const AgentNameAttributeKey = "lk.agent_name"
 
+// JobAttemptAttributeKey names the job attempt an agent's token was issued for,
+// so the room can turn away the agent of an attempt it has already ended. See
+// FormatJobAttempt.
+const JobAttemptAttributeKey = "lk.agent.job_attempt"
+
+// JobAttempt returns the attempt of a job that its state describes. An attempt
+// is identified by its StartedAt, which AssignJob orders after the job's
+// previous attempt; see advance.
+func JobAttempt(state *livekit.JobState) int64 {
+	return state.GetStartedAt()
+}
+
+// FormatJobAttempt identifies a job's attempt by the job ID and the attempt.
+func FormatJobAttempt(jobID livekit.JobID, attempt int64) string {
+	return string(jobID) + ":" + strconv.FormatInt(attempt, 10)
+}
+
+// advance returns a job's StartedAt or UpdatedAt after prev: now, unless the
+// node that wrote prev has a clock ahead of this one. A job's attempts, and the
+// versions of its state, are then ordered across nodes whatever their clocks.
+func advance(prev, now int64) int64 {
+	return max(now, prev+1)
+}
+
+// ParseJobAttempt reads an attempt that FormatJobAttempt wrote.
+func ParseJobAttempt(s string) (livekit.JobID, int64, bool) {
+	i := strings.LastIndexByte(s, ':')
+	if i <= 0 {
+		return "", 0, false
+	}
+	attempt, err := strconv.ParseInt(s[i+1:], 10, 64)
+	if err != nil {
+		return "", 0, false
+	}
+	return livekit.JobID(s[:i]), attempt, true
+}
+
 type WorkerProtocolVersion int
 
-const CurrentProtocol = 1
+// CurrentProtocol is the agent protocol version the server reports to workers
+// in ServerInfo.agent_protocol. Version 2 adds CreateJobToken: a worker must
+// not send it to a server that reports less.
+const CurrentProtocol = 2
 
 const (
 	RegisterTimeout  = 10 * time.Second
@@ -78,6 +122,7 @@ type WorkerSignalHandler interface {
 	HandlePing(*livekit.WorkerPing) error
 	HandleUpdateWorker(*livekit.UpdateWorkerStatus) error
 	HandleMigrateJob(*livekit.MigrateJobRequest) error
+	HandleCreateJobToken(*livekit.CreateJobTokenRequest) error
 }
 
 func DispatchWorkerSignal(req *livekit.WorkerMessage, h WorkerSignalHandler) error {
@@ -96,6 +141,8 @@ func DispatchWorkerSignal(req *livekit.WorkerMessage, h WorkerSignalHandler) err
 		return h.HandleUpdateWorker(m.UpdateWorker)
 	case *livekit.WorkerMessage_MigrateJob:
 		return h.HandleMigrateJob(m.MigrateJob)
+	case *livekit.WorkerMessage_CreateJobToken:
+		return h.HandleCreateJobToken(m.CreateJobToken)
 	default:
 		return ErrUnknownWorkerSignal
 	}
@@ -125,6 +172,9 @@ func (UnimplementedWorkerSignalHandler) HandleUpdateWorker(*livekit.UpdateWorker
 }
 func (UnimplementedWorkerSignalHandler) HandleMigrateJob(*livekit.MigrateJobRequest) error {
 	return fmt.Errorf("%w: MigrateJob", ErrUnimplementedWrorkerSignal)
+}
+func (UnimplementedWorkerSignalHandler) HandleCreateJobToken(*livekit.CreateJobTokenRequest) error {
+	return fmt.Errorf("%w: CreateJobToken", ErrUnimplementedWrorkerSignal)
 }
 
 type WorkerPingHandler struct {
@@ -382,6 +432,29 @@ func (w *Worker) GetJobState(jobID livekit.JobID) (*livekit.JobState, error) {
 	return proto.CloneOf(j.State), nil
 }
 
+// AttachJob tracks a job the worker already runs as if AssignJob had assigned
+// it here, so the worker handles its status updates and termination, and
+// returns its state. The job keeps the StartedAt it was assigned with, which
+// identifies the run. Like AssignJob, it does not route the job to the worker:
+// that is the caller's.
+func (w *Worker) AttachJob(job *livekit.Job) *livekit.JobState {
+	job = proto.CloneOf(job)
+	if job.State == nil {
+		job.State = &livekit.JobState{}
+	}
+	now := time.Now().UnixNano()
+	job.State.WorkerId = w.ID
+	job.State.AgentId = w.AgentID
+	job.State.UpdatedAt = advance(job.State.UpdatedAt, now)
+	job.State.StartedAt = cmp.Or(job.State.StartedAt, now)
+	job.State.Status = livekit.JobStatus_JS_RUNNING
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.runningJobs[livekit.JobID(job.Id)] = job
+	return proto.CloneOf(job.State)
+}
+
 func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook AssignmentHook) (*livekit.JobState, error) {
 	availCh := make(chan *livekit.AvailabilityResponse, 1)
 	job = proto.CloneOf(job)
@@ -408,9 +481,13 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook Assignmen
 	now := time.Now()
 	job.State.WorkerId = w.ID
 	job.State.AgentId = w.AgentID
-	job.State.UpdatedAt = now.UnixNano()
-	job.State.StartedAt = now.UnixNano()
+	job.State.UpdatedAt = advance(job.State.UpdatedAt, now.UnixNano())
+	// StartedAt identifies the attempt: after the one the request carries, the
+	// job's previous attempt or its creation; see advance
+	job.State.StartedAt = advance(job.State.StartedAt, now.UnixNano())
 	job.State.Status = livekit.JobStatus_JS_RUNNING
+	// a retry carries the previous attempt's times
+	job.State.AcceptedAt, job.State.AssignedAt = 0, 0
 
 	if _, err := w.conn.WriteServerMessage(&livekit.ServerMessage{Message: &livekit.ServerMessage_Availability{
 		Availability: &livekit.AvailabilityRequest{Job: job},
@@ -425,7 +502,8 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook Assignmen
 	select {
 	case res := <-availCh:
 		if res.Terminate {
-			job.State.EndedAt = now.UnixNano()
+			// the attempt may have started past this node's clock; see advance
+			job.State.EndedAt = advance(job.State.StartedAt, now.UnixNano())
 			job.State.Status = livekit.JobStatus_JS_SUCCESS
 			return job.State, nil
 		}
@@ -433,6 +511,8 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook Assignmen
 		if !res.Available {
 			return nil, ErrWorkerNotAvailable
 		}
+		// offset from StartedAt, which may be past this node's clock; see advance
+		job.State.AcceptedAt = job.State.StartedAt + time.Since(now).Nanoseconds()
 
 		job.State.ParticipantIdentity = res.ParticipantIdentity
 		attributes := res.ParticipantAttributes
@@ -440,6 +520,7 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook Assignmen
 			attributes = make(map[string]string)
 		}
 		attributes[AgentNameAttributeKey] = w.AgentName
+		attributes[JobAttemptAttributeKey] = FormatJobAttempt(jobID, JobAttempt(job.State))
 
 		token, err := protoagent.BuildAgentToken(
 			w.apiKey,
@@ -466,6 +547,7 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook Assignmen
 		if hook != nil {
 			send = hook(send)
 		}
+		job.State.AssignedAt = job.State.StartedAt + time.Since(now).Nanoseconds()
 		state := proto.CloneOf(job.State)
 
 		// must be in runningJobs before the assignment is sent; stored as a copy because send reads job without w.mu.
@@ -590,7 +672,7 @@ func (w *Worker) UpdateJobStatus(update *livekit.UpdateJobStatus) (*livekit.JobS
 	}
 
 	now := time.Now()
-	job.State.UpdatedAt = now.UnixNano()
+	job.State.UpdatedAt = advance(job.State.UpdatedAt, now.UnixNano())
 
 	if job.State.Status == livekit.JobStatus_JS_PENDING && update.Status != livekit.JobStatus_JS_PENDING {
 		job.State.StartedAt = now.UnixNano()
@@ -600,7 +682,8 @@ func (w *Worker) UpdateJobStatus(update *livekit.UpdateJobStatus) (*livekit.JobS
 	job.State.Error = update.Error
 
 	if JobStatusIsEnded(update.Status) {
-		job.State.EndedAt = now.UnixNano()
+		// the attempt may have started past this node's clock; see advance
+		job.State.EndedAt = advance(job.State.StartedAt, now.UnixNano())
 		delete(w.runningJobs, jobID)
 
 		w.logger.Infow("job ended", "jobID", update.JobId, "status", update.Status, "error", update.Error)
@@ -663,7 +746,67 @@ func (w *Worker) Draining() bool {
 }
 
 func (w *Worker) HandleMigrateJob(req *livekit.MigrateJobRequest) error {
-	// TODO(theomonnom): On OSS this is not implemented
-	// We could maybe just move a specific job to another worker
+	// unimplemented
 	return nil
+}
+
+// JobTokenAuthorizer decides the grants of a token a job asks for. It gets the
+// job and the grants the job asked for, and returns the grants to sign, or an
+// error that refuses the request.
+type JobTokenAuthorizer func(job *livekit.Job, grants *auth.ClaimGrants) (*auth.ClaimGrants, error)
+
+func (w *Worker) HandleCreateJobToken(req *livekit.CreateJobTokenRequest) error {
+	return w.CreateJobToken(req, nil)
+}
+
+// CreateJobToken answers a job's request for a token, signed with the worker's
+// key. The job must be one this worker runs. authorize, when not nil, decides
+// the grants; without it the token carries the grants the job asked for. A
+// refusal is sent as the response's error and leaves the connection open.
+func (w *Worker) CreateJobToken(req *livekit.CreateJobTokenRequest, authorize JobTokenAuthorizer) error {
+	res := &livekit.CreateJobTokenResponse{RequestId: req.RequestId}
+	token, expiresAt, err := w.createJobToken(req, authorize)
+	if err != nil {
+		w.logger.Infow("job token refused", "jobID", req.JobId, "error", err)
+		res.Error = err.Error()
+	} else {
+		res.Token = token
+		res.ExpiresAt = expiresAt.Unix()
+	}
+
+	_, err = w.conn.WriteServerMessage(&livekit.ServerMessage{
+		Message: &livekit.ServerMessage_CreateJobToken{CreateJobToken: res},
+	})
+	return err
+}
+
+func (w *Worker) createJobToken(req *livekit.CreateJobTokenRequest, authorize JobTokenAuthorizer) (string, time.Time, error) {
+	w.mu.Lock()
+	job, ok := w.runningJobs[livekit.JobID(req.JobId)]
+	if ok {
+		job = proto.CloneOf(job)
+	}
+	w.mu.Unlock()
+	if !ok {
+		return "", time.Time{}, errors.New("job is not running on this worker")
+	}
+
+	// A running job may request tokens after the worker's registration token expires.
+
+	grants, err := protoagent.ParseJobTokenClaims(req.Claims)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("invalid claims: %w", err)
+	}
+	if authorize != nil {
+		if grants, err = authorize(job, grants); err != nil {
+			return "", time.Time{}, err
+		}
+	}
+
+	token, expiresAt, err := protoagent.BuildJobToken(w.apiKey, w.apiSecret, grants)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	w.logger.Infow("job token issued", "jobID", job.Id, "identity", grants.Identity, "expiresAt", expiresAt)
+	return token, expiresAt, nil
 }

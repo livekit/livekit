@@ -40,6 +40,36 @@ var (
 	DefaultVideoLayersRid = videoLayersRidQHF
 )
 
+func ValidVideoLayers(req *livekit.AddTrackRequest) bool {
+	valid := func(layers []*livekit.VideoLayer) bool {
+		var seen [livekit.VideoQuality_HIGH + 1]bool
+		for _, layer := range layers {
+			if layer.Quality < livekit.VideoQuality_LOW || layer.Quality > livekit.VideoQuality_HIGH {
+				return false
+			}
+			// layers are indexed by quality, a repeated quality pushes a layer past HIGH
+			if seen[layer.Quality] {
+				return false
+			}
+			seen[layer.Quality] = true
+		}
+		return true
+	}
+
+	if !valid(req.Layers) {
+		return false
+	}
+	for _, codec := range req.SimulcastCodecs {
+		if !valid(codec.Layers) {
+			return false
+		}
+		if codec.VideoLayerMode < livekit.VideoLayer_MODE_UNUSED || codec.VideoLayerMode > livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM_INCOMPLETE_RTCP_SR {
+			return false
+		}
+	}
+	return true
+}
+
 func LayerPresenceFromTrackInfo(mimeType mime.MimeType, trackInfo *livekit.TrackInfo) *[livekit.VideoQuality_HIGH + 1]bool {
 	if trackInfo == nil {
 		return nil
@@ -53,7 +83,7 @@ func LayerPresenceFromTrackInfo(mimeType mime.MimeType, trackInfo *livekit.Track
 	var layerPresence [livekit.VideoQuality_HIGH + 1]bool
 	for _, layer := range layers {
 		// WARNING: comparing protobuf enum
-		if layer.Quality <= livekit.VideoQuality_HIGH {
+		if layer.Quality >= livekit.VideoQuality_LOW && layer.Quality <= livekit.VideoQuality_HIGH {
 			layerPresence[layer.Quality] = true
 		} else {
 			logger.Warnw("unexpected quality in track info", nil, "trackID", trackInfo.Sid, "trackInfo", logger.Proto(trackInfo))

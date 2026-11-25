@@ -193,6 +193,7 @@ type ParticipantInit struct {
 	AutoSubscribeDataTrack  *bool
 	Client                  *livekit.ClientInfo
 	Grants                  *auth.ClaimGrants
+	APIKey                  string
 	TokenExpiresAt          time.Time
 	Region                  string
 	AdaptiveStream          bool
@@ -204,6 +205,7 @@ type ParticipantInit struct {
 	PublisherOffer          *livekit.SessionDescription
 	SyncState               *livekit.SyncState
 	UseSinglePeerConnection bool
+	CandidateProtocol       livekit.CandidateProtocol
 }
 
 func (pi *ParticipantInit) MarshalLogObject(e zapcore.ObjectEncoder) error {
@@ -239,6 +241,7 @@ func (pi *ParticipantInit) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddObject("PublisherOffer", logger.Proto(pi.PublisherOffer))
 	e.AddObject("SyncState", logger.Proto(pi.SyncState))
 	logBoolPtr("UseSinglePeerConnection", &pi.UseSinglePeerConnection)
+	e.AddString("CandidateProtocol", pi.CandidateProtocol.String())
 	return nil
 }
 
@@ -263,6 +266,7 @@ func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionI
 		AutoSubscribe:           pi.AutoSubscribe,
 		Client:                  pi.Client,
 		GrantsJson:              string(claims),
+		ApiKey:                  pi.APIKey,
 		TokenExpiresAt:          tokenExpiresAt,
 		AdaptiveStream:          pi.AdaptiveStream,
 		ParticipantId:           string(pi.ID),
@@ -272,6 +276,7 @@ func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionI
 		PublisherOffer:          pi.PublisherOffer,
 		SyncState:               pi.SyncState,
 		UseSinglePeerConnection: pi.UseSinglePeerConnection,
+		CandidateProtocol:       pi.CandidateProtocol,
 	}
 	if pi.AutoSubscribeDataTrack != nil {
 		autoSubscribeDataTrack := *pi.AutoSubscribeDataTrack
@@ -303,6 +308,7 @@ func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*
 		Client:                  ss.Client,
 		AutoSubscribe:           ss.AutoSubscribe,
 		Grants:                  claims,
+		APIKey:                  ss.ApiKey,
 		TokenExpiresAt:          tokenExpiresAt,
 		Region:                  region,
 		AdaptiveStream:          ss.AdaptiveStream,
@@ -313,6 +319,7 @@ func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*
 		PublisherOffer:          ss.PublisherOffer,
 		SyncState:               ss.SyncState,
 		UseSinglePeerConnection: ss.UseSinglePeerConnection,
+		CandidateProtocol:       ss.CandidateProtocol,
 	}
 	if ss.AutoSubscribeDataTrack != nil {
 		autoSubscribeDataTrack := *ss.AutoSubscribeDataTrack

@@ -71,6 +71,7 @@ func (p *ParticipantImpl) HandleStoreDataBlobRequest(req *livekit.StoreDataBlobR
 	}
 
 	p.AddDataBlob(req.Blob)
+	p.pubLogger.Infow("stored data blob", "key", logger.Proto(req.Blob.Key), "size", len(req.Blob.Contents))
 	p.listener().OnStoreDataBlob(p, req.Blob)
 	p.sendStoreDataBlobResponse(req.RequestId, req.Blob.Key)
 }

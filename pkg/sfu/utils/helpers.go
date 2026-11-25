@@ -17,6 +17,9 @@ package utils
 import (
 	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/pion/interceptor"
 	"github.com/pion/rtp"
@@ -47,16 +50,43 @@ func CodecParametersFuzzySearch(needle webrtc.RTPCodecParameters, haystack []web
 	return webrtc.RTPCodecParameters{}, webrtc.ErrCodecNotFound
 }
 
-// Given a CodecParameters find the RTX CodecParameters if one exists
+// Given a CodecParameters find the RTX CodecParameters if one exists.
+// The RTX fmtp line can carry other parameters next to apt, for example
+// "apt=96;rtx-time=3000" (RFC 4588), so only the apt value is compared.
 func FindRTXPayloadType(needle webrtc.PayloadType, haystack []webrtc.RTPCodecParameters) webrtc.PayloadType {
-	aptStr := fmt.Sprintf("apt=%d", needle)
+	aptStr := strconv.Itoa(int(needle))
 	for _, c := range haystack {
-		if aptStr == c.SDPFmtpLine {
-			return c.PayloadType
+		for param := range strings.SplitSeq(c.SDPFmtpLine, ";") {
+			key, value, found := strings.Cut(param, "=")
+			if found && strings.EqualFold(strings.TrimSpace(key), "apt") && strings.TrimSpace(value) == aptStr {
+				return c.PayloadType
+			}
 		}
 	}
 
 	return webrtc.PayloadType(0)
+}
+
+// matches useinbandfec=1 as one fmtp parameter, ignoring case and spaces around the parameter and the "="
+var fecEnabledRegex = regexp.MustCompile(`(?i)(^|;)\s*useinbandfec\s*=\s*1\s*(;|$)`)
+
+// IsFECEnabled reports whether codec carries opus in-band FEC. For RED, it checks the opus codec in codecs.
+func IsFECEnabled(codec webrtc.RTPCodecParameters, codecs []webrtc.RTPCodecParameters) bool {
+	switch {
+	case mime.IsMimeTypeStringRED(codec.MimeType):
+		for _, c := range codecs {
+			if mime.IsMimeTypeStringOpus(c.MimeType) {
+				return fecEnabledRegex.MatchString(c.SDPFmtpLine)
+			}
+		}
+		return false
+
+	case mime.IsMimeTypeStringAudio(codec.MimeType):
+		return fecEnabledRegex.MatchString(codec.SDPFmtpLine)
+
+	default:
+		return false
+	}
 }
 
 // GetHeaderExtensionID returns the ID of a header extension, or 0 if not found

@@ -118,7 +118,7 @@ func newEndpointStack(t *testing.T, endpointsCfg agent.EndpointsConfig) *endpoin
 	if !endpointsCfg.Disabled {
 		agentFront = service.NewAgentEndpointService(h, scopes)
 	}
-	ts := httptest.NewServer(service.NewHTTPHandler(conf, keyProvider, apiMux, agentFront))
+	ts := httptest.NewServer(service.NewHTTPHandler(conf, keyProvider, nil, apiMux, agentFront))
 	t.Cleanup(ts.Close)
 	t.Cleanup(func() { h.DrainConnections(time.Millisecond, true) })
 
@@ -126,7 +126,7 @@ func newEndpointStack(t *testing.T, endpointsCfg agent.EndpointsConfig) *endpoin
 	wtMux := http.NewServeMux()
 	wtMux.Handle("/agent", service.NewAgentWTService(h))
 	wt := service.NewWebTransportServer(selfSignedTLS(t))
-	wt.H3.Handler = service.NewWebTransportHandler(keyProvider, wt, wtMux)
+	wt.H3.Handler = service.NewWebTransportHandler(keyProvider, nil, wt, wtMux)
 	bound, err := wt.Listen([]string{"127.0.0.1"}, 0)
 	require.NoError(t, err)
 	t.Cleanup(func() {

@@ -30,6 +30,7 @@ import (
 
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer/jaeger"
+	"github.com/livekit/protocol/utils/hwstats"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -297,8 +298,15 @@ func startServer(ctx context.Context, c *cli.Command) error {
 		return err
 	}
 
-	if err := prometheus.Init(string(currentNode.NodeID()), currentNode.NodeType()); err != nil {
+	var cpuStatsOpts []hwstats.CPUStatsOption
+	if conf.NodeStats.HostCPU {
+		cpuStatsOpts = append(cpuStatsOpts, hwstats.WithHostCPU())
+	}
+	if err := prometheus.Init(string(currentNode.NodeID()), currentNode.NodeType(), cpuStatsOpts...); err != nil {
 		return err
+	}
+	if err := prometheus.InitRoomIncludedStats(string(currentNode.NodeID()), currentNode.NodeType(), conf.Prometheus.RoomExcludeRegex); err != nil {
+		return fmt.Errorf("invalid prometheus.room_exclude_regex: %w", err)
 	}
 
 	server, err := service.InitializeServer(conf, currentNode)

@@ -44,6 +44,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/version"
 )
 
@@ -59,6 +60,7 @@ type LivekitServer struct {
 	agentEndpoint      *AgentEndpointService
 	router             routing.Router
 	roomManager        *RoomManager
+	telemetry          telemetry.TelemetryService
 	signalServer       *SignalServer
 	turnServer         *turn.Server
 	currentNode        routing.LocalNode
@@ -82,8 +84,10 @@ func NewLivekitServer(conf *config.Config,
 	keyProvider auth.KeyProvider,
 	router routing.Router,
 	roomManager *RoomManager,
+	telemetryService telemetry.TelemetryService,
 	signalServer *SignalServer,
 	turnServer *turn.Server,
+	tokenRevocationStore TokenRevocationStore,
 	currentNode routing.LocalNode,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
@@ -93,6 +97,7 @@ func NewLivekitServer(conf *config.Config,
 		whipService:  whipService,
 		router:       router,
 		roomManager:  roomManager,
+		telemetry:    telemetryService,
 		signalServer: signalServer,
 		// turn server starts automatically
 		turnServer:  turnServer,
@@ -142,7 +147,7 @@ func NewLivekitServer(conf *config.Config,
 	}
 
 	s.httpServer = &http.Server{
-		Handler: NewHTTPHandler(conf, keyProvider, mux, agentFront),
+		Handler: NewHTTPHandler(conf, keyProvider, tokenRevocationStore, mux, agentFront),
 	}
 
 	if conf.PrometheusPort > 0 {
@@ -191,7 +196,7 @@ func NewLivekitServer(conf *config.Config,
 		wtMux.Handle("/agent", agentWTService)
 
 		s.webtransportServer = NewWebTransportServer(tlsConf)
-		s.webtransportServer.H3.Handler = NewWebTransportHandler(keyProvider, s.webtransportServer, wtMux)
+		s.webtransportServer.H3.Handler = NewWebTransportHandler(keyProvider, tokenRevocationStore, s.webtransportServer, wtMux)
 	}
 
 	if err = router.RemoveDeadNodes(); err != nil {
@@ -368,6 +373,9 @@ func (s *LivekitServer) Start() error {
 	s.signalServer.Stop()
 	s.ioService.Stop()
 
+	// send the webhooks of the rooms and participants closed above before the process exits
+	s.telemetry.Stop()
+
 	close(s.closedChan)
 	return nil
 }
@@ -480,7 +488,7 @@ func (s *LivekitServer) backgroundWorker() {
 // NewHTTPHandler builds the node's public HTTP handler: the agent endpoint prefix
 // on its own middleware chain, everything else on the API chain. A nil agentFront
 // leaves the prefix unserved, and those paths fall through to apiHandler.
-func NewHTTPHandler(conf *config.Config, keyProvider auth.KeyProvider, apiHandler, agentFront http.Handler) http.Handler {
+func NewHTTPHandler(conf *config.Config, keyProvider auth.KeyProvider, tokenRevocationStore TokenRevocationStore, apiHandler, agentFront http.Handler) http.Handler {
 	apiMiddlewares := []negroni.Handler{
 		// always first
 		negroni.NewRecovery(),
@@ -495,7 +503,7 @@ func NewHTTPHandler(conf *config.Config, keyProvider auth.KeyProvider, apiHandle
 		NewAgentEndpointCORS(),
 	}
 	if keyProvider != nil {
-		authMiddleware := NewAPIKeyAuthMiddleware(keyProvider)
+		authMiddleware := NewAPIKeyAuthMiddleware(keyProvider, tokenRevocationStore)
 		apiMiddlewares = append(apiMiddlewares, authMiddleware)
 		agentMiddlewares = append(agentMiddlewares, authMiddleware)
 	}

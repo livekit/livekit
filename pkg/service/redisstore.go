@@ -531,7 +531,7 @@ func parseEgressEnded(value string) (roomName string, endedAt int64, err error) 
 }
 
 func (s *RedisStore) StoreIngress(ctx context.Context, info *livekit.IngressInfo) error {
-	err := s.storeIngress(ctx, info)
+	err := s.storeIngress(ctx, info, false)
 	if err != nil {
 		return err
 	}
@@ -539,7 +539,9 @@ func (s *RedisStore) StoreIngress(ctx context.Context, info *livekit.IngressInfo
 	return s.storeIngressState(ctx, info.IngressId, nil)
 }
 
-func (s *RedisStore) storeIngress(_ context.Context, info *livekit.IngressInfo) error {
+// storeIngress writes the ingress info. With mustExist it fails with ErrIngressNotFound
+// instead of recreating an ingress that was deleted since the caller loaded it.
+func (s *RedisStore) storeIngress(_ context.Context, info *livekit.IngressInfo, mustExist bool) error {
 	if info.IngressId == "" {
 		return errors.New("Missing IngressId")
 	}
@@ -563,6 +565,11 @@ func (s *RedisStore) storeIngress(_ context.Context, info *livekit.IngressInfo) 
 		oldInfo, err := s.loadIngress(tx, info.IngressId)
 		switch err {
 		case ErrIngressNotFound:
+			if mustExist {
+				// Checked inside the WATCH: a delete landing after this point
+				// fails the EXEC instead of being overwritten.
+				return err
+			}
 			// Ingress doesn't exist yet
 		case nil:
 			oldRoom = oldInfo.RoomName
@@ -613,7 +620,7 @@ func (s *RedisStore) storeIngress(_ context.Context, info *livekit.IngressInfo) 
 		}
 	}
 
-	return nil
+	return psrpc.NewError(psrpc.Unavailable, errors.Wrapf(redis.TxFailedErr, "could not store ingress %s after %d attempts", info.IngressId, maxRetries))
 }
 
 func (s *RedisStore) storeIngressState(_ context.Context, ingressId string, state *livekit.IngressState) error {
@@ -688,7 +695,7 @@ func (s *RedisStore) storeIngressState(_ context.Context, ingressId string, stat
 		}
 	}
 
-	return nil
+	return psrpc.NewError(psrpc.Unavailable, errors.Wrapf(redis.TxFailedErr, "could not store ingress state %s after %d attempts", ingressId, maxRetries))
 }
 
 func (s *RedisStore) loadIngress(c redis.Cmdable, ingressId string) (*livekit.IngressInfo, error) {
@@ -828,7 +835,7 @@ func (s *RedisStore) ListIngress(_ context.Context, roomName livekit.RoomName) (
 }
 
 func (s *RedisStore) UpdateIngress(ctx context.Context, info *livekit.IngressInfo) error {
-	return s.storeIngress(ctx, info)
+	return s.storeIngress(ctx, info, true)
 }
 
 func (s *RedisStore) UpdateIngressState(ctx context.Context, ingressId string, state *livekit.IngressState) error {
@@ -941,6 +948,40 @@ func (s *RedisStore) DeleteAgentJob(_ context.Context, job *livekit.Job) error {
 
 	key := AgentJobPrefix + string(job.Room.Name)
 	return s.rc.HDel(s.ctx, key, job.Id).Err()
+}
+
+// keeps the later notBefore and expiry of an existing revocation
+var revokeRoomParticipantScript = redis.NewScript(`
+local notBefore = tonumber(ARGV[1])
+local ttl = tonumber(ARGV[2])
+local current = tonumber(redis.call("GET", KEYS[1]))
+if current ~= nil and current > notBefore then
+	notBefore = current
+end
+local currentTTL = redis.call("PTTL", KEYS[1])
+if currentTTL > ttl then
+	ttl = currentTTL
+end
+redis.call("SET", KEYS[1], notBefore, "PX", ttl)
+return 1
+`)
+
+func (s *RedisStore) RevokeRoomParticipant(ctx context.Context, room livekit.RoomName, identity livekit.ParticipantIdentity, notBefore time.Time, ttl time.Duration) error {
+	key := GenRoomParticipantRevocationIdentifier(identity, room)
+	return revokeRoomParticipantScript.Run(ctx, s.rc, []string{key}, notBefore.Unix(), ttl.Milliseconds()).Err()
+}
+
+func (s *RedisStore) IsRoomParticipantRevoked(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) (bool, *time.Time, error) {
+	revocationTimeInt, err := s.rc.Get(ctx, GenRoomParticipantRevocationIdentifier(identity, room)).Int64()
+	if err == redis.Nil {
+		return false, nil, nil
+	}
+	if err != nil {
+		return false, nil, err
+	}
+
+	revocationTime := time.Unix(revocationTimeInt, 0)
+	return true, &revocationTime, nil
 }
 
 func redisStoreOne(ctx context.Context, s *RedisStore, key, id string, p proto.Message) error {

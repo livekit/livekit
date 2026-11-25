@@ -819,6 +819,11 @@ func (f *Forwarder) getRefLayer() (int32, int32) {
 }
 
 func (f *Forwarder) SetRefSenderReport(layer int32, srData *livekit.RTCPSenderReportState) {
+	// a stream restart can clear the publisher report between the report callback and this read
+	if srData == nil {
+		return
+	}
+
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -1787,6 +1792,9 @@ func (f *Forwarder) Resync() {
 func (f *Forwarder) resyncLocked() {
 	f.vls.SetCurrent(buffer.InvalidLayer)
 	f.lastSSRC = 0
+	if f.ddForwarder != nil {
+		f.ddForwarder.Resync()
+	}
 	if f.pubMuted {
 		f.resumeBehindThreshold = ResumeBehindThresholdSeconds
 	}
@@ -1807,6 +1815,10 @@ func (f *Forwarder) Restart() {
 	f.setTargetLayer(buffer.InvalidLayer, buffer.InvalidLayerSpatial)
 	f.referenceLayerSpatial = buffer.InvalidLayerSpatial
 	f.lastReferencePayloadType = -1
+	// The next source switch re-derives the offset from the new reference layer's raw timestamp,
+	// so that it maps onto the downtrack's existing timeline (extExpectedTS). Keeping the old
+	// offset would fold it into the new one and shift every later switch by the old value.
+	f.dummyStartTSOffset = 0
 
 	for layer := range len(f.refInfos) {
 		f.refInfos[layer] = refInfo{}
@@ -2000,12 +2012,21 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 			)
 			return starting, err
 		}
-	}
 
-	// adjust extRefTS to current packet's timestamp mapped to that of reference layer's
-	extRefTS = (extRefTS & 0xFFFF_FFFF_0000_0000) + uint64(refTS) + f.dummyStartTSOffset
+		// adjust refTS to current packet's timestamp mapped to that of reference layer's.
+		// Without a reference layer (skipReferenceTS), refTS is the last outgoing timestamp,
+		// which is already on the downtrack's timeline and needs no offset.
+		//
+		// The dummy start offset is applied modulo 2^32, before the cycles are restored from
+		// extLastTS. Adding it in 64 bits lets a borrow (negative offset) or a carry (positive offset)
+		// reach the upper half of extRefTS, and the wrap correction below only compares the lower 32
+		// bits, so it cannot undo it: extRefTS would end up 2^32 below (or above) the right value.
+		// With a negative offset that rejects every switch point as too far behind until the
+		// reference layer's 32-bit timestamp climbs past |dummyStartTSOffset|, which can take hours.
+		refTS = uint32(uint64(refTS) + f.dummyStartTSOffset)
+	}
+	extRefTS = (extRefTS & 0xFFFF_FFFF_0000_0000) + uint64(refTS)
 	lastTS := uint32(extLastTS)
-	refTS = uint32(extRefTS)
 	if (refTS-lastTS) < 1<<31 && refTS < lastTS {
 		extRefTS += (1 << 32)
 	}
@@ -2018,7 +2039,9 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 		if err == nil {
 			extExpectedTS = tsExt
 			if f.lastReferencePayloadType == -1 {
-				f.dummyStartTSOffset = extExpectedTS - uint64(refTS)
+				if !f.skipReferenceTS {
+					f.dummyStartTSOffset = extExpectedTS - uint64(refTS)
+				}
 				extRefTS = extExpectedTS
 			}
 		} else {
@@ -2027,7 +2050,9 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 				rtpDiff := uint64(timeSinceFirst.Nanoseconds() * int64(f.clockRate) / 1e9)
 				extExpectedTS = f.extFirstTS + rtpDiff
 				if f.dummyStartTSOffset == 0 {
-					f.dummyStartTSOffset = extExpectedTS - uint64(refTS)
+					if !f.skipReferenceTS {
+						f.dummyStartTSOffset = extExpectedTS - uint64(refTS)
+					}
 					extRefTS = extExpectedTS
 					f.logger.Infow(
 						"calculating dummyStartTSOffset",
@@ -2335,7 +2360,16 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		//
 		// To differentiate between the two cases, drop only when in DEFICIENT state.
 		//
+		// Roll the outgoing timestamp back, or pad a gap. Leaving the dropped
+		// packet's timestamp in place holds the switch clock on the higher layer,
+		// so a lower layer that stays a little behind is rejected on every keyframe.
 		tp.shouldDrop = true
+		switch tp.rtp.snOrdering {
+		case SequenceNumberOrderingContiguous:
+			f.rtpMunger.PacketDropped(extPkt)
+		case SequenceNumberOrderingGap, SequenceNumberOrderingOutOfOrder:
+			tp.padDroppedSlot = true
+		}
 		return tp, nil
 	}
 

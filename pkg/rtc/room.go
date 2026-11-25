@@ -59,7 +59,7 @@ const (
 
 	simulateDisconnectSignalTimeout = 5 * time.Second
 
-	dataMessageCacheTTL  = 2 * time.Second
+	dataMessageCacheTTL  = 10 * time.Second
 	dataMessageCacheSize = 100_000
 )
 
@@ -125,6 +125,7 @@ type Room struct {
 	participantOpts           map[livekit.ParticipantIdentity]*ParticipantOptions
 	participantRequestSources map[livekit.ParticipantIdentity]routing.MessageSource
 	hasPublished              map[livekit.ParticipantIdentity]bool
+	launchedParticipantEgress map[livekit.ParticipantIdentity]bool
 	launchedTrackEgresses     map[livekit.ParticipantIdentity][]livekit.TrackID
 	agentParticpants          map[livekit.ParticipantIdentity]*agentJob
 	bufferFactory             *buffer.FactoryOfBufferFactory
@@ -274,6 +275,7 @@ func NewRoom(
 		participantOpts:                      make(map[livekit.ParticipantIdentity]*ParticipantOptions),
 		participantRequestSources:            make(map[livekit.ParticipantIdentity]routing.MessageSource),
 		hasPublished:                         make(map[livekit.ParticipantIdentity]bool),
+		launchedParticipantEgress:            make(map[livekit.ParticipantIdentity]bool),
 		launchedTrackEgresses:                make(map[livekit.ParticipantIdentity][]livekit.TrackID),
 		agentParticpants:                     make(map[livekit.ParticipantIdentity]*agentJob),
 		bufferFactory:                        buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSizeVideo, config.Receiver.PacketBufferSizeAudio),
@@ -551,8 +553,7 @@ func (r *Room) ResumeParticipant(
 	p types.LocalParticipant,
 	requestSource routing.MessageSource,
 	responseSink routing.MessageSink,
-	iceConfig *livekit.ICEConfig,
-	iceServers []*livekit.ICEServer,
+	resolveICE func() (*livekit.ICEConfig, []*livekit.ICEServer),
 	reason livekit.ReconnectReason,
 ) error {
 	r.ReplaceParticipantRequestSource(p.Identity(), requestSource)
@@ -581,7 +582,11 @@ func (r *Room) ResumeParticipant(
 	}
 	r.simulationLock.Unlock()
 
-	if err := p.HandleReconnectAndSendResponse(reason, &livekit.ReconnectResponse{
+	// learn a fallback from a short connection first, so the response and the ICE restart use it
+	p.HandleClientReconnect(reason)
+	iceConfig, iceServers := resolveICE()
+
+	if err := p.HandleReconnectAndSendResponse(&livekit.ReconnectResponse{
 		IceServers:          iceServers,
 		ClientConfiguration: p.GetClientConfiguration(),
 		ServerInfo:          r.serverInfo,
@@ -625,9 +630,7 @@ func (r *Room) onSyncState(participant types.LocalParticipant, state *livekit.Sy
 	pLogger.Infow("setting sync state", "state", logger.Proto(state))
 
 	shouldReconnect := false
-	pubTracks := state.GetPublishTracks()
-	existingPubTracks := participant.GetPublishedTracks()
-	for _, pubTrack := range pubTracks {
+	for _, pubTrack := range state.GetPublishTracks() {
 		// client may not have sent TrackInfo for each published track
 		ti := pubTrack.Track
 		if ti == nil {
@@ -636,18 +639,10 @@ func (r *Room) onSyncState(participant types.LocalParticipant, state *livekit.Sy
 			break
 		}
 
-		found := false
-		for _, existingPubTrack := range existingPubTracks {
-			if existingPubTrack.ID() == livekit.TrackID(ti.Sid) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			// is there a pending track?
-			found = participant.GetPendingTrack(livekit.TrackID(ti.Sid)) != nil
-		}
-		if !found {
+		// pending first cannot miss a track moving to published; one published then closed in between reads as unknown,
+		// which is fine since signals are handled sequentially per participant, so only participant close can do that
+		trackID := livekit.TrackID(ti.Sid)
+		if participant.GetPendingTrack(trackID) == nil && participant.GetPublishedTrack(trackID) == nil {
 			pLogger.Warnw("unknown track during resume", nil, "trackID", ti.Sid)
 			shouldReconnect = true
 			break
@@ -994,7 +989,7 @@ func (r *Room) onSimulateScenario(participant types.LocalParticipant, simulateSc
 		}
 	case *livekit.SimulateScenario_SwitchCandidateProtocol:
 		r.logger.Infow("simulating switch candidate protocol", "participant", participant.Identity())
-		participant.ICERestart(&livekit.ICEConfig{
+		participant.SimulateICEFallback(&livekit.ICEConfig{
 			PreferenceSubscriber: livekit.ICECandidateType(scenario.SwitchCandidateProtocol),
 			PreferencePublisher:  livekit.ICECandidateType(scenario.SwitchCandidateProtocol),
 		})
@@ -1113,27 +1108,29 @@ func (r *Room) onTrackPublished(participant types.Participant, track types.Media
 	r.lock.Lock()
 	hasPublished := r.hasPublished[participant.Identity()]
 	r.hasPublished[participant.Identity()] = true
+	launchedParticipantEgress := r.launchedParticipantEgress[participant.Identity()]
+	r.launchedParticipantEgress[participant.Identity()] = true
 	r.lock.Unlock()
 
 	if !hasPublished {
 		r.lock.RLock()
 		r.launchTargetAgents(slices.Collect(maps.Values(r.agentDispatches)), participant, livekit.JobType_JT_PUBLISHER)
 		r.lock.RUnlock()
-		if r.internal != nil && r.internal.ParticipantEgress != nil {
-			go func() {
-				if err := StartParticipantEgress(
-					context.Background(),
-					r.egressLauncher,
-					r.telemetry,
-					r.internal.ParticipantEgress,
-					participant.Identity(),
-					r.Name(),
-					r.ID(),
-				); err != nil {
-					r.logger.Errorw("failed to launch participant egress", err)
-				}
-			}()
-		}
+	}
+	if !launchedParticipantEgress && r.internal != nil && r.internal.ParticipantEgress != nil {
+		go func() {
+			if err := StartParticipantEgress(
+				context.Background(),
+				r.egressLauncher,
+				r.telemetry,
+				r.internal.ParticipantEgress,
+				participant.Identity(),
+				r.Name(),
+				r.ID(),
+			); err != nil {
+				r.logger.Errorw("failed to launch participant egress", err)
+			}
+		}()
 	}
 	if participant.Kind() != livekit.ParticipantInfo_EGRESS && r.internal != nil && r.internal.TrackEgress != nil {
 		r.lock.Lock()
@@ -1429,6 +1426,13 @@ func (r *Room) RemoveParticipant(
 	delete(r.participantOpts, identity)
 	delete(r.participantRequestSources, identity)
 	delete(r.hasPublished, identity)
+	// A duplicate identity eviction replaces the session for an identity that stays in
+	// the room. Participant egress is scoped to the identity and the running job follows
+	// it across the new SID, so dropping this guard would make the replacement session
+	// launch a second job recording the same tracks as the one still running.
+	if reason != types.ParticipantCloseReasonDuplicateIdentity {
+		delete(r.launchedParticipantEgress, identity)
+	}
 	delete(r.launchedTrackEgresses, identity)
 	delete(r.agentParticpants, identity)
 	// recorded while the participant is being removed, not after it is closed:
@@ -1799,6 +1803,7 @@ func (r *Room) launchRoomAgents(ads []*agentDispatch) {
 				DispatchId: ad.Id,
 				Deployment: ad.Deployment,
 				Attributes: ad.Attributes,
+				ThreadId:   ad.ThreadId,
 			})
 			r.handleNewJobs(ad.AgentDispatch, inc)
 			done()
@@ -1824,6 +1829,7 @@ func (r *Room) launchTargetAgents(ads []*agentDispatch, p types.Participant, job
 				DispatchId:  ad.Id,
 				Deployment:  ad.Deployment,
 				Attributes:  ad.Attributes,
+				ThreadId:    ad.ThreadId,
 			})
 			r.handleNewJobs(ad.AgentDispatch, inc)
 			done()
@@ -1891,6 +1897,7 @@ func (r *Room) createAgentDispatchFromRoomDispatch(rad *livekit.RoomAgentDispatc
 		RestartPolicy: rad.GetRestartPolicy(),
 		Deployment:    rad.GetDeployment(),
 		Attributes:    rad.GetAttributes(),
+		ThreadId:      rad.GetThreadId(),
 	})
 }
 
@@ -2180,12 +2187,32 @@ func BroadcastDataPacketForRoom(
 }
 
 func BroadcastDataMessageForRoom(r types.Room, source types.LocalParticipant, data []byte, logger logger.Logger) {
+	// source is nil for data relayed from a remote node
+	var sourceID livekit.ParticipantID
+	var sourceIdentity livekit.ParticipantIdentity
+	if source != nil {
+		sourceID = source.ID()
+		sourceIdentity = source.Identity()
+	}
+
+	BroadcastDataMessageForRoomFrom(r, sourceID, sourceIdentity, data, logger)
+}
+
+// BroadcastDataMessageForRoomFrom sends an unlabeled data message to every local participant, stamping
+// sourceIdentity as the sender and skipping the local participant with sourceID, if there is one.
+func BroadcastDataMessageForRoomFrom(
+	r types.Room,
+	sourceID livekit.ParticipantID,
+	sourceIdentity livekit.ParticipantIdentity,
+	data []byte,
+	logger logger.Logger,
+) {
 	utils.ParallelExec(r.GetLocalParticipants(), dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
-		if source != nil && op.ID() == source.ID() {
+		if sourceID != "" && op.ID() == sourceID {
 			return
 		}
 
-		op.SendDataMessageUnlabeled(data, false, source.Identity())
+		op.SendDataMessageUnlabeled(data, false, sourceIdentity)
 	})
 }
 

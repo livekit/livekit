@@ -164,6 +164,50 @@ func TestStreamTracker(t *testing.T) {
 		tracker.Stop()
 	})
 
+	t.Run("stays active when unpaused while not paused", func(t *testing.T) {
+		callbackCalled := atomic.NewUint32(0)
+		tracker := newStreamTrackerPacket(5, 60, 500*time.Millisecond)
+		tracker.Start()
+		tracker.OnStatusChanged(func(status StreamStatus) {
+			callbackCalled.Inc()
+		})
+		tracker.Observe(0, 20, 10, false, 0, nil)
+		testutils.WithTimeout(t, func() string {
+			if tracker.Status() == StreamStatusActive {
+				return ""
+			}
+
+			return "first packet did not activate stream"
+		})
+		require.Equal(t, uint32(1), callbackCalled.Load())
+
+		tracker.SetPaused(false)
+		require.Equal(t, StreamStatusActive, tracker.Status(), "unpausing a tracker that is not paused must not reset it")
+		require.Equal(t, uint32(1), callbackCalled.Load())
+
+		tracker.Stop()
+	})
+
+	t.Run("resets when unpaused after pause", func(t *testing.T) {
+		tracker := newStreamTrackerPacket(5, 60, 500*time.Millisecond)
+		tracker.Start()
+		tracker.SetPaused(true)
+		tracker.Observe(0, 20, 10, false, 0, nil)
+		require.Equal(t, StreamStatusStopped, tracker.Status())
+
+		tracker.SetPaused(false)
+		tracker.Observe(0, 20, 10, false, 0, nil)
+		testutils.WithTimeout(t, func() string {
+			if tracker.Status() == StreamStatusActive {
+				return ""
+			}
+
+			return "first packet after unpause did not activate stream"
+		})
+
+		tracker.Stop()
+	})
+
 	t.Run("flips back to active on first observe after reset", func(t *testing.T) {
 		callbackCalled := atomic.NewUint32(0)
 		tracker := newStreamTrackerPacket(5, 60, 500*time.Millisecond)
