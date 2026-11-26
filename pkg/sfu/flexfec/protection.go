@@ -292,16 +292,12 @@ func (f *lossFilter) update(lossPr255 uint8, nowMs int64) {
 		return
 	}
 	// Only add a new value to the history once a second.
-	if f.history[0].timeMs == -1 {
-		// First, no shift.
-		f.shortMax = lossPr255
-	} else {
+	if f.history[0].timeMs != -1 {
 		copy(f.history[1:], f.history[:lossPrHistorySize-1])
 	}
-	if f.shortMax == 0 {
-		f.shortMax = lossPr255
-	}
-	f.history[0] = lossSample{lossPr255: f.shortMax, timeMs: nowMs}
+	// Unlike libwebrtc, which drops the sample that closes a window when the
+	// window already has a maximum, keep it, so a loss spike is not missed.
+	f.history[0] = lossSample{lossPr255: max(f.shortMax, lossPr255), timeMs: nowMs}
 	f.shortMax = 0
 }
 

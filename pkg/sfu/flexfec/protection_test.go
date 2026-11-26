@@ -264,6 +264,16 @@ func TestEncoderAdaptiveStateTrackedInEveryMode(t *testing.T) {
 	}
 }
 
+func TestLossFilterKeepsWindowClosingSample(t *testing.T) {
+	f := newLossFilter()
+	require.EqualValues(t, 10, f.filteredLoss(0, 10))
+	require.EqualValues(t, 10, f.filteredLoss(500, 10))
+	// the sample closing a window with a nonzero maximum is kept
+	require.EqualValues(t, 100, f.filteredLoss(1000, 100))
+	require.EqualValues(t, 100, f.filteredLoss(1500, 0))
+	require.EqualValues(t, 100, f.filteredLoss(2000, 0))
+}
+
 func TestEncoderKeyOnlyOverheadUsesAllMedia(t *testing.T) {
 	e := NewEncoder(testFECPT, testFECSSRC, nil)
 	start := int64(time.Hour)
