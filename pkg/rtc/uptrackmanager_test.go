@@ -372,7 +372,7 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 		resolver := func(sid livekit.ParticipantID) types.LocalParticipant {
 			switch sid {
 			case "PA_2":
-				// Reading permissions from inside resolver must not deadlock on u.lock.
+				// Reading permissions from inside resolver must not deadlock on m.lock.
 				_ = um.HasPermission("audio", "p1")
 				_, _ = um.SubscriptionPermission()
 				close(enteredV2Resolver)

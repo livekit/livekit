@@ -353,7 +353,6 @@ func TestRoomDataTrackRevocationAtomicWithPermissionCommit(t *testing.T) {
 	release := sync.OnceFunc(func() {
 		close(releaseRevoke)
 	})
-	t.Cleanup(release)
 	var barrierOnce sync.Once
 
 	wrappedDT := &revokeBarrierDataTrack{
@@ -370,6 +369,8 @@ func TestRoomDataTrackRevocationAtomicWithPermissionCommit(t *testing.T) {
 	pub.SubscriptionPermissionManager.addTrack(wrappedDT)
 	pub.UpDataTrackManager.lock.Unlock()
 	t.Cleanup(func() {
+		// Unblock any in-flight revoke holding m.lock before removeTrack/addTrack runs.
+		release()
 		pub.UpDataTrackManager.lock.Lock()
 		if pub.UpDataTrackManager.dataTracks[dt.PubHandle()] == wrappedDT {
 			pub.UpDataTrackManager.dataTracks[dt.PubHandle()] = dt
