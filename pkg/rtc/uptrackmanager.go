@@ -169,6 +169,15 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 	timedVersion utils.TimedVersion,
 	resolverBySid func(participantID livekit.ParticipantID) types.LocalParticipant,
 ) error {
+	return u.updateSubscriptionPermission(subscriptionPermission, timedVersion, resolverBySid, nil)
+}
+
+func (u *UpTrackManager) updateSubscriptionPermission(
+	subscriptionPermission *livekit.SubscriptionPermission,
+	timedVersion utils.TimedVersion,
+	resolverBySid func(participantID livekit.ParticipantID) types.LocalParticipant,
+	onCommittedLocked func(getAllowedSubscribers func(trackID livekit.TrackID) []livekit.ParticipantIdentity),
+) error {
 	if !timedVersion.IsZero() {
 		u.lock.RLock()
 		stale := u.isStaleSubscriptionPermissionLocked(timedVersion)
@@ -234,6 +243,9 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 	)
 
 	u.maybeRevokeSubscriptionsLocked()
+	if onCommittedLocked != nil && u.subscriberPermissions != nil {
+		onCommittedLocked(u.getAllowedSubscribersLocked)
+	}
 
 	return nil
 }

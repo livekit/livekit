@@ -191,23 +191,29 @@ func (p *ParticipantImpl) onReceivedDataTrackMessage(data []byte, arrivalTime in
 }
 
 // wraps the promoted UpTrackManager.UpdateSubscriptionPermission to also revoke
-// data track subscriptions that are no longer permitted
+// data track subscriptions that are no longer permitted while u.lock is held
 func (p *ParticipantImpl) UpdateSubscriptionPermission(
 	subscriptionPermission *livekit.SubscriptionPermission,
 	timedVersion utils.TimedVersion,
 	resolverBySid func(participantID livekit.ParticipantID) types.LocalParticipant,
 ) error {
-	if err := p.UpTrackManager.UpdateSubscriptionPermission(subscriptionPermission, timedVersion, resolverBySid); err != nil {
-		return err
-	}
-
-	p.maybeRevokeDataTrackSubscriptions()
-	return nil
+	return p.UpTrackManager.updateSubscriptionPermission(
+		subscriptionPermission,
+		timedVersion,
+		resolverBySid,
+		p.maybeRevokeDataTrackSubscriptionsLocked,
+	)
 }
 
-func (p *ParticipantImpl) maybeRevokeDataTrackSubscriptions() {
+func (p *ParticipantImpl) maybeRevokeDataTrackSubscriptionsLocked(
+	getAllowed func(trackID livekit.TrackID) []livekit.ParticipantIdentity,
+) {
+	if p.UpDataTrackManager == nil {
+		return
+	}
+
 	for _, dt := range p.UpDataTrackManager.GetPublishedDataTracks() {
-		allowed := p.UpTrackManager.GetAllowedSubscribers(dt.ID())
+		allowed := getAllowed(dt.ID())
 		if allowed == nil {
 			// no restrictions
 			continue

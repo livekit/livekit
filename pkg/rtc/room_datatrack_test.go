@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -27,10 +28,22 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/signalling"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
+	"github.com/livekit/livekit-server/pkg/sfu/sfufakes"
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 )
+
+type revokeBarrierDataTrack struct {
+	types.DataTrack
+	beforeRevoke func()
+}
+
+func (d *revokeBarrierDataTrack) RevokeDisallowedSubscribers(allowed []livekit.ParticipantIdentity) []livekit.ParticipantIdentity {
+	d.beforeRevoke()
+	return d.DataTrack.RevokeDisallowedSubscribers(allowed)
+}
 
 type closeDuringDataTrackAdd struct {
 	types.DataTrack
@@ -154,15 +167,32 @@ func TestRoomSubscriptionPermissionEndToEnd(t *testing.T) {
 	dt := pub.GetPublishedDataTrack(1)
 	require.NotNil(t, dt)
 
-	mt := NewMediaTrack(MediaTrackParams{Logger: logger.GetLogger()}, &livekit.TrackInfo{
+	mt := NewMediaTrack(MediaTrackParams{
+		ParticipantID:       pub.ID,
+		ParticipantIdentity: pub.Identity(),
+		TelemetryListener:   pub.GetTelemetryListener,
+		Logger:              logger.GetLogger(),
+	}, &livekit.TrackInfo{
 		Sid:  "TR_e2e",
 		Type: livekit.TrackType_VIDEO,
 	})
+	fakeReceiver := &sfufakes.FakeTrackReceiver{}
+	fakeReceiver.MimeReturns(mime.MimeTypeVP8)
+	fakeReceiver.CodecReturns(webrtc.RTPCodecParameters{
+		RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: mime.MimeTypeVP8.String(), ClockRate: 90000},
+		PayloadType:        96,
+	})
+	mt.MediaTrackReceiver.SetupReceiver(fakeReceiver, 0, "0")
 	pub.UpTrackManager.AddPublishedTrack(mt)
 	room.trackManager.AddTrack(mt, pub.Identity(), pub.ID())
+	_, err := mt.AddSubscriber(sub1)
+	require.NoError(t, err)
+	_, err = mt.AddSubscriber(sub2)
+	require.NoError(t, err)
 
 	require.Eventually(t, func() bool {
 		return dt.IsSubscriber(sub1.ID()) && dt.IsSubscriber(sub2.ID()) &&
+			mt.IsSubscriber(sub1.ID()) && mt.IsSubscriber(sub2.ID()) &&
 			len(sub1.GetSubscribedDataTracks()) == 1 && len(sub2.GetSubscribedDataTracks()) == 1
 	}, 2*time.Second, time.Millisecond)
 
@@ -184,6 +214,7 @@ func TestRoomSubscriptionPermissionEndToEnd(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		return dt.IsSubscriber(sub1.ID()) && !dt.IsSubscriber(sub2.ID()) &&
+			mt.IsSubscriber(sub1.ID()) && !mt.IsSubscriber(sub2.ID()) &&
 			len(sub1.GetSubscribedDataTracks()) == 1 && len(sub2.GetSubscribedDataTracks()) == 0
 	}, 2*time.Second, time.Millisecond)
 	require.True(t, room.ResolveDataTrackForSubscriber(sub1, dt.ID()).HasPermission)
@@ -214,6 +245,8 @@ func TestRoomSubscriptionPermissionEndToEnd(t *testing.T) {
 		assert.Equal(t, allowSub1, permAfterInvalid)
 		assert.True(t, dt.IsSubscriber(sub1.ID()))
 		assert.False(t, dt.IsSubscriber(sub2.ID()))
+		assert.True(t, mt.IsSubscriber(sub1.ID()))
+		assert.False(t, mt.IsSubscriber(sub2.ID()))
 		assert.True(t, room.ResolveDataTrackForSubscriber(sub1, dt.ID()).HasPermission)
 		assert.False(t, room.ResolveDataTrackForSubscriber(sub2, dt.ID()).HasPermission)
 		assert.True(t, room.ResolveMediaTrackForSubscriber(sub1, mt.ID()).HasPermission)
@@ -265,9 +298,12 @@ func TestRoomSubscriptionPermissionEndToEnd(t *testing.T) {
 				SubscriptionPermission: allowSub2,
 			},
 		}))
+		_, err := mt.AddSubscriber(sub2)
+		require.NoError(t, err)
 
 		require.Eventually(t, func() bool {
 			return !dt.IsSubscriber(sub1.ID()) && dt.IsSubscriber(sub2.ID()) &&
+				!mt.IsSubscriber(sub1.ID()) && mt.IsSubscriber(sub2.ID()) &&
 				len(sub1.GetSubscribedDataTracks()) == 0 && len(sub2.GetSubscribedDataTracks()) == 1
 		}, 2*time.Second, time.Millisecond)
 
@@ -284,9 +320,80 @@ func TestRoomSubscriptionPermissionEndToEnd(t *testing.T) {
 		assert.Equal(t, allowSub2, permFinal)
 		assert.True(t, dt.IsSubscriber(sub2.ID()))
 		assert.False(t, dt.IsSubscriber(sub1.ID()))
+		assert.True(t, mt.IsSubscriber(sub2.ID()))
+		assert.False(t, mt.IsSubscriber(sub1.ID()))
 		assert.True(t, room.ResolveDataTrackForSubscriber(sub2, dt.ID()).HasPermission)
 		assert.False(t, room.ResolveDataTrackForSubscriber(sub1, dt.ID()).HasPermission)
 		assert.True(t, room.ResolveMediaTrackForSubscriber(sub2, mt.ID()).HasPermission)
 		assert.False(t, room.ResolveMediaTrackForSubscriber(sub1, mt.ID()).HasPermission)
 	})
+}
+
+func TestRoomDataTrackRevocationAtomicWithPermissionCommit(t *testing.T) {
+	_, pub, sub := newRoomDataTrackParticipants(t)
+	pub.HandlePublishDataTrackRequest(&livekit.PublishDataTrackRequest{PubHandle: 1, Name: "test"})
+	dt := pub.GetPublishedDataTrack(1)
+	require.NotNil(t, dt)
+
+	require.Eventually(t, func() bool {
+		return dt.IsSubscriber(sub.ID()) && len(sub.GetSubscribedDataTracks()) == 1
+	}, 2*time.Second, time.Millisecond)
+
+	enteredRevoke := make(chan struct{})
+	releaseRevoke := make(chan struct{})
+	release := sync.OnceFunc(func() {
+		close(releaseRevoke)
+	})
+	t.Cleanup(release)
+	var barrierOnce sync.Once
+
+	pub.UpDataTrackManager.lock.Lock()
+	pub.UpDataTrackManager.dataTracks[dt.PubHandle()] = &revokeBarrierDataTrack{
+		DataTrack: dt,
+		beforeRevoke: func() {
+			barrierOnce.Do(func() {
+				close(enteredRevoke)
+				<-releaseRevoke
+			})
+		},
+	}
+	pub.UpDataTrackManager.lock.Unlock()
+
+	denyErrCh := make(chan error, 1)
+	go func() {
+		denyErrCh <- pub.HandleUpdateSubscriptionPermission(&livekit.SubscriptionPermission{})
+	}()
+
+	select {
+	case <-enteredRevoke:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "timed out waiting for data track revoke entry")
+	}
+
+	grantErrCh := make(chan error, 1)
+	go func() {
+		grantErrCh <- pub.HandleUpdateSubscriptionPermission(&livekit.SubscriptionPermission{AllParticipants: true})
+	}()
+
+	// Grant must serialize behind the in-flight revoke rather than committing and letting
+	// sub re-subscribe before the stale empty allowlist is applied.
+	select {
+	case err := <-grantErrCh:
+		require.FailNowf(t, "grant finished before in-flight revoke completed", "err=%v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	release()
+	for _, ch := range []chan error{denyErrCh, grantErrCh} {
+		select {
+		case err := <-ch:
+			require.NoError(t, err)
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "timed out waiting for permission update completion")
+		}
+	}
+
+	require.Eventually(t, func() bool {
+		return dt.IsSubscriber(sub.ID()) && len(sub.GetSubscribedDataTracks()) == 1 && sub.IsSubscribedTo(pub.ID())
+	}, 2*time.Second, time.Millisecond, "concurrent grant must preserve/restore data track subscription")
 }
