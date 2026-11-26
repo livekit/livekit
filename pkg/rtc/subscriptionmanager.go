@@ -625,7 +625,7 @@ func (m *SubscriptionManager) reconcileSubscription(s *mediaTrackSubscription) {
 	}
 
 	m.lock.Lock()
-	if m.subscriptions[s.trackID] == s && s.cleanup() {
+	if m.subscriptions[s.trackID] == s && s.cleanup(func() bool { return s.subscribedTrack != nil }) {
 		s.logger.Debugw("cleanup removing subscription")
 		delete(m.subscriptions, s.trackID)
 	}
@@ -696,23 +696,10 @@ func (m *SubscriptionManager) reconcileDataTrackSubscription(s *dataTrackSubscri
 		if err := m.unsubscribeDataTrack(s); err != nil {
 			s.logger.Warnw("failed to unsubscribe", err)
 		}
-
-		// a subscribe during the removal sets the entry as desired again, keep it then
-		m.lock.Lock()
-		removed := m.dataTrackSubscriptions[s.trackID] == s && !s.isDesired()
-		if removed {
-			delete(m.dataTrackSubscriptions, s.trackID)
-		}
-		m.lock.Unlock()
-		m.notifyDataTrackSubscriberHandles()
-		if !removed {
-			m.queueReconcileDataTrack(s.trackID)
-		}
-		return
 	}
 
 	m.lock.Lock()
-	cleanedUp := m.dataTrackSubscriptions[s.trackID] == s && s.cleanup()
+	cleanedUp := m.dataTrackSubscriptions[s.trackID] == s && s.cleanup(func() bool { return s.dataDownTrack != nil })
 	if cleanedUp {
 		s.logger.Debugw("cleanup removing data track subscription")
 		delete(m.dataTrackSubscriptions, s.trackID)
@@ -1511,15 +1498,24 @@ func (s *trackSubscription) setRemovedNotifierLocked(notifier types.ChangeNotifi
 	return true
 }
 
-func (s *trackSubscription) cleanupObservers(needsCleanupLocked func() bool) bool {
+// The full scan also selects attached, undesired tracks for unsubscribe.
+// Among trackless entries, skip a settings hold only if it has no observers.
+func (s *trackSubscription) needsCleanup() bool {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	return !s.desired && (s.changedNotifier != nil || s.removedNotifier != nil || !s.isKeptLocked())
+}
+
+// Called with the manager lock held. A settings hold keeps the entry, not its observers.
+func (s *trackSubscription) cleanup(hasTrackLocked func() bool) bool {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	if !needsCleanupLocked() {
+	if s.desired || hasTrackLocked() {
 		return false
 	}
 	s.setChangedNotifierLocked(nil)
 	s.setRemovedNotifierLocked(nil)
-	return true
+	return !s.isKeptLocked()
 }
 
 func (s *trackSubscription) handleSourceTrackRemoved() {
@@ -1703,28 +1699,6 @@ func (s *mediaTrackSubscription) needsBind() bool {
 	return s.desired && s.subscribedTrack != nil && !s.bound
 }
 
-func (s *mediaTrackSubscription) needsCleanup() bool {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-	return s.needsCleanupLocked()
-}
-
-func (s *mediaTrackSubscription) needsCleanupLocked() bool {
-	return !s.desired && s.subscribedTrack == nil && !s.isKeptLocked()
-}
-
-// cleanup is called with the manager lock held, before removing this subscription.
-func (s *mediaTrackSubscription) cleanup() bool {
-	s.lock.RLock()
-	eligible := s.needsCleanupLocked()
-	retire := eligible && (s.changedNotifier != nil || s.removedNotifier != nil)
-	s.lock.RUnlock()
-	if retire {
-		return s.cleanupObservers(s.needsCleanupLocked)
-	}
-	return eligible
-}
-
 // -----------------------------------------------------------------
 
 type dataTrackSubscription struct {
@@ -1758,28 +1732,6 @@ func (s *dataTrackSubscription) needsUnsubscribe() bool {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	return !s.desired && s.dataDownTrack != nil
-}
-
-func (s *dataTrackSubscription) needsCleanup() bool {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-	return s.needsCleanupLocked()
-}
-
-func (s *dataTrackSubscription) needsCleanupLocked() bool {
-	return !s.desired && s.dataDownTrack == nil && !s.isKeptLocked()
-}
-
-// cleanup is called with the manager lock held, before removing this subscription.
-func (s *dataTrackSubscription) cleanup() bool {
-	s.lock.RLock()
-	eligible := s.needsCleanupLocked()
-	retire := eligible && (s.changedNotifier != nil || s.removedNotifier != nil)
-	s.lock.RUnlock()
-	if retire {
-		return s.cleanupObservers(s.needsCleanupLocked)
-	}
-	return eligible
 }
 
 func (s *dataTrackSubscription) setDataDownTrack(dataDownTrack types.DataDownTrack) {

@@ -21,8 +21,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
+	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -61,6 +63,20 @@ func waitForObserverStep(t *testing.T, ch <-chan struct{}) {
 	}, 2*time.Second, time.Millisecond, "observer lifecycle step did not finish")
 }
 
+// Drive worker passes explicitly so periodic retries cannot mask a lost notification.
+func newManualSubscriptionManager(t *testing.T) *SubscriptionManager {
+	sm := newTestSubscriptionManager()
+	sm.lock.Lock()
+	close(sm.closeCh)
+	sm.lock.Unlock()
+	<-sm.doneCh
+	sm.lock.Lock()
+	sm.closeCh = make(chan struct{})
+	sm.lock.Unlock()
+	t.Cleanup(func() { sm.Close(false) })
+	return sm
+}
+
 func TestDataTrackResubscribeNotifications(t *testing.T) {
 	testResubscribeNotifications(t, true)
 }
@@ -73,7 +89,10 @@ func testResubscribeNotifications(t *testing.T, data bool) {
 	for _, kind := range []string{"changed", "removed"} {
 		for _, history := range []string{"close while desired", "unsubscribe then subscribe", "fast toggle"} {
 			t.Run(kind+"/"+history, func(t *testing.T) {
-				room := newRoomWithParticipants(t, testRoomOpts{})
+				// Exercise the room's notification paths without starting telemetry workers.
+				room := NewRoom(&livekit.Room{Name: "room"}, nil, WebRTCConfig{}, config.DefaultConfig.Room,
+					&config.DefaultConfig.Audio, &livekit.ServerInfo{NodeId: "testnode"}, telemetry.NullTelemetryService{}, nil, nil, nil)
+				t.Cleanup(func() { room.Close(types.RoomCloseReasonUnknown) })
 				listener := room.LocalParticipantListener()
 				pub := NewMockParticipant("publisher", types.CurrentProtocol, false, true, listener)
 				sub := NewMockParticipant("subscriber", types.CurrentProtocol, false, false, listener)
@@ -84,18 +103,8 @@ func testResubscribeNotifications(t *testing.T, data bool) {
 					p.StateReturns(livekit.ParticipantInfo_ACTIVE)
 				}
 
-				sm := newTestSubscriptionManager()
-				// Drive the same worker reconciliation steps explicitly so periodic retries
-				// cannot hide a lost notification.
-				sm.lock.Lock()
-				close(sm.closeCh)
-				sm.lock.Unlock()
-				<-sm.doneCh
-				sm.lock.Lock()
-				sm.closeCh = make(chan struct{})
-				sm.lock.Unlock()
+				sm := newManualSubscriptionManager(t)
 				sm.params.Participant = sub
-				t.Cleanup(func() { sm.Close(false) })
 				sub.SubscribeToTrackCalls(sm.SubscribeToTrack)
 				sub.UnsubscribeFromTrackCalls(sm.UnsubscribeFromTrack)
 				sub.SubscribeToDataTrackCalls(sm.SubscribeToDataTrack)
