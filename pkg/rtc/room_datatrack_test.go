@@ -366,17 +366,14 @@ func TestRoomDataTrackRevocationAtomicWithPermissionCommit(t *testing.T) {
 	}
 	pub.UpDataTrackManager.lock.Lock()
 	pub.UpDataTrackManager.dataTracks[dt.PubHandle()] = wrappedDT
-	pub.SubscriptionPermissionManager.addTrack(wrappedDT)
 	pub.UpDataTrackManager.lock.Unlock()
 	t.Cleanup(func() {
-		// Unblock any in-flight revoke holding m.lock before removeTrack/addTrack runs.
+		// Unblock any in-flight revoke holding m.lock before restoring dt.
 		release()
 		pub.UpDataTrackManager.lock.Lock()
 		if pub.UpDataTrackManager.dataTracks[dt.PubHandle()] == wrappedDT {
 			pub.UpDataTrackManager.dataTracks[dt.PubHandle()] = dt
 		}
-		pub.SubscriptionPermissionManager.removeTrack(wrappedDT)
-		pub.SubscriptionPermissionManager.addTrack(dt)
 		pub.UpDataTrackManager.lock.Unlock()
 	})
 

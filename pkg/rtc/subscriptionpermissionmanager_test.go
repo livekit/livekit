@@ -30,14 +30,21 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 )
 
-var defaultUptrackManagerParams = UpTrackManagerParams{
-	Logger:           logger.GetLogger(),
-	VersionGenerator: utils.NewDefaultTimedVersionGenerator(),
+func newSubscriptionPermissionTestHarness() (*SubscriptionPermissionManager, *UpTrackManager) {
+	um := NewUpTrackManager(UpTrackManagerParams{
+		Logger: logger.GetLogger(),
+	})
+	pm := NewSubscriptionPermissionManager(SubscriptionPermissionManagerParams{
+		Logger:           logger.GetLogger(),
+		VersionGenerator: utils.NewDefaultTimedVersionGenerator(),
+		GetMediaTracks:   um.GetPublishedTracks,
+	})
+	return pm, um
 }
 
 func TestUpdateSubscriptionPermission(t *testing.T) {
 	t.Run("updates subscription permission", func(t *testing.T) {
-		um := NewUpTrackManager(defaultUptrackManagerParams)
+		pm, um := newSubscriptionPermissionTestHarness()
 		vg := utils.NewDefaultTimedVersionGenerator()
 
 		tra := &typesfakes.FakeMediaTrack{}
@@ -52,16 +59,16 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 		subscriptionPermission := &livekit.SubscriptionPermission{
 			AllParticipants: true,
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil)
-		require.Nil(t, um.subscriberPermissions)
+		pm.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil)
+		require.Nil(t, pm.subscriberPermissions)
 
 		// nobody is allowed to subscribe
 		subscriptionPermission = &livekit.SubscriptionPermission{
 			TrackPermissions: []*livekit.TrackPermission{},
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil)
-		require.NotNil(t, um.subscriberPermissions)
-		require.Equal(t, 0, len(um.subscriberPermissions))
+		pm.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil)
+		require.NotNil(t, pm.subscriberPermissions)
+		require.Equal(t, 0, len(pm.subscriberPermissions))
 
 		lp1 := &typesfakes.FakeLocalParticipant{}
 		lp1.IdentityReturns("p1")
@@ -95,10 +102,10 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 				perms2,
 			},
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), sidResolver)
-		require.Equal(t, 2, len(um.subscriberPermissions))
-		require.EqualValues(t, perms1, um.subscriberPermissions["p1"])
-		require.EqualValues(t, perms2, um.subscriberPermissions["p2"])
+		pm.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), sidResolver)
+		require.Equal(t, 2, len(pm.subscriberPermissions))
+		require.EqualValues(t, perms1, pm.subscriberPermissions["p1"])
+		require.EqualValues(t, perms2, pm.subscriberPermissions["p2"])
 
 		// allow all tracks for some and restrictive for others
 		perms1 = &livekit.TrackPermission{
@@ -120,15 +127,15 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 				perms3,
 			},
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil)
-		require.Equal(t, 3, len(um.subscriberPermissions))
-		require.EqualValues(t, perms1, um.subscriberPermissions["p1"])
-		require.EqualValues(t, perms2, um.subscriberPermissions["p2"])
-		require.EqualValues(t, perms3, um.subscriberPermissions["p3"])
+		pm.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil)
+		require.Equal(t, 3, len(pm.subscriberPermissions))
+		require.EqualValues(t, perms1, pm.subscriberPermissions["p1"])
+		require.EqualValues(t, perms2, pm.subscriberPermissions["p2"])
+		require.EqualValues(t, perms3, pm.subscriberPermissions["p3"])
 	})
 
 	t.Run("updates subscription permission using both", func(t *testing.T) {
-		um := NewUpTrackManager(defaultUptrackManagerParams)
+		pm, um := newSubscriptionPermissionTestHarness()
 		vg := utils.NewDefaultTimedVersionGenerator()
 
 		tra := &typesfakes.FakeMediaTrack{}
@@ -173,11 +180,11 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 				perms2,
 			},
 		}
-		err := um.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), sidResolver)
+		err := pm.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), sidResolver)
 		require.NoError(t, err)
-		require.Equal(t, 2, len(um.subscriberPermissions))
-		require.EqualValues(t, perms1, um.subscriberPermissions["p1"])
-		require.EqualValues(t, perms2, um.subscriberPermissions["p2"])
+		require.Equal(t, 2, len(pm.subscriberPermissions))
+		require.EqualValues(t, perms1, pm.subscriberPermissions["p1"])
+		require.EqualValues(t, perms2, pm.subscriberPermissions["p2"])
 
 		// mismatched identities should fail a permission update
 		badSidResolver := func(sid livekit.ParticipantID) types.LocalParticipant {
@@ -192,56 +199,56 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 			return nil
 		}
 
-		err = um.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), badSidResolver)
+		err = pm.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), badSidResolver)
 		require.NoError(t, err)
-		require.Equal(t, 2, len(um.subscriberPermissions))
-		require.EqualValues(t, perms1, um.subscriberPermissions["p1"])
-		require.EqualValues(t, perms2, um.subscriberPermissions["p2"])
+		require.Equal(t, 2, len(pm.subscriberPermissions))
+		require.EqualValues(t, perms1, pm.subscriberPermissions["p1"])
+		require.EqualValues(t, perms2, pm.subscriberPermissions["p2"])
 	})
 
 	t.Run("update versions", func(t *testing.T) {
-		um := NewUpTrackManager(defaultUptrackManagerParams)
+		pm, _ := newSubscriptionPermissionTestHarness()
 		vg := utils.NewDefaultTimedVersionGenerator()
 
 		v0, v1, v2 := vg.Next(), vg.Next(), vg.Next()
 
-		um.UpdateSubscriptionPermission(&livekit.SubscriptionPermission{}, v1, nil)
-		require.Equal(t, v1.Load(), um.subscriptionPermissionVersion.Load(), "first update should be applied")
+		pm.UpdateSubscriptionPermission(&livekit.SubscriptionPermission{}, v1, nil)
+		require.Equal(t, v1.Load(), pm.subscriptionPermissionVersion.Load(), "first update should be applied")
 
-		um.UpdateSubscriptionPermission(&livekit.SubscriptionPermission{}, v2, nil)
-		require.Equal(t, v2.Load(), um.subscriptionPermissionVersion.Load(), "ordered updates should be applied")
+		pm.UpdateSubscriptionPermission(&livekit.SubscriptionPermission{}, v2, nil)
+		require.Equal(t, v2.Load(), pm.subscriptionPermissionVersion.Load(), "ordered updates should be applied")
 
-		um.UpdateSubscriptionPermission(&livekit.SubscriptionPermission{}, v0, nil)
-		require.Equal(t, v2.Load(), um.subscriptionPermissionVersion.Load(), "out of order updates should be ignored")
+		pm.UpdateSubscriptionPermission(&livekit.SubscriptionPermission{}, v0, nil)
+		require.Equal(t, v2.Load(), pm.subscriptionPermissionVersion.Load(), "out of order updates should be ignored")
 
-		um.UpdateSubscriptionPermission(&livekit.SubscriptionPermission{}, utils.TimedVersion(0), nil)
-		require.True(t, um.subscriptionPermissionVersion.After(v2), "zero version in updates should use next local version")
+		pm.UpdateSubscriptionPermission(&livekit.SubscriptionPermission{}, utils.TimedVersion(0), nil)
+		require.True(t, pm.subscriptionPermissionVersion.After(v2), "zero version in updates should use next local version")
 	})
 
 	t.Run("local updates advance past a remote clock", func(t *testing.T) {
-		um := NewUpTrackManager(defaultUptrackManagerParams)
+		pm, _ := newSubscriptionPermissionTestHarness()
 		remoteVersion := utils.TimedVersionFromTime(time.Now().Add(time.Hour))
 		allow := &livekit.SubscriptionPermission{AllParticipants: true}
 		deny := &livekit.SubscriptionPermission{}
 
-		require.NoError(t, um.UpdateSubscriptionPermission(allow, remoteVersion, nil))
-		require.NoError(t, um.UpdateSubscriptionPermission(deny, 0, nil))
-		_, localVersion := um.SubscriptionPermission()
+		require.NoError(t, pm.UpdateSubscriptionPermission(allow, remoteVersion, nil))
+		require.NoError(t, pm.UpdateSubscriptionPermission(deny, 0, nil))
+		_, localVersion := pm.SubscriptionPermission()
 		require.True(t, localVersion.After(remoteVersion))
-		require.False(t, um.HasPermission("video", "subscriber"))
+		require.False(t, pm.HasPermission("video", "subscriber"))
 
 		// This update was sent before the local change, with the next remote tick.
-		require.NoError(t, um.UpdateSubscriptionPermission(allow, remoteVersion.Next(), nil))
-		require.False(t, um.HasPermission("video", "subscriber"))
+		require.NoError(t, pm.UpdateSubscriptionPermission(allow, remoteVersion.Next(), nil))
+		require.False(t, pm.HasPermission("video", "subscriber"))
 
-		require.NoError(t, um.UpdateSubscriptionPermission(allow, 0, nil))
-		_, nextLocalVersion := um.SubscriptionPermission()
+		require.NoError(t, pm.UpdateSubscriptionPermission(allow, 0, nil))
+		_, nextLocalVersion := pm.SubscriptionPermission()
 		require.True(t, nextLocalVersion.After(localVersion))
-		require.True(t, um.HasPermission("video", "subscriber"))
+		require.True(t, pm.HasPermission("video", "subscriber"))
 	})
 
 	t.Run("invalid update leaves version, proto, and subscriber permissions unchanged", func(t *testing.T) {
-		um := NewUpTrackManager(defaultUptrackManagerParams)
+		pm, um := newSubscriptionPermissionTestHarness()
 		vg := utils.NewDefaultTimedVersionGenerator()
 
 		tra := &typesfakes.FakeMediaTrack{}
@@ -257,7 +264,7 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 				},
 			},
 		}
-		require.NoError(t, um.UpdateSubscriptionPermission(permV1, v1, nil))
+		require.NoError(t, pm.UpdateSubscriptionPermission(permV1, v1, nil))
 		require.Equal(t, 1, tra.RevokeDisallowedSubscribersCallCount())
 
 		invalidPerms := []*livekit.SubscriptionPermission{
@@ -272,17 +279,17 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 			},
 		}
 		for _, invalid := range invalidPerms {
-			err := um.UpdateSubscriptionPermission(invalid, v3, nil)
+			err := pm.UpdateSubscriptionPermission(invalid, v3, nil)
 			require.ErrorIs(t, err, ErrSubscriptionPermissionNeedsId)
 
-			err = um.UpdateSubscriptionPermission(invalid, 0, nil)
+			err = pm.UpdateSubscriptionPermission(invalid, 0, nil)
 			require.ErrorIs(t, err, ErrSubscriptionPermissionNeedsId)
 
-			gotPerm, gotVer := um.SubscriptionPermission()
+			gotPerm, gotVer := pm.SubscriptionPermission()
 			require.Equal(t, v1.Load(), gotVer.Load())
 			require.Equal(t, permV1, gotPerm)
-			require.True(t, um.HasPermission("audio", "p1"))
-			require.False(t, um.HasPermission("audio", "p2"))
+			require.True(t, pm.HasPermission("audio", "p1"))
+			require.False(t, pm.HasPermission("audio", "p2"))
 			require.Equal(t, 1, tra.RevokeDisallowedSubscribersCallCount())
 		}
 
@@ -295,44 +302,17 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 				},
 			},
 		}
-		require.NoError(t, um.UpdateSubscriptionPermission(permV2, v2, nil))
-		gotPerm, gotVer := um.SubscriptionPermission()
+		require.NoError(t, pm.UpdateSubscriptionPermission(permV2, v2, nil))
+		gotPerm, gotVer := pm.SubscriptionPermission()
 		require.Equal(t, v2.Load(), gotVer.Load())
 		require.Equal(t, permV2, gotPerm)
-		require.False(t, um.HasPermission("audio", "p1"))
-		require.True(t, um.HasPermission("audio", "p2"))
+		require.False(t, pm.HasPermission("audio", "p1"))
+		require.True(t, pm.HasPermission("audio", "p2"))
 		require.Equal(t, 2, tra.RevokeDisallowedSubscribersCallCount())
 	})
 
-	t.Run("nil permission updates version without clearing map or revoking", func(t *testing.T) {
-		um := NewUpTrackManager(defaultUptrackManagerParams)
-		vg := utils.NewDefaultTimedVersionGenerator()
-
-		tra := &typesfakes.FakeMediaTrack{}
-		tra.IDReturns("audio")
-		um.AddPublishedTrack(tra)
-
-		v1, v2 := vg.Next(), vg.Next()
-		permV1 := &livekit.SubscriptionPermission{
-			TrackPermissions: []*livekit.TrackPermission{
-				{
-					ParticipantIdentity: "p1",
-					AllTracks:           true,
-				},
-			},
-		}
-		require.NoError(t, um.UpdateSubscriptionPermission(permV1, v1, nil))
-		require.NoError(t, um.UpdateSubscriptionPermission(nil, v2, nil))
-
-		gotPerm, gotVer := um.SubscriptionPermission()
-		require.Nil(t, gotPerm)
-		require.Equal(t, v2.Load(), gotVer.Load())
-		require.True(t, um.HasPermission("audio", "p1"))
-		require.Equal(t, 1, tra.RevokeDisallowedSubscribersCallCount())
-	})
-
 	t.Run("stale concurrent update does not overwrite newer update while resolving SIDs", func(t *testing.T) {
-		um := NewUpTrackManager(defaultUptrackManagerParams)
+		pm, um := newSubscriptionPermissionTestHarness()
 		vg := utils.NewDefaultTimedVersionGenerator()
 
 		tra := &typesfakes.FakeMediaTrack{}
@@ -373,8 +353,8 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 			switch sid {
 			case "PA_2":
 				// Reading permissions from inside resolver must not deadlock on m.lock.
-				_ = um.HasPermission("audio", "p1")
-				_, _ = um.SubscriptionPermission()
+				_ = pm.HasPermission("audio", "p1")
+				_, _ = pm.SubscriptionPermission()
 				close(enteredV2Resolver)
 				<-releaseV2Resolver
 				return lp2
@@ -387,7 +367,7 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 
 		v2ErrCh := make(chan error, 1)
 		go func() {
-			v2ErrCh <- um.UpdateSubscriptionPermission(permV2, v2, resolver)
+			v2ErrCh <- pm.UpdateSubscriptionPermission(permV2, v2, resolver)
 		}()
 
 		select {
@@ -397,7 +377,7 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 		}
 
 		// Apply newer v3 while v2 is suspended inside resolverBySid.
-		require.NoError(t, um.UpdateSubscriptionPermission(permV3, v3, resolver))
+		require.NoError(t, pm.UpdateSubscriptionPermission(permV3, v3, resolver))
 		releaseV2()
 		select {
 		case err := <-v2ErrCh:
@@ -406,17 +386,17 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 			require.FailNow(t, "timed out waiting for UpdateSubscriptionPermission completion")
 		}
 
-		gotPerm, gotVer := um.SubscriptionPermission()
+		gotPerm, gotVer := pm.SubscriptionPermission()
 		require.Equal(t, v3.Load(), gotVer.Load())
 		require.Equal(t, permV3, gotPerm)
-		require.False(t, um.HasPermission("audio", "p2"))
-		require.True(t, um.HasPermission("audio", "p3"))
+		require.False(t, pm.HasPermission("audio", "p2"))
+		require.True(t, pm.HasPermission("audio", "p3"))
 		require.Equal(t, 1, tra.RevokeDisallowedSubscribersCallCount())
 		require.Equal(t, []livekit.ParticipantIdentity{"p3"}, tra.RevokeDisallowedSubscribersArgsForCall(0))
 	})
 
 	t.Run("concurrent updates and permission reads", func(t *testing.T) {
-		um := NewUpTrackManager(defaultUptrackManagerParams)
+		pm, um := newSubscriptionPermissionTestHarness()
 		vg := utils.NewDefaultTimedVersionGenerator()
 
 		tra := &typesfakes.FakeMediaTrack{}
@@ -467,40 +447,40 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 					}
 					switch op {
 					case 0:
-						assert.NoError(t, um.UpdateSubscriptionPermission(perm1, versions[idx], resolver))
+						assert.NoError(t, pm.UpdateSubscriptionPermission(perm1, versions[idx], resolver))
 					case 1:
-						assert.NoError(t, um.UpdateSubscriptionPermission(perm2, versions[idx], resolver))
+						assert.NoError(t, pm.UpdateSubscriptionPermission(perm2, versions[idx], resolver))
 					default:
-						err := um.UpdateSubscriptionPermission(invalidPerm, versions[idx], resolver)
+						err := pm.UpdateSubscriptionPermission(invalidPerm, versions[idx], resolver)
 						if err != nil {
 							assert.ErrorIs(t, err, ErrSubscriptionPermissionNeedsId)
 						}
 					}
-					_ = um.HasPermission("audio", "p1")
-					_ = um.GetAllowedSubscribers("audio")
-					_, _ = um.SubscriptionPermission()
+					_ = pm.HasPermission("audio", "p1")
+					_ = pm.GetAllowedSubscribers("audio")
+					_, _ = pm.SubscriptionPermission()
 				}
 			}(g)
 		}
 		wg.Wait()
 
-		finalPerm, finalVer := um.SubscriptionPermission()
+		finalPerm, finalVer := pm.SubscriptionPermission()
 		require.NotNil(t, finalPerm)
 		require.Equal(t, versions[len(versions)-1].Load(), finalVer.Load())
 		if finalPerm == perm1 {
-			require.True(t, um.HasPermission("audio", "p1"))
-			require.False(t, um.HasPermission("audio", "p2"))
+			require.True(t, pm.HasPermission("audio", "p1"))
+			require.False(t, pm.HasPermission("audio", "p2"))
 		} else {
 			require.Same(t, perm2, finalPerm)
-			require.False(t, um.HasPermission("audio", "p1"))
-			require.True(t, um.HasPermission("audio", "p2"))
+			require.False(t, pm.HasPermission("audio", "p1"))
+			require.True(t, pm.HasPermission("audio", "p2"))
 		}
 	})
 }
 
 func TestSubscriptionPermission(t *testing.T) {
 	t.Run("checks subscription permission", func(t *testing.T) {
-		um := NewUpTrackManager(defaultUptrackManagerParams)
+		pm, um := newSubscriptionPermissionTestHarness()
 		vg := utils.NewDefaultTimedVersionGenerator()
 
 		tra := &typesfakes.FakeMediaTrack{}
@@ -515,17 +495,17 @@ func TestSubscriptionPermission(t *testing.T) {
 		subscriptionPermission := &livekit.SubscriptionPermission{
 			AllParticipants: true,
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil)
-		require.True(t, um.hasPermissionLocked("audio", "p1"))
-		require.True(t, um.hasPermissionLocked("audio", "p2"))
+		pm.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil)
+		require.True(t, pm.HasPermission("audio", "p1"))
+		require.True(t, pm.HasPermission("audio", "p2"))
 
 		// nobody is allowed to subscribe
 		subscriptionPermission = &livekit.SubscriptionPermission{
 			TrackPermissions: []*livekit.TrackPermission{},
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil)
-		require.False(t, um.hasPermissionLocked("audio", "p1"))
-		require.False(t, um.hasPermissionLocked("audio", "p2"))
+		pm.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil)
+		require.False(t, pm.HasPermission("audio", "p1"))
+		require.False(t, pm.HasPermission("audio", "p2"))
 
 		// allow all tracks for participants
 		subscriptionPermission = &livekit.SubscriptionPermission{
@@ -540,23 +520,23 @@ func TestSubscriptionPermission(t *testing.T) {
 				},
 			},
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil)
-		require.True(t, um.hasPermissionLocked("audio", "p1"))
-		require.True(t, um.hasPermissionLocked("video", "p1"))
-		require.True(t, um.hasPermissionLocked("audio", "p2"))
-		require.True(t, um.hasPermissionLocked("video", "p2"))
+		pm.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil)
+		require.True(t, pm.HasPermission("audio", "p1"))
+		require.True(t, pm.HasPermission("video", "p1"))
+		require.True(t, pm.HasPermission("audio", "p2"))
+		require.True(t, pm.HasPermission("video", "p2"))
 
 		// add a new track after permissions are set
 		trs := &typesfakes.FakeMediaTrack{}
 		trs.IDReturns("screen")
 		um.AddPublishedTrack(trs)
 
-		require.True(t, um.hasPermissionLocked("audio", "p1"))
-		require.True(t, um.hasPermissionLocked("video", "p1"))
-		require.True(t, um.hasPermissionLocked("screen", "p1"))
-		require.True(t, um.hasPermissionLocked("audio", "p2"))
-		require.True(t, um.hasPermissionLocked("video", "p2"))
-		require.True(t, um.hasPermissionLocked("screen", "p2"))
+		require.True(t, pm.HasPermission("audio", "p1"))
+		require.True(t, pm.HasPermission("video", "p1"))
+		require.True(t, pm.HasPermission("screen", "p1"))
+		require.True(t, pm.HasPermission("audio", "p2"))
+		require.True(t, pm.HasPermission("video", "p2"))
+		require.True(t, pm.HasPermission("screen", "p2"))
 
 		// allow all tracks for some and restrictive for others
 		subscriptionPermission = &livekit.SubscriptionPermission{
@@ -575,46 +555,56 @@ func TestSubscriptionPermission(t *testing.T) {
 				},
 			},
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil)
-		require.True(t, um.hasPermissionLocked("audio", "p1"))
-		require.True(t, um.hasPermissionLocked("video", "p1"))
-		require.True(t, um.hasPermissionLocked("screen", "p1"))
+		pm.UpdateSubscriptionPermission(subscriptionPermission, vg.Next(), nil)
+		require.True(t, pm.HasPermission("audio", "p1"))
+		require.True(t, pm.HasPermission("video", "p1"))
+		require.True(t, pm.HasPermission("screen", "p1"))
 
-		require.True(t, um.hasPermissionLocked("audio", "p2"))
-		require.False(t, um.hasPermissionLocked("video", "p2"))
-		require.False(t, um.hasPermissionLocked("screen", "p2"))
+		require.True(t, pm.HasPermission("audio", "p2"))
+		require.False(t, pm.HasPermission("video", "p2"))
+		require.False(t, pm.HasPermission("screen", "p2"))
 
-		require.False(t, um.hasPermissionLocked("audio", "p3"))
-		require.True(t, um.hasPermissionLocked("video", "p3"))
-		require.False(t, um.hasPermissionLocked("screen", "p3"))
+		require.False(t, pm.HasPermission("audio", "p3"))
+		require.True(t, pm.HasPermission("video", "p3"))
+		require.False(t, pm.HasPermission("screen", "p3"))
 
 		// add a new track after restrictive permissions are set
 		trw := &typesfakes.FakeMediaTrack{}
 		trw.IDReturns("watch")
 		um.AddPublishedTrack(trw)
 
-		require.True(t, um.hasPermissionLocked("audio", "p1"))
-		require.True(t, um.hasPermissionLocked("video", "p1"))
-		require.True(t, um.hasPermissionLocked("screen", "p1"))
-		require.True(t, um.hasPermissionLocked("watch", "p1"))
+		require.True(t, pm.HasPermission("audio", "p1"))
+		require.True(t, pm.HasPermission("video", "p1"))
+		require.True(t, pm.HasPermission("screen", "p1"))
+		require.True(t, pm.HasPermission("watch", "p1"))
 
-		require.True(t, um.hasPermissionLocked("audio", "p2"))
-		require.False(t, um.hasPermissionLocked("video", "p2"))
-		require.False(t, um.hasPermissionLocked("screen", "p2"))
-		require.False(t, um.hasPermissionLocked("watch", "p2"))
+		require.True(t, pm.HasPermission("audio", "p2"))
+		require.False(t, pm.HasPermission("video", "p2"))
+		require.False(t, pm.HasPermission("screen", "p2"))
+		require.False(t, pm.HasPermission("watch", "p2"))
 
-		require.False(t, um.hasPermissionLocked("audio", "p3"))
-		require.True(t, um.hasPermissionLocked("video", "p3"))
-		require.False(t, um.hasPermissionLocked("screen", "p3"))
-		require.False(t, um.hasPermissionLocked("watch", "p3"))
+		require.False(t, pm.HasPermission("audio", "p3"))
+		require.True(t, pm.HasPermission("video", "p3"))
+		require.False(t, pm.HasPermission("screen", "p3"))
+		require.False(t, pm.HasPermission("watch", "p3"))
 	})
 }
 
-func TestUpTrackManagerPermissionTrackRegistration(t *testing.T) {
+func TestSubscriptionPermissionManagerTrackSources(t *testing.T) {
 	vg := utils.NewDefaultTimedVersionGenerator()
 	denyAll := &livekit.SubscriptionPermission{}
 
-	um := NewUpTrackManager(defaultUptrackManagerParams)
+	um := NewUpTrackManager(UpTrackManagerParams{
+		Logger: logger.GetLogger(),
+	})
+	udm, _, _ := newUpDataTrackManagerForTest()
+	pm := NewSubscriptionPermissionManager(SubscriptionPermissionManagerParams{
+		Logger:           logger.GetLogger(),
+		VersionGenerator: vg,
+		GetMediaTracks:   um.GetPublishedTracks,
+		GetDataTracks:    udm.GetPublishedDataTracks,
+	})
+
 	tra := &typesfakes.FakeMediaTrack{}
 	tra.IDReturns("TR_audio")
 	trv := &typesfakes.FakeMediaTrack{}
@@ -622,33 +612,40 @@ func TestUpTrackManagerPermissionTrackRegistration(t *testing.T) {
 	um.AddPublishedTrack(tra)
 	um.AddPublishedTrack(trv)
 
-	require.NoError(t, um.UpdateSubscriptionPermission(denyAll, vg.Next(), nil))
+	dt1 := newFakeDataTrackForTest(1)
+	dt1.IDReturns("DT_1")
+	dt1Replacement := newFakeDataTrackForTest(1)
+	dt1Replacement.IDReturns("DT_1_new")
+	dt2 := newFakeDataTrackForTest(2)
+	dt2.IDReturns("DT_2")
+	udm.AddPublishedDataTrack(dt1)
+	udm.AddPublishedDataTrack(dt1Replacement)
+	udm.AddPublishedDataTrack(dt2)
+
+	require.NoError(t, pm.UpdateSubscriptionPermission(denyAll, vg.Next(), nil))
 	require.Equal(t, 1, tra.RevokeDisallowedSubscribersCallCount())
 	require.Equal(t, 1, trv.RevokeDisallowedSubscribersCallCount())
+	require.Zero(t, dt1.RevokeDisallowedSubscribersCallCount())
+	require.Equal(t, 1, dt1Replacement.RevokeDisallowedSubscribersCallCount())
+	require.Equal(t, 1, dt2.RevokeDisallowedSubscribersCallCount())
 
-	// OnClose callback unregisters tra; RemovePublishedTrack unregisters trv.
+	// OnClose callback unregisters tra; RemovePublishedTrack unregisters trv; RemovePublishedDataTrack unregisters dt1Replacement.
 	tra.AddOnCloseArgsForCall(0)(false)
 	um.RemovePublishedTrack(trv, false)
-	require.NoError(t, um.UpdateSubscriptionPermission(denyAll, vg.Next(), nil))
+	udm.RemovePublishedDataTrack(dt1Replacement)
+	require.NoError(t, pm.UpdateSubscriptionPermission(denyAll, vg.Next(), nil))
 	require.Equal(t, 1, tra.RevokeDisallowedSubscribersCallCount())
 	require.Equal(t, 1, trv.RevokeDisallowedSubscribersCallCount())
+	require.Equal(t, 1, dt1Replacement.RevokeDisallowedSubscribersCallCount())
+	require.Equal(t, 2, dt2.RevokeDisallowedSubscribersCallCount())
 
-	// Close unregisters any remaining published tracks.
+	// Closing managers leaves no tracks to revoke.
 	trs := &typesfakes.FakeMediaTrack{}
 	trs.IDReturns("TR_screen")
 	um.AddPublishedTrack(trs)
 	um.Close(false)
-	require.NoError(t, um.UpdateSubscriptionPermission(denyAll, vg.Next(), nil))
+	udm.Close()
+	require.NoError(t, pm.UpdateSubscriptionPermission(denyAll, vg.Next(), nil))
 	require.Zero(t, trs.RevokeDisallowedSubscribersCallCount())
-
-	// Removing an older track pointer with the same ID must not unregister the active track.
-	trsReplacement := &typesfakes.FakeMediaTrack{}
-	trsReplacement.IDReturns("TR_screen")
-	um.addTrack(nil)
-	um.removeTrack(nil)
-	um.addTrack(trsReplacement)
-	um.removeTrack(trs)
-	require.NoError(t, um.UpdateSubscriptionPermission(denyAll, vg.Next(), nil))
-	require.Zero(t, trs.RevokeDisallowedSubscribersCallCount())
-	require.Equal(t, 1, trsReplacement.RevokeDisallowedSubscribersCallCount())
+	require.Equal(t, 2, dt2.RevokeDisallowedSubscribersCallCount())
 }

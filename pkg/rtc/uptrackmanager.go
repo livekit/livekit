@@ -23,19 +23,14 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/protocol/utils"
 )
 
 type UpTrackManagerParams struct {
-	Logger           logger.Logger
-	VersionGenerator utils.TimedVersionGenerator
-	Permissions      *SubscriptionPermissionManager
+	Logger logger.Logger
 }
 
 // UpTrackManager manages all uptracks from a participant
 type UpTrackManager struct {
-	*SubscriptionPermissionManager
-
 	params UpTrackManagerParams
 
 	closed bool
@@ -51,18 +46,9 @@ type UpTrackManager struct {
 }
 
 func NewUpTrackManager(params UpTrackManagerParams) *UpTrackManager {
-	permissions := params.Permissions
-	if permissions == nil {
-		permissions = NewSubscriptionPermissionManager(SubscriptionPermissionManagerParams{
-			Logger:           params.Logger,
-			VersionGenerator: params.VersionGenerator,
-		})
-	}
-
 	return &UpTrackManager{
-		SubscriptionPermissionManager: permissions,
-		params:                        params,
-		publishedTracks:               make(map[livekit.TrackID]types.MediaTrack),
+		params:          params,
+		publishedTracks: make(map[livekit.TrackID]types.MediaTrack),
 	}
 }
 
@@ -77,9 +63,6 @@ func (u *UpTrackManager) Close(isExpectedToResume bool) {
 
 	publishedTracks := u.publishedTracks
 	u.publishedTracks = make(map[livekit.TrackID]types.MediaTrack)
-	for _, t := range publishedTracks {
-		u.removeTrack(t)
-	}
 	u.lock.Unlock()
 
 	for _, t := range publishedTracks {
@@ -181,7 +164,6 @@ func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
 	u.lock.Lock()
 	if _, ok := u.publishedTracks[track.ID()]; !ok {
 		u.publishedTracks[track.ID()] = track
-		u.addTrack(track)
 	}
 	u.lock.Unlock()
 	u.params.Logger.Debugw("added published track", "trackID", track.ID(), "trackInfo", logger.Proto(track.ToProto()))
@@ -206,7 +188,6 @@ func (u *UpTrackManager) removePublishedTrackLocked(track types.MediaTrack) {
 	if trackID := track.ID(); u.publishedTracks[trackID] == track {
 		delete(u.publishedTracks, trackID)
 	}
-	u.removeTrack(track)
 }
 
 func (u *UpTrackManager) getPublishedTrackLocked(trackID livekit.TrackID) types.MediaTrack {

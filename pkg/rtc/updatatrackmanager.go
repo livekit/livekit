@@ -28,7 +28,6 @@ import (
 type UpDataTrackManagerParams struct {
 	Logger      logger.Logger
 	Participant types.Participant
-	Permissions *SubscriptionPermissionManager
 }
 
 type UpDataTrackManager struct {
@@ -57,11 +56,6 @@ func (u *UpDataTrackManager) Close() {
 
 	dataTracks := u.dataTracks
 	u.dataTracks = make(map[uint16]types.DataTrack)
-	if u.params.Permissions != nil {
-		for _, dt := range dataTracks {
-			u.params.Permissions.removeTrack(dt)
-		}
-	}
 	u.lock.Unlock()
 
 	for _, t := range dataTracks {
@@ -73,13 +67,7 @@ func (u *UpDataTrackManager) Close() {
 
 func (u *UpDataTrackManager) AddPublishedDataTrack(dt types.DataTrack) {
 	u.lock.Lock()
-	if prev := u.dataTracks[dt.PubHandle()]; prev != nil && prev != dt && u.params.Permissions != nil {
-		u.params.Permissions.removeTrack(prev)
-	}
 	u.dataTracks[dt.PubHandle()] = dt
-	if u.params.Permissions != nil {
-		u.params.Permissions.addTrack(dt)
-	}
 	u.lock.Unlock()
 
 	u.params.Participant.GetParticipantListener().OnDataTrackPublished(u.params.Participant, dt)
@@ -91,9 +79,6 @@ func (u *UpDataTrackManager) RemovePublishedDataTrack(dt types.DataTrack) {
 	u.lock.Lock()
 	if u.dataTracks[pubHandle] == dt {
 		delete(u.dataTracks, pubHandle)
-		if u.params.Permissions != nil {
-			u.params.Permissions.removeTrack(dt)
-		}
 		found = true
 	}
 	u.lock.Unlock()

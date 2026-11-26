@@ -29,6 +29,9 @@ var (
 	ErrSubscriptionPermissionNeedsId = errors.New("either participant identity or SID needed")
 )
 
+// revocableTrack implementations are invoked synchronously while SubscriptionPermissionManager.lock
+// is held for write. RevokeDisallowedSubscribers and any synchronous close hooks it triggers
+// must not re-enter SubscriptionPermissionManager (e.g. via track permission resolution).
 type revocableTrack interface {
 	ID() livekit.TrackID
 	RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity
@@ -37,6 +40,8 @@ type revocableTrack interface {
 type SubscriptionPermissionManagerParams struct {
 	Logger           logger.Logger
 	VersionGenerator utils.TimedVersionGenerator
+	GetMediaTracks   func() []types.MediaTrack
+	GetDataTracks    func() []types.DataTrack
 }
 
 // SubscriptionPermissionManager manages subscription permissions and enforces
@@ -52,7 +57,6 @@ type SubscriptionPermissionManager struct {
 	subscriptionPermission *livekit.SubscriptionPermission
 	// subscriber permission for published tracks (both media and data)
 	subscriberPermissions map[livekit.ParticipantIdentity]*livekit.TrackPermission // subscriberIdentity => *livekit.TrackPermission
-	tracks                map[livekit.TrackID]revocableTrack
 }
 
 func NewSubscriptionPermissionManager(params SubscriptionPermissionManagerParams) *SubscriptionPermissionManager {
@@ -65,31 +69,7 @@ func NewSubscriptionPermissionManager(params SubscriptionPermissionManagerParams
 
 	return &SubscriptionPermissionManager{
 		params: params,
-		tracks: make(map[livekit.TrackID]revocableTrack),
 	}
-}
-
-func (m *SubscriptionPermissionManager) addTrack(track revocableTrack) {
-	if track == nil {
-		return
-	}
-
-	m.lock.Lock()
-	m.tracks[track.ID()] = track
-	m.lock.Unlock()
-}
-
-func (m *SubscriptionPermissionManager) removeTrack(track revocableTrack) {
-	if track == nil {
-		return
-	}
-
-	m.lock.Lock()
-	trackID := track.ID()
-	if m.tracks[trackID] == track {
-		delete(m.tracks, trackID)
-	}
-	m.lock.Unlock()
 }
 
 func (m *SubscriptionPermissionManager) UpdateSubscriptionPermission(
@@ -257,8 +237,17 @@ func (m *SubscriptionPermissionManager) maybeRevokeSubscriptionsLocked() {
 		return
 	}
 
-	for trackID, track := range m.tracks {
-		allowed := m.getAllowedSubscribersLocked(trackID)
+	if m.params.GetMediaTracks != nil {
+		revokeDisallowedTracks(m, m.params.GetMediaTracks())
+	}
+	if m.params.GetDataTracks != nil {
+		revokeDisallowedTracks(m, m.params.GetDataTracks())
+	}
+}
+
+func revokeDisallowedTracks[T revocableTrack](m *SubscriptionPermissionManager, tracks []T) {
+	for _, track := range tracks {
+		allowed := m.getAllowedSubscribersLocked(track.ID())
 		if allowed == nil {
 			// no restrictions
 			continue
