@@ -1387,18 +1387,13 @@ type benchParticipant struct {
 	identity livekit.ParticipantIdentity
 }
 
-func (p *benchParticipant) ID() livekit.ParticipantID             { return p.id }
-func (p *benchParticipant) Identity() livekit.ParticipantIdentity { return p.identity }
-func (p *benchParticipant) Verify() bool                          { return true }
+func (p *benchParticipant) ID() livekit.ParticipantID                    { return p.id }
+func (p *benchParticipant) Identity() livekit.ParticipantIdentity        { return p.identity }
+func (p *benchParticipant) Verify() bool                                 { return true }
+func (p *benchParticipant) SendJoinResponse(*livekit.JoinResponse) error { return nil }
 
 func newBenchmarkRoom(b *testing.B, num int) (*Room, []livekit.ParticipantID) {
 	b.Helper()
-
-	kp := &authfakes.FakeKeyProvider{}
-	kp.GetSecretReturns("testkey")
-
-	n, err := webhook.NewDefaultNotifier(webhook.DefaultWebHookConfig, kp)
-	require.NoError(b, err)
 
 	rm := NewRoom(
 		&livekit.Room{Name: "bench-room"},
@@ -1416,7 +1411,7 @@ func newBenchmarkRoom(b *testing.B, num int) (*Room, []livekit.ParticipantID) {
 			NodeId:   "testnode",
 			Region:   "testregion",
 		},
-		telemetry.NewTelemetryService(n, &telemetryfakes.FakeAnalyticsService{}),
+		&telemetry.NullTelemetryService{},
 		nil, nil, nil,
 	)
 
@@ -1437,18 +1432,21 @@ func newBenchmarkRoom(b *testing.B, num int) (*Room, []livekit.ParticipantID) {
 
 func BenchmarkRoomGetParticipantByID(b *testing.B) {
 	for _, size := range []int{100, 500, 2000} {
-		rm, ids := newBenchmarkRoom(b, size)
-		b.Run(fmt.Sprintf("N=%d", size), func(b *testing.B) {
-			b.ReportAllocs()
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				target := ids[i%size]
-				if got := rm.GetParticipantByID(target); got == nil {
-					b.Fatalf("expected participant %s", target)
+		func(size int) {
+			rm, ids := newBenchmarkRoom(b, size)
+			defer rm.Close(types.RoomCloseReasonUnknown)
+
+			b.Run(fmt.Sprintf("N=%d", size), func(b *testing.B) {
+				b.ReportAllocs()
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					target := ids[i%size]
+					if got := rm.GetParticipantByID(target); got == nil {
+						b.Fatalf("expected participant %s", target)
+					}
 				}
-			}
-		})
-		rm.Close(types.RoomCloseReasonUnknown)
+			})
+		}(size)
 	}
 }
 
