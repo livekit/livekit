@@ -1323,12 +1323,15 @@ func TestICELitePlacement(t *testing.T) {
 		name       string
 		configLite bool // server use_ice_lite
 		isOfferer  bool // true = subscriber (SFU offers); false = publisher (SFU answers)
+		migration  bool
 		expectLite bool
 	}{
 		{name: "subscriber honors lite", configLite: true, isOfferer: true, expectLite: true},
 		{name: "subscriber full when off", configLite: false, isOfferer: true, expectLite: false},
 		{name: "publisher stays full despite lite", configLite: true, isOfferer: false, expectLite: false},
 		{name: "publisher full when off", configLite: false, isOfferer: false, expectLite: false},
+		{name: "migrated publisher honors lite", configLite: true, isOfferer: false, migration: true, expectLite: true},
+		{name: "migrated publisher full when off", configLite: false, isOfferer: false, migration: true, expectLite: false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -1339,6 +1342,7 @@ func TestICELitePlacement(t *testing.T) {
 				ProtocolVersion: 16,
 				ClientInfo:      js,
 				IsOfferer:       c.isOfferer,
+				Migration:       c.migration,
 				Handler:         &transportfakes.FakeHandler{},
 			})
 			require.NoError(t, err)
