@@ -34,6 +34,7 @@ import (
 	"github.com/livekit/livekit-server/version"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
@@ -1219,6 +1220,282 @@ func TestResumeUsesFallbackLearnedOnReconnect(t *testing.T) {
 			tm.handleConnectionFailed(true, c.failed)
 			require.Equal(t, c.expected, p.GetICEConfig().GetPreferenceSubscriber())
 			require.Equal(t, c.expected, learned.GetPreferenceSubscriber())
+		})
+	}
+}
+
+func TestRoomGetParticipantByID(t *testing.T) {
+	rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
+	participants := rm.GetParticipants()
+	require.Len(t, participants, 2)
+
+	for _, p := range participants {
+		require.Equal(t, p, rm.GetParticipantByID(p.ID()))
+	}
+	require.Nil(t, rm.GetParticipantByID("PA_nonexistent"))
+
+	// Removing with a mismatched pID must leave both maps untouched.
+	p0 := participants[0]
+	rm.RemoveParticipant(p0.Identity(), "PA_wrong", types.ParticipantCloseReasonClientRequestLeave)
+	require.Equal(t, p0, rm.GetParticipantByID(p0.ID()))
+
+	// Empty pID acts as wildcard removal for that identity and clears the ID index.
+	rm.RemoveParticipant(p0.Identity(), "", types.ParticipantCloseReasonClientRequestLeave)
+	require.Nil(t, rm.GetParticipantByID(p0.ID()))
+	require.Nil(t, rm.GetParticipant(p0.Identity()))
+
+	// Replacing an evicted session with a new participant for the same identity updates ID lookup cleanly.
+	p1 := participants[1]
+	rm.RemoveParticipant(p1.Identity(), p1.ID(), types.ParticipantCloseReasonDuplicateIdentity)
+	require.Nil(t, rm.GetParticipantByID(p1.ID()))
+
+	replacement := NewMockParticipant(p1.Identity(), types.CurrentProtocol, false, true, rm.LocalParticipantListener())
+	require.NoError(t, rm.Join(replacement, nil, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom))
+	require.Equal(t, replacement, rm.GetParticipantByID(replacement.ID()))
+	require.Nil(t, rm.GetParticipantByID(p1.ID()))
+}
+
+func TestSendParticipantUpdates(t *testing.T) {
+	t.Run("strips server attributes once without mutating source", func(t *testing.T) {
+		p0 := newParticipantForTestWithOpts("r0", &participantOpts{protocolVersion: types.CurrentProtocol})
+		t.Cleanup(func() { p0.Close(false, types.ParticipantCloseReasonNone, false) })
+		sink0 := &routingfakes.FakeMessageSink{}
+		p0.SwapResponseSink(sink0, types.SignallingCloseReasonUnknown)
+
+		p1 := newParticipantForTestWithOpts("r1", &participantOpts{protocolVersion: types.CurrentProtocol})
+		t.Cleanup(func() { p1.Close(false, types.ParticipantCloseReasonNone, false) })
+		sink1 := &routingfakes.FakeMessageSink{}
+		p1.SwapResponseSink(sink1, types.SignallingCloseReasonUnknown)
+
+		m0 := NewMockParticipant("m0", types.CurrentProtocol, false, true, nil)
+		m1 := NewMockParticipant("m1", types.ProtocolVersion(11), false, true, nil)
+
+		srcInfo := &livekit.ParticipantInfo{
+			Sid:      "PA_src",
+			Identity: "src",
+			State:    livekit.ParticipantInfo_ACTIVE,
+			Version:  1,
+			Attributes: map[string]string{
+				livekit.AttrRTCJoinRequestTime: "1700000000000",
+				"lk.rtc.internal":              "secret",
+				"role":                         "speaker",
+			},
+		}
+		SendParticipantUpdates(
+			[]*ParticipantUpdate{{ParticipantInfo: srcInfo}},
+			[]types.LocalParticipant{p0, p1, m0, m1},
+			64*1024,
+		)
+
+		// Source info must remain untouched.
+		require.Equal(t, "1700000000000", srcInfo.Attributes[livekit.AttrRTCJoinRequestTime])
+		require.Equal(t, "secret", srcInfo.Attributes["lk.rtc.internal"])
+
+		// All recipients share the same pre-sanitized *ParticipantInfo instance.
+		require.Equal(t, 1, m0.SendParticipantUpdateCallCount())
+		require.Equal(t, 1, m1.SendParticipantUpdateCallCount())
+		gotM0 := m0.SendParticipantUpdateArgsForCall(0)
+		gotM1 := m1.SendParticipantUpdateArgsForCall(0)
+		require.Len(t, gotM0, 1)
+		require.Len(t, gotM1, 1)
+		require.Same(t, gotM0[0], gotM1[0])
+		require.Equal(t, map[string]string{"role": "speaker"}, gotM0[0].Attributes)
+
+		// Both ParticipantImpl sinks receive stripped attributes.
+		for _, sink := range []*routingfakes.FakeMessageSink{sink0, sink1} {
+			require.Equal(t, 1, sink.WriteMessageCallCount())
+			msg := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse).GetUpdate()
+			require.NotNil(t, msg)
+			require.Len(t, msg.Participants, 1)
+			require.Equal(t, map[string]string{"role": "speaker"}, msg.Participants[0].Attributes)
+		}
+	})
+
+	t.Run("filters synthesized and skippable disconnects per protocol version", func(t *testing.T) {
+		modern := NewMockParticipant("modern", types.CurrentProtocol, false, true, nil)
+		legacy := NewMockParticipant("legacy", types.ProtocolVersion(11), false, true, nil)
+
+		normal1 := &ParticipantUpdate{
+			ParticipantInfo: &livekit.ParticipantInfo{Sid: "PA_1", Identity: "u1"},
+		}
+		synthesized := &ParticipantUpdate{
+			ParticipantInfo:         &livekit.ParticipantInfo{Sid: "PA_2", Identity: "u2"},
+			IsSynthesizedDisconnect: true,
+		}
+		normal2 := &ParticipantUpdate{
+			ParticipantInfo: &livekit.ParticipantInfo{Sid: "PA_3", Identity: "u3"},
+		}
+		duplicateEvict := &ParticipantUpdate{
+			ParticipantInfo: &livekit.ParticipantInfo{Sid: "PA_4", Identity: "u4"},
+			CloseReason:     types.ParticipantCloseReasonDuplicateIdentity,
+		}
+
+		SendParticipantUpdates(
+			[]*ParticipantUpdate{normal1, synthesized, normal2, duplicateEvict},
+			[]types.LocalParticipant{modern, legacy},
+			64*1024,
+		)
+
+		require.Equal(t, 1, modern.SendParticipantUpdateCallCount())
+		modernInfos := modern.SendParticipantUpdateArgsForCall(0)
+		require.Len(t, modernInfos, 2)
+		require.Equal(t, "PA_1", modernInfos[0].Sid)
+		require.Equal(t, "PA_3", modernInfos[1].Sid)
+
+		require.Equal(t, 1, legacy.SendParticipantUpdateCallCount())
+		legacyInfos := legacy.SendParticipantUpdateArgsForCall(0)
+		require.Len(t, legacyInfos, 4)
+		require.Equal(t, "PA_1", legacyInfos[0].Sid)
+		require.Equal(t, "PA_2", legacyInfos[1].Sid)
+		require.Equal(t, "PA_3", legacyInfos[2].Sid)
+		require.Equal(t, "PA_4", legacyInfos[3].Sid)
+	})
+
+	t.Run("all skippable updates sends nothing to modern clients", func(t *testing.T) {
+		modern := NewMockParticipant("modern", types.CurrentProtocol, false, true, nil)
+		legacy := NewMockParticipant("legacy", types.ProtocolVersion(11), false, true, nil)
+
+		SendParticipantUpdates(
+			[]*ParticipantUpdate{
+				{
+					ParticipantInfo:         &livekit.ParticipantInfo{Sid: "PA_1", Identity: "u1"},
+					IsSynthesizedDisconnect: true,
+				},
+			},
+			[]types.LocalParticipant{modern, legacy},
+			64*1024,
+		)
+
+		require.Zero(t, modern.SendParticipantUpdateCallCount())
+		require.Equal(t, 1, legacy.SendParticipantUpdateCallCount())
+		require.Len(t, legacy.SendParticipantUpdateArgsForCall(0), 1)
+	})
+}
+
+type noopMessageSink struct{}
+
+func (noopMessageSink) WriteMessage(proto.Message) error   { return nil }
+func (noopMessageSink) IsClosed() bool                     { return false }
+func (noopMessageSink) Close()                             {}
+func (noopMessageSink) ConnectionID() livekit.ConnectionID { return "" }
+
+var _ routing.MessageSink = noopMessageSink{}
+
+type benchParticipant struct {
+	*typesfakes.FakeLocalParticipant
+	id       livekit.ParticipantID
+	identity livekit.ParticipantIdentity
+}
+
+func (p *benchParticipant) ID() livekit.ParticipantID             { return p.id }
+func (p *benchParticipant) Identity() livekit.ParticipantIdentity { return p.identity }
+func (p *benchParticipant) Verify() bool                          { return true }
+
+func newBenchmarkRoom(b *testing.B, num int) (*Room, []livekit.ParticipantID) {
+	b.Helper()
+
+	kp := &authfakes.FakeKeyProvider{}
+	kp.GetSecretReturns("testkey")
+
+	n, err := webhook.NewDefaultNotifier(webhook.DefaultWebHookConfig, kp)
+	require.NoError(b, err)
+
+	rm := NewRoom(
+		&livekit.Room{Name: "bench-room"},
+		nil,
+		WebRTCConfig{},
+		config.RoomConfig{
+			EmptyTimeout:     5 * 60,
+			DepartureTimeout: 1,
+		},
+		&sfu.AudioConfig{},
+		&livekit.ServerInfo{
+			Edition:  livekit.ServerInfo_Standard,
+			Version:  version.Version,
+			Protocol: types.CurrentProtocol,
+			NodeId:   "testnode",
+			Region:   "testregion",
+		},
+		telemetry.NewTelemetryService(n, &telemetryfakes.FakeAnalyticsService{}),
+		nil, nil, nil,
+	)
+
+	ids := make([]livekit.ParticipantID, num)
+	for i := range num {
+		identity := livekit.ParticipantIdentity(fmt.Sprintf("p%d", i))
+		fp := NewMockParticipant(identity, types.CurrentProtocol, false, true, rm.LocalParticipantListener())
+		p := &benchParticipant{
+			FakeLocalParticipant: fp,
+			id:                   fp.ID(),
+			identity:             identity,
+		}
+		require.NoError(b, rm.Join(p, nil, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom))
+		ids[i] = p.id
+	}
+	return rm, ids
+}
+
+func BenchmarkRoomGetParticipantByID(b *testing.B) {
+	for _, size := range []int{100, 500, 2000} {
+		rm, ids := newBenchmarkRoom(b, size)
+		b.Run(fmt.Sprintf("N=%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				target := ids[i%size]
+				if got := rm.GetParticipantByID(target); got == nil {
+					b.Fatalf("expected participant %s", target)
+				}
+			}
+		})
+		rm.Close(types.RoomCloseReasonUnknown)
+	}
+}
+
+func BenchmarkSendParticipantUpdates(b *testing.B) {
+	const maxRecipients = 200
+	recipients := make([]types.LocalParticipant, maxRecipients)
+	for i := range maxRecipients {
+		p := newParticipantForTestWithOpts(livekit.ParticipantIdentity(fmt.Sprintf("r%d", i)), &participantOpts{
+			protocolVersion: types.CurrentProtocol,
+		})
+		p.SwapResponseSink(noopMessageSink{}, types.SignallingCloseReasonUnknown)
+		recipients[i] = p
+	}
+	b.Cleanup(func() {
+		for _, p := range recipients {
+			p.Close(false, types.ParticipantCloseReasonNone, false)
+		}
+	})
+
+	updates := []*ParticipantUpdate{
+		{
+			ParticipantInfo: &livekit.ParticipantInfo{
+				Sid:      "PA_updated",
+				Identity: "updated-user",
+				State:    livekit.ParticipantInfo_ACTIVE,
+				Version:  1,
+				Attributes: map[string]string{
+					livekit.AttrRTCJoinRequestTime: "1700000000000",
+					"role":                         "speaker",
+					"region":                       "us-west",
+				},
+				Permission: &livekit.ParticipantPermission{
+					CanSubscribe: true,
+					CanPublish:   true,
+				},
+			},
+		},
+	}
+
+	for _, size := range []int{50, 200} {
+		subset := recipients[:size]
+		b.Run(fmt.Sprintf("Recipients=%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				SendParticipantUpdates(updates, subset, 64*1024)
+			}
 		})
 	}
 }
