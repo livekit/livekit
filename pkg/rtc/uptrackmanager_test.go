@@ -390,12 +390,21 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 			v2ErrCh <- um.UpdateSubscriptionPermission(permV2, v2, resolver)
 		}()
 
-		<-enteredV2Resolver
+		select {
+		case <-enteredV2Resolver:
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "timed out waiting for resolver entry")
+		}
 
 		// Apply newer v3 while v2 is suspended inside resolverBySid.
 		require.NoError(t, um.UpdateSubscriptionPermission(permV3, v3, resolver))
 		releaseV2()
-		require.NoError(t, <-v2ErrCh)
+		select {
+		case err := <-v2ErrCh:
+			require.NoError(t, err)
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "timed out waiting for UpdateSubscriptionPermission completion")
+		}
 
 		gotPerm, gotVer := um.SubscriptionPermission()
 		require.Equal(t, v3.Load(), gotVer.Load())

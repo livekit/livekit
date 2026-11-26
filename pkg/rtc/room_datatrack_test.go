@@ -251,7 +251,11 @@ func TestRoomSubscriptionPermissionEndToEnd(t *testing.T) {
 			})
 		}()
 
-		<-enteredResolver
+		select {
+		case <-enteredResolver:
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "timed out waiting for resolver entry")
+		}
 		for !time.Now().After(vOlderRemote.Time().Add(5 * time.Millisecond)) {
 			time.Sleep(time.Millisecond)
 		}
@@ -268,7 +272,12 @@ func TestRoomSubscriptionPermissionEndToEnd(t *testing.T) {
 		}, 2*time.Second, time.Millisecond)
 
 		release()
-		require.NoError(t, <-remoteErrCh)
+		select {
+		case err := <-remoteErrCh:
+			require.NoError(t, err)
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "timed out waiting for UpdateSubscriptionPermission completion")
+		}
 
 		// Older remote update must not overwrite allowSub2 or revoke sub2's active track.
 		permFinal, _ := pub.SubscriptionPermission()

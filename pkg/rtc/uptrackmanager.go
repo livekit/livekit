@@ -187,8 +187,8 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 	)
 	if subscriptionPermission != nil {
 		// Validate and resolve participant SIDs before taking u.lock so resolverBySid
-		// never runs under u.lock or drops and re-acquires u.lock mid-update.
-		parsedPermissions, err = u.parseSubscriptionPermissions(subscriptionPermission, resolverBySid)
+		// never runs under u.lock.
+		parsedPermissions, err = parseSubscriptionPermissions(subscriptionPermission, resolverBySid, u.params.Logger)
 		if err != nil {
 			u.params.Logger.Errorw("failed updating subscription permission", err)
 			return err
@@ -315,73 +315,6 @@ func (u *UpTrackManager) getPublishedTrackLocked(trackID livekit.TrackID) types.
 	return u.publishedTracks[trackID]
 }
 
-func (u *UpTrackManager) parseSubscriptionPermissions(
-	subscriptionPermission *livekit.SubscriptionPermission,
-	resolver func(participantID livekit.ParticipantID) types.LocalParticipant,
-) (map[livekit.ParticipantIdentity]*livekit.TrackPermission, error) {
-	// every update overrides the existing
-
-	// all_participants takes precedence
-	if subscriptionPermission.AllParticipants {
-		// everything is allowed, nothing else to do
-		return nil, nil
-	}
-
-	resolve := func(pID livekit.ParticipantID) types.LocalParticipant {
-		if resolver == nil {
-			return nil
-		}
-		return resolver(pID)
-	}
-
-	// per participant permissions
-	subscriberPermissions := make(map[livekit.ParticipantIdentity]*livekit.TrackPermission, len(subscriptionPermission.TrackPermissions))
-	for _, trackPerms := range subscriptionPermission.TrackPermissions {
-		if trackPerms == nil {
-			return nil, ErrSubscriptionPermissionNeedsId
-		}
-
-		subscriberIdentity := livekit.ParticipantIdentity(trackPerms.ParticipantIdentity)
-		if subscriberIdentity == "" {
-			if trackPerms.ParticipantSid == "" {
-				return nil, ErrSubscriptionPermissionNeedsId
-			}
-
-			sub := resolve(livekit.ParticipantID(trackPerms.ParticipantSid))
-			if sub == nil {
-				u.params.Logger.Warnw(
-					"could not find subscriber for permissions update", nil,
-					"subscriberID", trackPerms.ParticipantSid,
-					"subscriptionPermission", logger.Proto(subscriptionPermission),
-				)
-				continue
-			}
-
-			subscriberIdentity = sub.Identity()
-		} else if trackPerms.ParticipantSid != "" {
-			sub := resolve(livekit.ParticipantID(trackPerms.ParticipantSid))
-			if sub != nil && sub.Identity() != subscriberIdentity {
-				u.params.Logger.Errorw(
-					"participant identity mismatch", nil,
-					"expected", subscriberIdentity,
-					"got", sub.Identity(),
-					"subscriptionPermission", logger.Proto(subscriptionPermission),
-				)
-			} else if sub == nil {
-				u.params.Logger.Warnw(
-					"could not find subscriber for permissions update", nil,
-					"subscriberID", trackPerms.ParticipantSid,
-					"subscriptionPermission", logger.Proto(subscriptionPermission),
-				)
-			}
-		}
-
-		subscriberPermissions[subscriberIdentity] = trackPerms
-	}
-
-	return subscriberPermissions, nil
-}
-
 func (u *UpTrackManager) hasPermissionLocked(trackID livekit.TrackID, subscriberIdentity livekit.ParticipantIdentity) bool {
 	if u.subscriberPermissions == nil {
 		return true
@@ -483,4 +416,72 @@ func (u *UpTrackManager) GetAudioLevel() (level float64, active bool) {
 		}
 	}
 	return
+}
+
+func parseSubscriptionPermissions(
+	subscriptionPermission *livekit.SubscriptionPermission,
+	resolver func(participantID livekit.ParticipantID) types.LocalParticipant,
+	log logger.Logger,
+) (map[livekit.ParticipantIdentity]*livekit.TrackPermission, error) {
+	// every update overrides the existing
+
+	// all_participants takes precedence
+	if subscriptionPermission.AllParticipants {
+		// everything is allowed, nothing else to do
+		return nil, nil
+	}
+
+	resolve := func(pID livekit.ParticipantID) types.LocalParticipant {
+		if resolver == nil {
+			return nil
+		}
+		return resolver(pID)
+	}
+
+	// per participant permissions
+	subscriberPermissions := make(map[livekit.ParticipantIdentity]*livekit.TrackPermission, len(subscriptionPermission.TrackPermissions))
+	for _, trackPerms := range subscriptionPermission.TrackPermissions {
+		if trackPerms == nil {
+			return nil, ErrSubscriptionPermissionNeedsId
+		}
+
+		subscriberIdentity := livekit.ParticipantIdentity(trackPerms.ParticipantIdentity)
+		if subscriberIdentity == "" {
+			if trackPerms.ParticipantSid == "" {
+				return nil, ErrSubscriptionPermissionNeedsId
+			}
+
+			sub := resolve(livekit.ParticipantID(trackPerms.ParticipantSid))
+			if sub == nil {
+				log.Warnw(
+					"could not find subscriber for permissions update", nil,
+					"subscriberID", trackPerms.ParticipantSid,
+					"subscriptionPermission", logger.Proto(subscriptionPermission),
+				)
+				continue
+			}
+
+			subscriberIdentity = sub.Identity()
+		} else if trackPerms.ParticipantSid != "" {
+			sub := resolve(livekit.ParticipantID(trackPerms.ParticipantSid))
+			if sub != nil && sub.Identity() != subscriberIdentity {
+				log.Errorw(
+					"participant identity mismatch", nil,
+					"expected", subscriberIdentity,
+					"got", sub.Identity(),
+					"subscriptionPermission", logger.Proto(subscriptionPermission),
+				)
+			} else if sub == nil {
+				log.Warnw(
+					"could not find subscriber for permissions update", nil,
+					"subscriberID", trackPerms.ParticipantSid,
+					"subscriptionPermission", logger.Proto(subscriptionPermission),
+				)
+			}
+		}
+
+		subscriberPermissions[subscriberIdentity] = trackPerms
+	}
+
+	return subscriberPermissions, nil
 }
