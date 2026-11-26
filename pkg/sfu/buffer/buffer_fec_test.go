@@ -934,3 +934,40 @@ func TestBufferBaseRTXRepairedHistory(t *testing.T) {
 	require.False(t, buff.isRTXRepairedLocked(lostSN))
 	require.False(t, buff.isRTXRepairedLocked(lostSN+size))
 }
+
+// TestBufferBaseRTXRepairedHistoryLateOlderRepair checks that a late
+// retransmission of an older packet does not clear the mark of a newer repair
+// sharing its slot. The newer repair carries the RTX header and must stay
+// excluded from FlexFEC recovery.
+func TestBufferBaseRTXRepairedHistoryLateOlderRepair(t *testing.T) {
+	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+	buff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
+	bindFECTestBuffer(t, buff)
+
+	// packet 1 is lost
+	media := rtptest.GenerateVP8Packets(100, 3, uint8(vp8Codec.PayloadType), fecTestMediaSSRC)
+	for i := range media {
+		if i != 1 {
+			writePacket(t, buff, &media[i])
+		}
+	}
+
+	buff.Lock()
+	defer buff.Unlock()
+
+	olderSN, ok := buff.publisherExtSequenceNumberLocked(media[1].SequenceNumber)
+	require.True(t, ok)
+
+	buff.rtxRepairedSNs = make([]uint64, buff.rtxRepairedHistorySize())
+	size := uint64(len(buff.rtxRepairedSNs))
+	newerSN := olderSN + size
+
+	// the newer repair is marked first, then a late retry of the older packet,
+	// which is not cached, arrives for the same slot
+	buff.markRTXRepairedLocked(media[1].SequenceNumber + uint16(size))
+	require.True(t, buff.isRTXRepairedLocked(newerSN))
+	buff.markRTXRepairedLocked(media[1].SequenceNumber)
+
+	require.True(t, buff.isRTXRepairedLocked(newerSN), "newer repair must stay excluded")
+	require.True(t, buff.isRTXRepairedLocked(olderSN))
+}

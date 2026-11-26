@@ -1925,7 +1925,10 @@ func (b *BufferBase) markRTXRepairedLocked(sequenceNumber uint16) {
 	if b.rtxRepairedSNs == nil {
 		b.rtxRepairedSNs = make([]uint64, b.rtxRepairedHistorySize())
 	}
-	b.rtxRepairedSNs[extSN%uint64(len(b.rtxRepairedSNs))] = extSN + 1
+	// keep the newest mark of a slot: a late retry of an older packet must not
+	// clear a newer repair, which isRTXRepairedLocked still has to exclude
+	slot := extSN % uint64(len(b.rtxRepairedSNs))
+	b.rtxRepairedSNs[slot] = max(b.rtxRepairedSNs[slot], extSN+1)
 }
 
 // isRTXRepairedLocked reports whether the packet with the given extended
