@@ -381,6 +381,9 @@ func (b *Buffer) writeRTX(rtxPkt *rtp.Packet, arrivalTime int64) {
 		return
 	}
 
+	// the repaired packet is not the media FlexFEC protected, see markRTXRepairedLocked.
+	// Mark it before ingesting, as ingestion feeds media to the FEC decoder.
+	b.markRTXRepairedLocked(repairedPkt.SequenceNumber)
 	b.ingestLocked(b.rtxPktBuf[:n], &repairedPkt, arrivalTime, false, true)
 
 	rtcpPackets := b.getRTCPPackets(arrivalTime)
