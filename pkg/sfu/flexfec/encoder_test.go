@@ -23,6 +23,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/protocol/logger"
+
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 )
 
 func makeEncoderFrame(t *testing.T, base uint16, count int) []rtp.Packet {
@@ -268,7 +270,11 @@ func TestEncoderAccumulationReusesStorage(t *testing.T) {
 			e.Encode(&p, payload, false)
 		}
 	})
-	require.Zero(t, allocs)
+	// CI runs with the race detector and swaps sync.Mutex for go-deadlock,
+	// whose Lock allocates
+	if !utils.RaceEnabled {
+		require.Zero(t, allocs)
+	}
 }
 
 func TestEncoderProtectionPercentChanges(t *testing.T) {
