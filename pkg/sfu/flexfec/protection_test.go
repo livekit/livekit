@@ -263,3 +263,34 @@ func TestEncoderAdaptiveStateTrackedInEveryMode(t *testing.T) {
 		})
 	}
 }
+
+func TestEncoderKeyOnlyOverheadUsesAllMedia(t *testing.T) {
+	e := NewEncoder(testFECPT, testFECSSRC, nil)
+	start := int64(time.Hour)
+	e.mu.Lock()
+	e.protection = Protection{Mode: ProtectionAdaptive}
+	e.adaptive = newAdaptiveState(start)
+	e.mu.Unlock()
+	s := &adaptiveTestSender{e: e, now: start}
+	s.sendFrames(t, 30, 0)
+
+	// at low RTT only key frames are protected
+	e.onReceiverReport(s.now, NetworkStats{FractionLost: 26, RTT: 5 * time.Millisecond, Width: 1280, Height: 720})
+	delta, key := e.ProtectionFactors()
+	require.Zero(t, delta)
+	require.NotZero(t, key)
+
+	// 29 unprotected delta frames of 5 packets, then a protected key frame of 25
+	require.Zero(t, s.sendFrames(t, 29, 0))
+	repairs := s.sendFrames(t, 1, 1)
+	require.NotZero(t, repairs)
+
+	const mediaPacketBytes = 12 + 1000
+	const repairBytes = 1100
+	mediaBytes := uint64((29*5 + 25) * mediaPacketBytes)
+	e.RecordSent(repairs, repairs*1000, repairs*repairBytes)
+
+	expected := uint32((uint64(repairs*repairBytes)*100 + mediaBytes - 1) / mediaBytes)
+	require.Equal(t, expected, e.OverheadPercent(), "repairs relative to all media, not only the key frame")
+	require.Less(t, e.OverheadPercent(), uint32(50))
+}

@@ -150,8 +150,10 @@ func (e *Encoder) encode(now int64, header *rtp.Header, payload []byte, keyFrame
 	if e.frameKey {
 		factor = e.keyFactor
 	}
-	if factor != 0 {
-		// Measure overhead only over media that is protected.
+	if (e.deltaFactor != 0 || e.keyFactor != 0) && !header.Padding && len(payload) != 0 {
+		// Measure overhead against all media, protected or not: the allocator
+		// scales the whole media bitrate by it, and with key frame only
+		// protection most media is unprotected.
 		e.sentMediaBytes += uint64(size)
 	}
 	if factor == 0 || header.Padding || len(payload) == 0 || size > maxEncoderMediaPacketSize {
