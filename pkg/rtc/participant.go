@@ -2316,6 +2316,7 @@ func (p *ParticipantImpl) setupUpDataTrackManager() {
 	p.UpDataTrackManager = NewUpDataTrackManager(UpDataTrackManagerParams{
 		Logger:      p.pubLogger,
 		Participant: p,
+		Permissions: p.UpTrackManager.SubscriptionPermissionManager,
 	})
 }
 

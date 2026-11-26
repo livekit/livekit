@@ -42,11 +42,11 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 
 		tra := &typesfakes.FakeMediaTrack{}
 		tra.IDReturns("audio")
-		um.publishedTracks["audio"] = tra
+		um.AddPublishedTrack(tra)
 
 		trv := &typesfakes.FakeMediaTrack{}
 		trv.IDReturns("video")
-		um.publishedTracks["video"] = trv
+		um.AddPublishedTrack(trv)
 
 		// no restrictive subscription permission
 		subscriptionPermission := &livekit.SubscriptionPermission{
@@ -133,11 +133,11 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 
 		tra := &typesfakes.FakeMediaTrack{}
 		tra.IDReturns("audio")
-		um.publishedTracks["audio"] = tra
+		um.AddPublishedTrack(tra)
 
 		trv := &typesfakes.FakeMediaTrack{}
 		trv.IDReturns("video")
-		um.publishedTracks["video"] = trv
+		um.AddPublishedTrack(trv)
 
 		lp1 := &typesfakes.FakeLocalParticipant{}
 		lp1.IdentityReturns("p1")
@@ -246,7 +246,7 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 
 		tra := &typesfakes.FakeMediaTrack{}
 		tra.IDReturns("audio")
-		um.publishedTracks["audio"] = tra
+		um.AddPublishedTrack(tra)
 
 		v1, v2, v3 := vg.Next(), vg.Next(), vg.Next()
 		permV1 := &livekit.SubscriptionPermission{
@@ -310,7 +310,7 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 
 		tra := &typesfakes.FakeMediaTrack{}
 		tra.IDReturns("audio")
-		um.publishedTracks["audio"] = tra
+		um.AddPublishedTrack(tra)
 
 		v1, v2 := vg.Next(), vg.Next()
 		permV1 := &livekit.SubscriptionPermission{
@@ -337,7 +337,7 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 
 		tra := &typesfakes.FakeMediaTrack{}
 		tra.IDReturns("audio")
-		um.publishedTracks["audio"] = tra
+		um.AddPublishedTrack(tra)
 
 		lp2 := &typesfakes.FakeLocalParticipant{}
 		lp2.IdentityReturns("p2")
@@ -421,7 +421,7 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 
 		tra := &typesfakes.FakeMediaTrack{}
 		tra.IDReturns("audio")
-		um.publishedTracks["audio"] = tra
+		um.AddPublishedTrack(tra)
 
 		lp1 := &typesfakes.FakeLocalParticipant{}
 		lp1.IdentityReturns("p1")
@@ -505,11 +505,11 @@ func TestSubscriptionPermission(t *testing.T) {
 
 		tra := &typesfakes.FakeMediaTrack{}
 		tra.IDReturns("audio")
-		um.publishedTracks["audio"] = tra
+		um.AddPublishedTrack(tra)
 
 		trv := &typesfakes.FakeMediaTrack{}
 		trv.IDReturns("video")
-		um.publishedTracks["video"] = trv
+		um.AddPublishedTrack(trv)
 
 		// no restrictive permission
 		subscriptionPermission := &livekit.SubscriptionPermission{
@@ -549,7 +549,7 @@ func TestSubscriptionPermission(t *testing.T) {
 		// add a new track after permissions are set
 		trs := &typesfakes.FakeMediaTrack{}
 		trs.IDReturns("screen")
-		um.publishedTracks["screen"] = trs
+		um.AddPublishedTrack(trs)
 
 		require.True(t, um.hasPermissionLocked("audio", "p1"))
 		require.True(t, um.hasPermissionLocked("video", "p1"))
@@ -591,7 +591,7 @@ func TestSubscriptionPermission(t *testing.T) {
 		// add a new track after restrictive permissions are set
 		trw := &typesfakes.FakeMediaTrack{}
 		trw.IDReturns("watch")
-		um.publishedTracks["watch"] = trw
+		um.AddPublishedTrack(trw)
 
 		require.True(t, um.hasPermissionLocked("audio", "p1"))
 		require.True(t, um.hasPermissionLocked("video", "p1"))
@@ -608,4 +608,47 @@ func TestSubscriptionPermission(t *testing.T) {
 		require.False(t, um.hasPermissionLocked("screen", "p3"))
 		require.False(t, um.hasPermissionLocked("watch", "p3"))
 	})
+}
+
+func TestUpTrackManagerPermissionTrackRegistration(t *testing.T) {
+	vg := utils.NewDefaultTimedVersionGenerator()
+	denyAll := &livekit.SubscriptionPermission{}
+
+	um := NewUpTrackManager(defaultUptrackManagerParams)
+	tra := &typesfakes.FakeMediaTrack{}
+	tra.IDReturns("TR_audio")
+	trv := &typesfakes.FakeMediaTrack{}
+	trv.IDReturns("TR_video")
+	um.AddPublishedTrack(tra)
+	um.AddPublishedTrack(trv)
+
+	require.NoError(t, um.UpdateSubscriptionPermission(denyAll, vg.Next(), nil))
+	require.Equal(t, 1, tra.RevokeDisallowedSubscribersCallCount())
+	require.Equal(t, 1, trv.RevokeDisallowedSubscribersCallCount())
+
+	// OnClose callback unregisters tra; RemovePublishedTrack unregisters trv.
+	tra.AddOnCloseArgsForCall(0)(false)
+	um.RemovePublishedTrack(trv, false)
+	require.NoError(t, um.UpdateSubscriptionPermission(denyAll, vg.Next(), nil))
+	require.Equal(t, 1, tra.RevokeDisallowedSubscribersCallCount())
+	require.Equal(t, 1, trv.RevokeDisallowedSubscribersCallCount())
+
+	// Close unregisters any remaining published tracks.
+	trs := &typesfakes.FakeMediaTrack{}
+	trs.IDReturns("TR_screen")
+	um.AddPublishedTrack(trs)
+	um.Close(false)
+	require.NoError(t, um.UpdateSubscriptionPermission(denyAll, vg.Next(), nil))
+	require.Zero(t, trs.RevokeDisallowedSubscribersCallCount())
+
+	// Removing an older track pointer with the same ID must not unregister the active track.
+	trsReplacement := &typesfakes.FakeMediaTrack{}
+	trsReplacement.IDReturns("TR_screen")
+	um.addTrack(nil)
+	um.removeTrack(nil)
+	um.addTrack(trsReplacement)
+	um.removeTrack(trs)
+	require.NoError(t, um.UpdateSubscriptionPermission(denyAll, vg.Next(), nil))
+	require.Zero(t, trs.RevokeDisallowedSubscribersCallCount())
+	require.Equal(t, 1, trsReplacement.RevokeDisallowedSubscribersCallCount())
 }

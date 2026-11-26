@@ -185,7 +185,7 @@ func TestRoomSubscriptionPermissionEndToEnd(t *testing.T) {
 	mt.MediaTrackReceiver.SetupReceiver(fakeReceiver, 0, "0")
 	pub.UpTrackManager.AddPublishedTrack(mt)
 	room.trackManager.AddTrack(mt, pub.Identity(), pub.ID())
-	_, err := mt.AddSubscriber(sub1)
+	subTrack1, err := mt.AddSubscriber(sub1)
 	require.NoError(t, err)
 	_, err = mt.AddSubscriber(sub2)
 	require.NoError(t, err)
@@ -243,9 +243,13 @@ func TestRoomSubscriptionPermissionEndToEnd(t *testing.T) {
 		permAfterInvalid, verAfterInvalid := pub.SubscriptionPermission()
 		assert.Equal(t, verBeforeInvalid.Load(), verAfterInvalid.Load())
 		assert.Equal(t, allowSub1, permAfterInvalid)
-		assert.True(t, dt.IsSubscriber(sub1.ID()))
+		// Wait briefly to confirm no asynchronous media DownTrack close was queued.
+		require.Never(t, func() bool {
+			return !dt.IsSubscriber(sub1.ID()) ||
+				!mt.IsSubscriber(sub1.ID()) ||
+				subTrack1.DownTrack().IsClosed()
+		}, 50*time.Millisecond, time.Millisecond)
 		assert.False(t, dt.IsSubscriber(sub2.ID()))
-		assert.True(t, mt.IsSubscriber(sub1.ID()))
 		assert.False(t, mt.IsSubscriber(sub2.ID()))
 		assert.True(t, room.ResolveDataTrackForSubscriber(sub1, dt.ID()).HasPermission)
 		assert.False(t, room.ResolveDataTrackForSubscriber(sub2, dt.ID()).HasPermission)
@@ -298,7 +302,7 @@ func TestRoomSubscriptionPermissionEndToEnd(t *testing.T) {
 				SubscriptionPermission: allowSub2,
 			},
 		}))
-		_, err := mt.AddSubscriber(sub2)
+		subTrack2, err := mt.AddSubscriber(sub2)
 		require.NoError(t, err)
 
 		require.Eventually(t, func() bool {
@@ -316,11 +320,16 @@ func TestRoomSubscriptionPermissionEndToEnd(t *testing.T) {
 		}
 
 		// Older remote update must not overwrite allowSub2 or revoke sub2's active track.
+		// Poll continuously so an asynchronously queued media DownTrack close
+		// (go dt.CloseWithFlush) cannot escape detection.
+		require.Never(t, func() bool {
+			return !dt.IsSubscriber(sub2.ID()) ||
+				!mt.IsSubscriber(sub2.ID()) ||
+				subTrack2.DownTrack().IsClosed()
+		}, 100*time.Millisecond, time.Millisecond)
 		permFinal, _ := pub.SubscriptionPermission()
 		assert.Equal(t, allowSub2, permFinal)
-		assert.True(t, dt.IsSubscriber(sub2.ID()))
 		assert.False(t, dt.IsSubscriber(sub1.ID()))
-		assert.True(t, mt.IsSubscriber(sub2.ID()))
 		assert.False(t, mt.IsSubscriber(sub1.ID()))
 		assert.True(t, room.ResolveDataTrackForSubscriber(sub2, dt.ID()).HasPermission)
 		assert.False(t, room.ResolveDataTrackForSubscriber(sub1, dt.ID()).HasPermission)
@@ -347,8 +356,7 @@ func TestRoomDataTrackRevocationAtomicWithPermissionCommit(t *testing.T) {
 	t.Cleanup(release)
 	var barrierOnce sync.Once
 
-	pub.UpDataTrackManager.lock.Lock()
-	pub.UpDataTrackManager.dataTracks[dt.PubHandle()] = &revokeBarrierDataTrack{
+	wrappedDT := &revokeBarrierDataTrack{
 		DataTrack: dt,
 		beforeRevoke: func() {
 			barrierOnce.Do(func() {
@@ -357,7 +365,19 @@ func TestRoomDataTrackRevocationAtomicWithPermissionCommit(t *testing.T) {
 			})
 		},
 	}
+	pub.UpDataTrackManager.lock.Lock()
+	pub.UpDataTrackManager.dataTracks[dt.PubHandle()] = wrappedDT
+	pub.SubscriptionPermissionManager.addTrack(wrappedDT)
 	pub.UpDataTrackManager.lock.Unlock()
+	t.Cleanup(func() {
+		pub.UpDataTrackManager.lock.Lock()
+		if pub.UpDataTrackManager.dataTracks[dt.PubHandle()] == wrappedDT {
+			pub.UpDataTrackManager.dataTracks[dt.PubHandle()] = dt
+		}
+		pub.SubscriptionPermissionManager.removeTrack(wrappedDT)
+		pub.SubscriptionPermissionManager.addTrack(dt)
+		pub.UpDataTrackManager.lock.Unlock()
+	})
 
 	denyErrCh := make(chan error, 1)
 	go func() {
