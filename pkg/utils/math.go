@@ -16,6 +16,7 @@ package utils
 
 import (
 	"cmp"
+	"math"
 	"slices"
 )
 
@@ -30,9 +31,9 @@ type OrderedNumber interface {
 // Median gets the median value for a slice without modifying the original slice.
 //
 // Note:
-// 1. For integer types, if the slice has an even length, the division (/ 2)
-//    is performed using integer division, which truncates the result towards zero.
-// 2. Uses an overflow-safe formula left + (right-left)/2 to support narrow integer types.
+//  1. For integer types, if the slice has an even length, the division (/ 2)
+//     is performed using integer division, which truncates the result towards zero.
+//  2. Averages the middle values without overflowing their sum or difference.
 func Median[T OrderedNumber](input []T) T {
 	num := len(input)
 	switch num {
@@ -52,6 +53,26 @@ func Median[T OrderedNumber](input []T) T {
 	}
 	left := sortedInput[num/2-1]
 	right := sortedInput[num/2]
+	if left == right {
+		return left
+	}
+	if T(1)/T(2) != 0 {
+		// Sum before dividing to preserve subnormal values. Halve large
+		// operands first to keep their sum from overflowing.
+		a, b := float64(left), float64(right)
+		if math.Abs(a) > math.MaxFloat64/2 || math.Abs(b) > math.MaxFloat64/2 {
+			return T(a/2 + b/2)
+		}
+		return T((a + b) / 2)
+	}
+	if left < 0 {
+		if right >= 0 {
+			// Opposite signs make the sum safe, even at the numeric limits.
+			return (left + right) / T(2)
+		}
+		// Start at the upper value so negative integers truncate toward zero.
+		return right - (right-left)/T(2)
+	}
 	return left + (right-left)/T(2)
 }
 
