@@ -109,4 +109,21 @@ func TestAgentDispatchThreadID(t *testing.T) {
 		require.Eventually(t, func() bool { return client.requestFor("back-office") != nil }, time.Second, 10*time.Millisecond)
 		require.Equal(t, threadID, client.requestFor("back-office").ThreadId)
 	})
+
+	t.Run("a room configuration dispatch with a malformed thread id is not launched", func(t *testing.T) {
+		client := &recordingAgentClient{}
+		rm := newRoomWithAgentClient(t, &livekit.RoomInternal{
+			AgentDispatches: []*livekit.RoomAgentDispatch{
+				{AgentName: "bad-thread", ThreadId: "not-a-thread"},
+				{AgentName: "front-desk"},
+			},
+		}, client)
+
+		require.Eventually(t, func() bool { return client.requestFor("front-desk") != nil }, time.Second, 10*time.Millisecond)
+
+		dispatches, err := rm.GetAgentDispatches("")
+		require.NoError(t, err)
+		require.Len(t, dispatches, 1)
+		require.Equal(t, "front-desk", dispatches[0].AgentName)
+	})
 }
