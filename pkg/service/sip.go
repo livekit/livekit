@@ -214,6 +214,7 @@ func (s *SIPService) UpdateSIPInboundTrunk(ctx context.Context, req *livekit.Upd
 		}
 		return nil, err
 	}
+	oldNumbers := info.Numbers
 	info.Numbers = normalizeNumbers(info.Numbers)
 	normalizeInboundTrunkUpdate(req)
 	prevNumbers := slices.Clone(info.Numbers)
@@ -234,7 +235,7 @@ func (s *SIPService) UpdateSIPInboundTrunk(ctx context.Context, req *livekit.Upd
 	}
 
 	it, err := ListSIPInboundTrunk(ctx, s.store, &livekit.ListSIPInboundTrunkRequest{
-		Numbers: info.Numbers,
+		Numbers: updateFilter(oldNumbers, info.Numbers),
 	})
 	if err != nil {
 		return nil, err
@@ -558,6 +559,7 @@ func (s *SIPService) UpdateSIPDispatchRule(ctx context.Context, req *livekit.Upd
 		}
 		return nil, err
 	}
+	oldTrunkIDs := info.TrunkIds
 	switch a := req.Action.(type) {
 	default:
 		return nil, errors.New("missing or unsupported action")
@@ -569,7 +571,7 @@ func (s *SIPService) UpdateSIPDispatchRule(ctx context.Context, req *livekit.Upd
 	}
 
 	it, err := ListSIPDispatchRule(ctx, s.store, &livekit.ListSIPDispatchRuleRequest{
-		TrunkIds: info.TrunkIds,
+		TrunkIds: updateFilter(oldTrunkIDs, info.TrunkIds),
 	})
 	if err != nil {
 		return nil, err
@@ -849,6 +851,24 @@ func (s *SIPService) transferSIPParticipantRequest(ctx context.Context, req *liv
 		Headers:        req.Headers,
 		RingingTimeout: req.RingingTimeout,
 	}, nil
+}
+
+// updateFilter returns the list filter that validates an updated SIP object.
+// It covers both the old and the new values, so that the stored copy of the
+// object is listed and replaced by the updated one even when the filtered
+// field changes. An empty new list matches every object, so the filter stays
+// empty.
+func updateFilter(old, updated []string) []string {
+	if len(updated) == 0 {
+		return nil
+	}
+	filter := slices.Clone(updated)
+	for _, v := range old {
+		if !slices.Contains(filter, v) {
+			filter = append(filter, v)
+		}
+	}
+	return filter
 }
 
 // wrapSIPContextError converts raw context.DeadlineExceeded / context.Canceled

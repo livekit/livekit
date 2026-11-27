@@ -28,6 +28,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/service"
+	"github.com/livekit/livekit-server/pkg/service/servicefakes"
 )
 
 func newTestSIPService(t *testing.T) (context.Context, *service.SIPService, *service.RedisStore) {
@@ -296,6 +297,93 @@ func TestCreateSIPParticipantSourceCallUnsupported(t *testing.T) {
 		code, _ := psrpc.GetErrorCode(err)
 		require.Equal(t, psrpc.Unimplemented, code)
 	})
+}
+
+func newFakeSIPService(store service.SIPStore) (*service.SIPService, context.Context) {
+	ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{SIP: &auth.SIPGrant{Admin: true}}, "")
+	return service.NewSIPService(nil, "", nil, nil, store, nil, nil), ctx
+}
+
+func TestUpdateSIPInboundTrunkDetectsConflictOnNewNumbers(t *testing.T) {
+	existing := &livekit.SIPInboundTrunkInfo{SipTrunkId: "ST_existing", Numbers: []string{"+15550002222"}}
+	updated := &livekit.SIPInboundTrunkInfo{SipTrunkId: "ST_updated", Numbers: []string{"+15550001111"}}
+
+	store := &servicefakes.FakeSIPStore{}
+	store.LoadSIPInboundTrunkReturns(updated, nil)
+	store.ListSIPInboundTrunkReturns(&livekit.ListSIPInboundTrunkResponse{
+		Items: []*livekit.SIPInboundTrunkInfo{existing, updated},
+	}, nil)
+	s, ctx := newFakeSIPService(store)
+
+	// Moving the trunk to a number that another trunk already uses, without
+	// allowed numbers on either trunk, is the same conflict that creation rejects.
+	_, err := s.UpdateSIPInboundTrunk(ctx, &livekit.UpdateSIPInboundTrunkRequest{
+		SipTrunkId: updated.SipTrunkId,
+		Action: &livekit.UpdateSIPInboundTrunkRequest_Update{Update: &livekit.SIPInboundTrunkUpdate{
+			Numbers: &livekit.ListUpdate{Set: []string{"+15550002222"}},
+		}},
+	})
+	requireInvalidArgument(t, err)
+	require.Zero(t, store.StoreSIPInboundTrunkCallCount())
+}
+
+func TestUpdateSIPDispatchRuleDetectsConflictOnNewTrunks(t *testing.T) {
+	direct := func(room string) *livekit.SIPDispatchRule {
+		return &livekit.SIPDispatchRule{Rule: &livekit.SIPDispatchRule_DispatchRuleDirect{
+			DispatchRuleDirect: &livekit.SIPDispatchRuleDirect{RoomName: room},
+		}}
+	}
+	existing := &livekit.SIPDispatchRuleInfo{SipDispatchRuleId: "SDR_existing", TrunkIds: []string{"ST_2"}, Rule: direct("a")}
+	updated := &livekit.SIPDispatchRuleInfo{SipDispatchRuleId: "SDR_updated", TrunkIds: []string{"ST_1"}, Rule: direct("b")}
+
+	store := &servicefakes.FakeSIPStore{}
+	store.LoadSIPDispatchRuleReturns(updated, nil)
+	store.ListSIPDispatchRuleReturns(&livekit.ListSIPDispatchRuleResponse{
+		Items: []*livekit.SIPDispatchRuleInfo{existing, updated},
+	}, nil)
+	s, ctx := newFakeSIPService(store)
+
+	// Moving the rule to a trunk that already has a rule for the same numbers and PIN
+	// is the same conflict that creation rejects.
+	_, err := s.UpdateSIPDispatchRule(ctx, &livekit.UpdateSIPDispatchRuleRequest{
+		SipDispatchRuleId: updated.SipDispatchRuleId,
+		Action: &livekit.UpdateSIPDispatchRuleRequest_Update{Update: &livekit.SIPDispatchRuleUpdate{
+			TrunkIds: &livekit.ListUpdate{Set: []string{"ST_2"}},
+		}},
+	})
+	requireInvalidArgument(t, err)
+	require.Zero(t, store.StoreSIPDispatchRuleCallCount())
+}
+
+func TestUpdateSIPDispatchRuleKeepsUnchangedTrunks(t *testing.T) {
+	rule := &livekit.SIPDispatchRuleInfo{
+		SipDispatchRuleId: "SDR_rule",
+		TrunkIds:          []string{"ST_1"},
+		Rule: &livekit.SIPDispatchRule{Rule: &livekit.SIPDispatchRule_DispatchRuleDirect{
+			DispatchRuleDirect: &livekit.SIPDispatchRuleDirect{RoomName: "a"},
+		}},
+	}
+
+	store := &servicefakes.FakeSIPStore{}
+	store.LoadSIPDispatchRuleReturns(rule, nil)
+	store.ListSIPDispatchRuleReturns(&livekit.ListSIPDispatchRuleResponse{
+		Items: []*livekit.SIPDispatchRuleInfo{rule},
+	}, nil)
+	s, ctx := newFakeSIPService(store)
+
+	// The stored copy of the rule must not conflict with its updated version.
+	name := "renamed"
+	got, err := s.UpdateSIPDispatchRule(ctx, &livekit.UpdateSIPDispatchRuleRequest{
+		SipDispatchRuleId: rule.SipDispatchRuleId,
+		Action: &livekit.UpdateSIPDispatchRuleRequest_Update{Update: &livekit.SIPDispatchRuleUpdate{
+			Name:     &name,
+			TrunkIds: &livekit.ListUpdate{Add: []string{"ST_2"}},
+		}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, name, got.Name)
+	require.Equal(t, []string{"ST_1", "ST_2"}, got.TrunkIds)
+	require.Equal(t, 1, store.StoreSIPDispatchRuleCallCount())
 }
 
 func TestSIPOutboundTrunkUpdateValidation(t *testing.T) {
