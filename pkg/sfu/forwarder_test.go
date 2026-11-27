@@ -3251,3 +3251,26 @@ func TestForwarderDowngradePadsGap(t *testing.T) {
 	require.True(t, tp.shouldDrop)
 	require.True(t, tp.padDroppedSlot, "a dropped packet after a gap should pad its slot")
 }
+
+func TestForwarderAllocateOptimalStartsAtRequestedLayer(t *testing.T) {
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	bitrates := Bitrates{
+		{2, 3, 0, 0},
+		{4, 5, 0, 0},
+		{0, 0, 0, 0},
+	}
+	f.SetMaxPublishedLayer(1)
+	f.SetMaxSpatialLayer(0)
+	f.SetMaxTemporalLayer(buffer.DefaultMaxLayerTemporal)
+	f.vls.SetTarget(buffer.InvalidLayer)
+
+	// the requested low layer is published: start on it, not on the higher layer seen
+	result := f.AllocateOptimal([]int32{0, 1}, bitrates, true, false)
+	require.Equal(t, int32(0), result.TargetLayer.Spatial)
+	require.Equal(t, int32(0), result.RequestLayerSpatial)
+
+	// the requested layer is not published: overshoot to what is
+	f.vls.SetTarget(buffer.InvalidLayer)
+	result = f.AllocateOptimal([]int32{1}, bitrates, true, false)
+	require.Equal(t, int32(1), result.TargetLayer.Spatial)
+}
