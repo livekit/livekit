@@ -27,14 +27,15 @@ const (
 
 type UserPacketDeduper struct {
 	lock sync.Mutex
-	seen map[uuid.UUID]uuid.UUID
-	head uuid.UUID
-	tail uuid.UUID
+	seen map[uuid.UUID]struct{}
+
+	history [maxSize]uuid.UUID
+	next    int
 }
 
 func NewUserPacketDeduper() *UserPacketDeduper {
 	return &UserPacketDeduper{
-		seen: make(map[uuid.UUID]uuid.UUID),
+		seen: make(map[uuid.UUID]struct{}, maxSize),
 	}
 }
 
@@ -47,20 +48,15 @@ func (u *UserPacketDeduper) IsDuplicate(up *livekit.UserPacket) bool {
 	u.lock.Lock()
 	defer u.lock.Unlock()
 
-	if u.head == id {
-		return true
-	}
 	if _, ok := u.seen[id]; ok {
 		return true
 	}
 
-	u.seen[u.head] = id
-	u.head = id
-
 	if len(u.seen) == maxSize {
-		tail := u.tail
-		u.tail = u.seen[tail]
-		delete(u.seen, tail)
+		delete(u.seen, u.history[u.next])
 	}
+	u.seen[id] = struct{}{}
+	u.history[u.next] = id
+	u.next = (u.next + 1) % maxSize
 	return false
 }
