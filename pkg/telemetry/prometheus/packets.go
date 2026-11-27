@@ -53,12 +53,19 @@ var (
 	forwardLatency             atomic.Uint32
 	forwardProcessingPerWrite  atomic.Uint32
 
-	promPacketLabels                  = []string{"direction", "transmission", "country"}
-	promPacketTotal                   *prometheus.CounterVec
-	promPacketBytes                   *prometheus.CounterVec
-	promFECLabels                     = []string{"direction", "type"}
-	promFECPacketTotal                *prometheus.CounterVec
-	promFECPacketBytes                *prometheus.CounterVec
+	promPacketLabels   = []string{"direction", "transmission", "country"}
+	promPacketTotal    *prometheus.CounterVec
+	promPacketBytes    *prometheus.CounterVec
+	promFECLabels      = []string{"direction", "type"}
+	promFECPacketTotal *prometheus.CounterVec
+	promFECPacketBytes *prometheus.CounterVec
+	// FEC counters with fixed labels, resolved once; downstream is on the pacer path
+	promFECUpstreamReceived           prometheus.Counter
+	promFECUpstreamRecovered          prometheus.Counter
+	promFECUpstreamDiscarded          prometheus.Counter
+	promFECUpstreamBytesReceived      prometheus.Counter
+	promFECDownstreamSent             prometheus.Counter
+	promFECDownstreamBytesSent        prometheus.Counter
 	promRTCPLabels                    = []string{"direction", "country"}
 	promStreamLabels                  = []string{"direction", "source", "type", "country"}
 	promNackTotal                     *prometheus.CounterVec
@@ -105,6 +112,12 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "bytes",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, promFECLabels)
+	promFECUpstreamReceived = promFECPacketTotal.WithLabelValues(string(Incoming), "received")
+	promFECUpstreamRecovered = promFECPacketTotal.WithLabelValues(string(Incoming), "recovered")
+	promFECUpstreamDiscarded = promFECPacketTotal.WithLabelValues(string(Incoming), "discarded")
+	promFECUpstreamBytesReceived = promFECPacketBytes.WithLabelValues(string(Incoming), "received")
+	promFECDownstreamSent = promFECPacketTotal.WithLabelValues(string(Outgoing), "sent")
+	promFECDownstreamBytesSent = promFECPacketBytes.WithLabelValues(string(Outgoing), "sent")
 	promNackTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "nack",
@@ -263,23 +276,23 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 // FEC packets that could not be used.
 func RecordFECUpstream(received int, recovered int, discarded int, bytesReceived uint64) {
 	if received > 0 {
-		promFECPacketTotal.WithLabelValues(string(Incoming), "received").Add(float64(received))
+		promFECUpstreamReceived.Add(float64(received))
 	}
 	if recovered > 0 {
-		promFECPacketTotal.WithLabelValues(string(Incoming), "recovered").Add(float64(recovered))
+		promFECUpstreamRecovered.Add(float64(recovered))
 	}
 	if discarded > 0 {
-		promFECPacketTotal.WithLabelValues(string(Incoming), "discarded").Add(float64(discarded))
+		promFECUpstreamDiscarded.Add(float64(discarded))
 	}
 	if bytesReceived > 0 {
-		promFECPacketBytes.WithLabelValues(string(Incoming), "received").Add(float64(bytesReceived))
+		promFECUpstreamBytesReceived.Add(float64(bytesReceived))
 	}
 }
 
 // RecordFECDownstream tracks successfully sent repair packets and RTP payload bytes.
 func RecordFECDownstream(packets int, bytes int) {
-	promFECPacketTotal.WithLabelValues(string(Outgoing), "sent").Add(float64(packets))
-	promFECPacketBytes.WithLabelValues(string(Outgoing), "sent").Add(float64(bytes))
+	promFECDownstreamSent.Add(float64(packets))
+	promFECDownstreamBytesSent.Add(float64(bytes))
 }
 
 func IncrementPackets(country string, direction Direction, count uint64, retransmit bool) {
