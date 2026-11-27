@@ -50,4 +50,5 @@ var (
 	ErrNoConnectRequest                 = psrpc.NewErrorf(psrpc.InvalidArgument, "no connect request")
 	ErrNoConnectResponse                = psrpc.NewErrorf(psrpc.InvalidArgument, "no connect response")
 	ErrDestinationIdentityRequired      = psrpc.NewErrorf(psrpc.InvalidArgument, "destination identity is required")
+	ErrMethodRequired                   = psrpc.NewErrorf(psrpc.InvalidArgument, "method is required")
 )

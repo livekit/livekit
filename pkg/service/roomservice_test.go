@@ -16,6 +16,7 @@ package service_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -325,6 +326,64 @@ func newTestRoomService(limitConf config.LimitConfig) *TestRoomService {
 		store:             store,
 		participantClient: participantClient,
 	}
+}
+
+func TestPerformRpcValidation(t *testing.T) {
+	grant := &auth.ClaimGrants{
+		Video: &auth.VideoGrant{RoomAdmin: true, Room: "testroom"},
+	}
+	ctx := service.WithGrants(context.Background(), grant, "")
+
+	t.Run("missing destination identity", func(t *testing.T) {
+		svc := newTestRoomService(config.LimitConfig{})
+		_, err := svc.PerformRpc(ctx, &livekit.PerformRpcRequest{
+			Room:   "testroom",
+			Method: "greeting",
+		})
+		require.ErrorIs(t, err, service.ErrDestinationIdentityRequired)
+		require.Zero(t, svc.participantClient.PerformRpcCallCount())
+	})
+
+	t.Run("missing method", func(t *testing.T) {
+		svc := newTestRoomService(config.LimitConfig{})
+		_, err := svc.PerformRpc(ctx, &livekit.PerformRpcRequest{
+			Room:                "testroom",
+			DestinationIdentity: "user1",
+			Method:              "",
+		})
+		require.ErrorIs(t, err, service.ErrMethodRequired)
+		require.Zero(t, svc.participantClient.PerformRpcCallCount())
+	})
+
+	t.Run("payload exceeds max payload bytes", func(t *testing.T) {
+		svc := newTestRoomService(config.LimitConfig{})
+		oversizedPayload := strings.Repeat("x", utils.DataChannelRpcMaxPayloadBytes+1)
+		_, err := svc.PerformRpc(ctx, &livekit.PerformRpcRequest{
+			Room:                "testroom",
+			DestinationIdentity: "user1",
+			Method:              "greeting",
+			Payload:             oversizedPayload,
+		})
+		expectedErr := utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcRequestPayloadTooLarge, "").PsrpcError()
+		var psErr psrpc.Error
+		require.ErrorAs(t, err, &psErr)
+		require.Equal(t, psrpc.MalformedRequest, psErr.Code())
+		require.Equal(t, expectedErr.Error(), err.Error())
+		require.Zero(t, svc.participantClient.PerformRpcCallCount())
+	})
+
+	t.Run("valid request forwards to participantClient", func(t *testing.T) {
+		svc := newTestRoomService(config.LimitConfig{})
+		validPayload := strings.Repeat("x", utils.DataChannelRpcMaxPayloadBytes)
+		_, err := svc.PerformRpc(ctx, &livekit.PerformRpcRequest{
+			Room:                "testroom",
+			DestinationIdentity: "user1",
+			Method:              "greeting",
+			Payload:             validPayload,
+		})
+		require.NoError(t, err)
+		require.Equal(t, 1, svc.participantClient.PerformRpcCallCount())
+	})
 }
 
 func TestPerformRpcRequestTimeout(t *testing.T) {
