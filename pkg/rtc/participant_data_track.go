@@ -17,7 +17,6 @@ package rtc
 import (
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/protocol/datatrack"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -188,33 +187,6 @@ func (p *ParticipantImpl) onReceivedDataTrackMessage(data []byte, arrivalTime in
 	p.UpDataTrackManager.HandleReceivedDataTrackMessage(data, &packet, arrivalTime)
 
 	p.listener().OnDataTrackMessage(p, data, &packet)
-}
-
-// wraps the promoted UpTrackManager.UpdateSubscriptionPermission to also revoke
-// data track subscriptions that are no longer permitted
-func (p *ParticipantImpl) UpdateSubscriptionPermission(
-	subscriptionPermission *livekit.SubscriptionPermission,
-	timedVersion utils.TimedVersion,
-	resolverBySid func(participantID livekit.ParticipantID) types.LocalParticipant,
-) error {
-	if err := p.UpTrackManager.UpdateSubscriptionPermission(subscriptionPermission, timedVersion, resolverBySid); err != nil {
-		return err
-	}
-
-	p.maybeRevokeDataTrackSubscriptions()
-	return nil
-}
-
-func (p *ParticipantImpl) maybeRevokeDataTrackSubscriptions() {
-	for _, dt := range p.UpDataTrackManager.GetPublishedDataTracks() {
-		allowed := p.UpTrackManager.GetAllowedSubscribers(dt.ID())
-		if allowed == nil {
-			// no restrictions
-			continue
-		}
-
-		dt.RevokeDisallowedSubscribers(allowed)
-	}
 }
 
 func (p *ParticipantImpl) GetNextSubscribedDataTrackHandle() uint16 {

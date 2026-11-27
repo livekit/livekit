@@ -315,6 +315,7 @@ type ParticipantImpl struct {
 	*TransportManager
 	*UpTrackManager
 	*UpDataTrackManager
+	*SubscriptionPermissionManager
 	*SubscriptionManager
 
 	nextSubscribedDataTrackHandle uint16
@@ -497,6 +498,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 
 	p.setupUpTrackManager()
 	p.setupUpDataTrackManager()
+	p.setupSubscriptionPermissionManager()
 	p.setupSubscriptionManager()
 	p.setupMetrics()
 
@@ -2300,8 +2302,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 
 func (p *ParticipantImpl) setupUpTrackManager() {
 	p.UpTrackManager = NewUpTrackManager(UpTrackManagerParams{
-		Logger:           p.pubLogger,
-		VersionGenerator: p.params.VersionGenerator,
+		Logger: p.pubLogger,
 	})
 
 	p.UpTrackManager.OnPublishedTrackUpdated(func(track types.MediaTrack) {
@@ -2316,6 +2317,15 @@ func (p *ParticipantImpl) setupUpDataTrackManager() {
 	p.UpDataTrackManager = NewUpDataTrackManager(UpDataTrackManagerParams{
 		Logger:      p.pubLogger,
 		Participant: p,
+	})
+}
+
+func (p *ParticipantImpl) setupSubscriptionPermissionManager() {
+	p.SubscriptionPermissionManager = NewSubscriptionPermissionManager(SubscriptionPermissionManagerParams{
+		Logger:           p.pubLogger,
+		VersionGenerator: p.params.VersionGenerator,
+		GetMediaTracks:   p.UpTrackManager.GetPublishedTracks,
+		GetDataTracks:    p.UpDataTrackManager.GetPublishedDataTracks,
 	})
 }
 
