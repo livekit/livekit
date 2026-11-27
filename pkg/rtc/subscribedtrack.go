@@ -338,9 +338,11 @@ func (t *SubscribedTrack) SetPublisherMuted(muted bool) {
 	t.downTrack.PubMute(muted)
 }
 
+// UpdateSubscriberSettings takes settings already merged with earlier updates
+// by the subscription, see mergeSubscriberSettings. They are stored as is and
+// must not be changed after the call.
 func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings, isImmediate bool) {
 	t.settingsLock.Lock()
-	settings = mergeSubscriberSettings(t.settings, settings)
 	if proto.Equal(t.settings, settings) {
 		t.logger.Debugw("skipping subscriber track settings", "settings", logger.Proto(t.settings))
 		t.settingsLock.Unlock()
@@ -348,7 +350,6 @@ func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrack
 	}
 
 	isImmediate = isImmediate || (!settings.Disabled && settings.Disabled != t.isMutedLocked())
-	// mergeSubscriberSettings returns a fresh copy, so it can be stored as is
 	t.settings = settings
 	t.logger.Debugw("saving subscriber track settings", "settings", logger.Proto(t.settings))
 	t.settingsLock.Unlock()

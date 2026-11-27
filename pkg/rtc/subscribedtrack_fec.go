@@ -20,21 +20,14 @@ import (
 )
 
 // mergeSubscriberSettings retains the FEC protection across updates that omit
-// the optional field, such as legacy clients' quality/mute updates, and
-// normalizes unknown modes to disabled and unknown levels to unspecified. Clone
-// both the incoming message and inherited value so cached settings are immutable.
+// the optional field, such as legacy clients' quality/mute updates. Clone both
+// the incoming message and inherited value so cached settings are immutable.
+// Unknown modes and levels are kept as sent; the DownTrack interprets them,
+// see sfu.DownTrack.SetFECProtection.
 func mergeSubscriberSettings(previous, next *livekit.UpdateTrackSettings) *livekit.UpdateTrackSettings {
 	settings := utils.CloneProto(next)
 	if settings.Fec == nil && previous.GetFec() != nil {
 		settings.Fec = utils.CloneProto(previous.Fec)
-	}
-	if fec := settings.Fec; fec != nil {
-		if _, ok := livekit.FECProtectionMode_name[int32(fec.Mode)]; !ok {
-			fec.Mode = livekit.FECProtectionMode_FEC_MODE_DISABLED
-		}
-		if _, ok := livekit.FECProtectionLevel_name[int32(fec.Level)]; !ok {
-			fec.Level = livekit.FECProtectionLevel_FEC_LEVEL_UNSPECIFIED
-		}
 	}
 	return settings
 }

@@ -58,10 +58,10 @@ func TestSubscriberFECSettings(t *testing.T) {
 			&livekit.FECProtection{Mode: livekit.FECProtectionMode_FEC_MODE_MINIMUM, Level: livekit.FECProtectionLevel_FEC_LEVEL_HIGH},
 			&livekit.FECProtection{Mode: livekit.FECProtectionMode_FEC_MODE_MINIMUM, Level: livekit.FECProtectionLevel_FEC_LEVEL_HIGH},
 		},
-		// unknown modes disable FEC, unknown levels are unspecified
-		{&livekit.FECProtection{Mode: -1, Level: livekit.FECProtectionLevel_FEC_LEVEL_LOW}, &livekit.FECProtection{Level: livekit.FECProtectionLevel_FEC_LEVEL_LOW}},
-		{&livekit.FECProtection{Mode: 99}, fecDisabled()},
-		{fecFixed(99), fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_UNSPECIFIED)},
+		// unknown modes and levels are kept as sent, the DownTrack interprets them
+		{&livekit.FECProtection{Mode: -1, Level: livekit.FECProtectionLevel_FEC_LEVEL_LOW}, &livekit.FECProtection{Mode: -1, Level: livekit.FECProtectionLevel_FEC_LEVEL_LOW}},
+		{&livekit.FECProtection{Mode: 99}, &livekit.FECProtection{Mode: 99}},
+		{fecFixed(99), fecFixed(99)},
 	} {
 		requested := &livekit.UpdateTrackSettings{Fec: tc.requested}
 		original := utils.CloneProto(tc.requested)
