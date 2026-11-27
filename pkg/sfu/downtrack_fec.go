@@ -101,6 +101,10 @@ func (d *DownTrack) onFECSent(packets int, bytes int) {
 	if d.params.OnFECSent != nil {
 		d.params.OnFECSent(packets, bytes)
 	}
+	// Account repairs separately from media, like the receiving side.
+	if d.rtpStats != nil {
+		d.rtpStats.UpdateFEC(uint64(packets), uint64(bytes), 0, 0)
+	}
 	if encoder := d.fecEncoder.Load(); encoder != nil {
 		d.maybeNotifyFECOverhead(encoder)
 	}

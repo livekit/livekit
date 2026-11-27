@@ -212,6 +212,13 @@ func TestDownTrackFlexFECOnWire(t *testing.T) {
 			}
 			require.Len(t, media, mediaCount)
 			require.EqualValues(t, len(repair), repairsSent.Load())
+			repairPayloadBytes := 0
+			for _, packet := range repair {
+				repairPayloadBytes += len(packet.Payload)
+			}
+			stats := dt.GetTrackStats()
+			require.EqualValues(t, len(repair), stats.FecPackets, "account repairs on the down track")
+			require.EqualValues(t, repairPayloadBytes, stats.FecBytes)
 			if !negotiated || tc.protectionPercent == 0 {
 				require.Empty(t, repair)
 				return

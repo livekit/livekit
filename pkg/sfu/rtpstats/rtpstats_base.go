@@ -711,6 +711,11 @@ func (r *rtpStatsBase) toProto(
 	p.FecPacketsDiscarded = uint32(r.fecPacketsDiscarded)
 	p.FecPacketsRecovered = uint32(r.fecPacketsRecovered)
 
+	p.FecPackets = uint32(r.fecPackets)
+	p.FecBytes = r.fecBytes
+	p.FecPacketsDiscarded = uint32(r.fecPacketsDiscarded)
+	p.FecPacketsRecovered = uint32(r.fecPacketsRecovered)
+
 	p.Frames = r.frames
 	p.FrameRate = float64(r.frames) / p.Duration
 
