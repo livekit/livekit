@@ -172,8 +172,8 @@ github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
 github.com/lithammer/shortuuid/v4 v4.3.0 h1:XRr80OYPOlqxgnCv2/iuElkl/ZtXtPtLKk2AvpXGdWA=
 github.com/lithammer/shortuuid/v4 v4.3.0/go.mod h1:D5noHZ2oFw/YaKCfGy0YxyE7M0wMbezmMjPdhyEFe6Y=
-github.com/livekit/ice/v4 v4.4.8-warp.4 h1:D1pqAknVbHQoVcADCeF1JVLklCfzXWKLQ70jGGXRCNY=
-github.com/livekit/ice/v4 v4.4.8-warp.4/go.mod h1:zCRRg4Mkpdbx9B+75fd4z2APvIXeIraeUOB7IMPt8mU=
+github.com/livekit/ice/v4 v4.4.8-warp.5 h1:DxWK/ACLf5Tsc6ZWTG6V6GdE4y4NQbUuFH2i/FU+3zg=
+github.com/livekit/ice/v4 v4.4.8-warp.5/go.mod h1:zCRRg4Mkpdbx9B+75fd4z2APvIXeIraeUOB7IMPt8mU=
 github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731 h1:9x+U2HGLrSw5ATTo469PQPkqzdoU7be46ryiCDO3boc=
 github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731/go.mod h1:Rs3MhFwutWhGwmY1VQsygw28z5bWcnEYmS1OG9OxjOQ=
 github.com/livekit/mediatransportutil v0.0.0-20261116220501-6af81419a977 h1:Pe6Hmo7ZWuTiCNHuRqc/7DDRn4MQjNBO6EcQcmaeRhA=
@@ -182,8 +182,8 @@ github.com/livekit/protocol v1.54.3-0.20261124075400-36e1b27375d9 h1:qPD/T1vxE9N
 github.com/livekit/protocol v1.54.3-0.20261124075400-36e1b27375d9/go.mod h1:nMEqUOj5v+v+GsAgVifdu7yvuhoJu6fAt674ObTIe/8=
 github.com/livekit/psrpc v0.8.3-0.20261124192832-2826b474becf h1:Z1NNwvGWTs7F3BpYX+Xb8KiLN8G/5Je25yIwjzhh5u8=
 github.com/livekit/psrpc v0.8.3-0.20261124192832-2826b474becf/go.mod h1:Eh8f060LOzgeLY9BUSZ2Rb59gUpIlldfgv5Dlextiio=
-github.com/livekit/webrtc-pion/v4 v4.2.25-warp.4 h1:nX9JL2Z85kSw7LccGE/VayhowCZb303x8u4fwhfHySc=
-github.com/livekit/webrtc-pion/v4 v4.2.25-warp.4/go.mod h1:G1KIf8esGduJZ8NTOpwakRJQuu1HIHt5irZRh26E5mI=
+github.com/livekit/webrtc-pion/v4 v4.2.25-warp.5 h1:LWTZxaUQQrgMmIoFDjPEyfv1H6nAYdsBvN8y94k8O+I=
+github.com/livekit/webrtc-pion/v4 v4.2.25-warp.5/go.mod h1:w5a+1GfuNk1ht0RIJMx1q9xF2SCqlH9kFkUmT5l0BLs=
 github.com/lucasb-eyer/go-colorful v1.2.0 h1:1nnpGOrhyZZuNyfu1QjKiUICQ74+3FNCN69Aj6K7nkY=
 github.com/lucasb-eyer/go-colorful v1.2.0/go.mod h1:R4dSotOR9KMtayYi1e77YzuveK+i7ruzyGqttikkLy0=
 github.com/mackerelio/go-osstat v0.2.8 h1:I2duicTaCGWoM53XwAwA9OIe1inu0xnVs8/pqOWWVr4=

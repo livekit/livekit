@@ -162,6 +162,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		SimTracks:                         params.SimTracks,
 		ClientInfo:                        params.ClientInfo,
 		IsSendSide:                        params.UseOneShotSignallingMode || params.UseSinglePeerConnection,
+		Migration:                         params.Migration,
 		AllowPlayoutDelay:                 params.AllowPlayoutDelay,
 		Transport:                         livekit.SignalTarget_PUBLISHER,
 		Handler:                           TransportManagerTransportHandler{params.PublisherHandler, t, lgr},
