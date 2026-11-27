@@ -16,8 +16,10 @@ package service_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/protocol/livekit"
@@ -101,6 +103,85 @@ room:
 		require.Equal(t, uint32(100), internal.GetPlayoutDelay().GetMin())
 		require.Equal(t, uint32(77), room.EmptyTimeout)
 	})
+}
+
+func TestImplicitRoomCreateMetrics(t *testing.T) {
+	ctx := context.Background()
+	conf, err := config.NewConfig("", true, nil, nil)
+	require.NoError(t, err)
+	roomStore := &servicefakes.FakeObjectStore{}
+	allocator, err := service.NewRoomAllocator(conf, &routingfakes.FakeRouter{}, roomStore)
+	require.NoError(t, err)
+	req := &livekit.CreateRoomRequest{Name: "test-room"}
+
+	before := implicitRoomCreateCounts(t)
+
+	roomStore.LoadRoomReturns(nil, nil, service.ErrRoomNotFound)
+	_, _, _, created, err := allocator.CreateRoom(ctx, req, false)
+	require.NoError(t, err)
+	require.True(t, created)
+	require.Equal(t, before["success"]+1, implicitRoomCreateCounts(t)["success"])
+
+	storeError := errors.New("room store unavailable")
+	roomStore.StoreRoomReturns(storeError)
+	_, _, _, _, err = allocator.CreateRoom(ctx, req, false)
+	require.ErrorIs(t, err, storeError)
+	require.Equal(t, before["error/store_room"]+1, implicitRoomCreateCounts(t)["error/store_room"])
+
+	rm := newTestRoomManager(t, conf, nil)
+	err = rm.StartSession(ctx, routing.ParticipantInit{
+		Identity:   "test-participant",
+		CreateRoom: &livekit.CreateRoomRequest{Name: "test-room", RoomPreset: "undefined"},
+	}, nil, nil, false)
+	require.Error(t, err)
+
+	_, _, _, _, err = allocator.CreateRoom(ctx, req, true)
+	require.ErrorIs(t, err, storeError)
+	roomStore.StoreRoomReturns(nil)
+	_, _, _, _, err = allocator.CreateRoom(ctx, req, true)
+	require.NoError(t, err)
+
+	roomStore.LoadRoomReturns(&livekit.Room{Name: req.Name}, &livekit.RoomInternal{}, nil)
+	_, _, _, created, err = allocator.CreateRoom(ctx, req, false)
+	require.NoError(t, err)
+	require.False(t, created)
+
+	roomStore.LoadRoomReturns(nil, nil, storeError)
+	_, _, _, _, err = allocator.CreateRoom(ctx, req, false)
+	require.ErrorIs(t, err, storeError)
+
+	require.Equal(t, map[string]float64{
+		"success":                 before["success"] + 1,
+		"error/store_room":        before["error/store_room"] + 1,
+		"error/apply_room_preset": before["error/apply_room_preset"] + 1,
+	}, implicitRoomCreateCounts(t))
+}
+
+func implicitRoomCreateCounts(t *testing.T) map[string]float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	counts := make(map[string]float64)
+	for _, family := range families {
+		if family.GetName() != "livekit_node_service_operation" {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			labels := make(map[string]string)
+			for _, label := range metric.GetLabel() {
+				labels[label.GetName()] = label.GetValue()
+			}
+			if labels["type"] != "implicit_room_create" {
+				continue
+			}
+			key := labels["status"]
+			if errorType := labels["error_type"]; errorType != "" {
+				key += "/" + errorType
+			}
+			counts[key] += metric.GetCounter().GetValue()
+		}
+	}
+	return counts
 }
 
 func SelectRoomNode(t *testing.T) {

@@ -30,7 +30,10 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/selector"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
+
+const implicitRoomCreateOperation = "implicit_room_create"
 
 type StandardRoomAllocator struct {
 	config    *config.Config
@@ -91,8 +94,12 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 		applyDefaultRoomInternalConfig(internal, &r.config.Room)
 	}
 
+	recordCreation := created && !isExplicit
 	req, err = r.applyNamedRoomConfiguration(req)
 	if err != nil {
+		if recordCreation {
+			recordImplicitRoomCreateError(req.Name, "apply_room_preset", err)
+		}
 		return nil, nil, nil, false, err
 	}
 
@@ -131,10 +138,21 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	}
 
 	if err = r.roomStore.StoreRoom(ctx, rm, internal); err != nil {
+		if recordCreation {
+			recordImplicitRoomCreateError(req.Name, "store_room", err)
+		}
 		return nil, nil, nil, false, err
 	}
 
+	if recordCreation {
+		prometheus.RecordServiceOperationSuccess(implicitRoomCreateOperation)
+	}
 	return rm, internal, req, created, nil
+}
+
+func recordImplicitRoomCreateError(room, stage string, err error) {
+	prometheus.RecordServiceOperationError(implicitRoomCreateOperation, stage)
+	logger.Warnw("could not create room on join", err, "room", room, "stage", stage)
 }
 
 func (r *StandardRoomAllocator) SelectRoomNode(ctx context.Context, roomName livekit.RoomName, nodeID livekit.NodeID) error {
