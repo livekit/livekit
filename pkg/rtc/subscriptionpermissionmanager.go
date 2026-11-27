@@ -40,8 +40,9 @@ type revocableTrack interface {
 type SubscriptionPermissionManagerParams struct {
 	Logger           logger.Logger
 	VersionGenerator utils.TimedVersionGenerator
-	GetMediaTracks   func() []types.MediaTrack
-	GetDataTracks    func() []types.DataTrack
+	// Required track source callbacks queried under m.lock during revocation.
+	GetMediaTracks func() []types.MediaTrack
+	GetDataTracks  func() []types.DataTrack
 }
 
 // SubscriptionPermissionManager manages subscription permissions and enforces
@@ -237,24 +238,22 @@ func (m *SubscriptionPermissionManager) maybeRevokeSubscriptionsLocked() {
 		return
 	}
 
-	if m.params.GetMediaTracks != nil {
-		revokeDisallowedTracks(m, m.params.GetMediaTracks())
+	for _, track := range m.params.GetMediaTracks() {
+		m.revokeDisallowedLocked(track)
 	}
-	if m.params.GetDataTracks != nil {
-		revokeDisallowedTracks(m, m.params.GetDataTracks())
+	for _, track := range m.params.GetDataTracks() {
+		m.revokeDisallowedLocked(track)
 	}
 }
 
-func revokeDisallowedTracks[T revocableTrack](m *SubscriptionPermissionManager, tracks []T) {
-	for _, track := range tracks {
-		allowed := m.getAllowedSubscribersLocked(track.ID())
-		if allowed == nil {
-			// no restrictions
-			continue
-		}
-
-		track.RevokeDisallowedSubscribers(allowed)
+func (m *SubscriptionPermissionManager) revokeDisallowedLocked(track revocableTrack) {
+	allowed := m.getAllowedSubscribersLocked(track.ID())
+	if allowed == nil {
+		// no restrictions
+		return
 	}
+
+	track.RevokeDisallowedSubscribers(allowed)
 }
 
 func parseSubscriptionPermissions(

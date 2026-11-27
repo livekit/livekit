@@ -34,10 +34,12 @@ func newSubscriptionPermissionTestHarness() (*SubscriptionPermissionManager, *Up
 	um := NewUpTrackManager(UpTrackManagerParams{
 		Logger: logger.GetLogger(),
 	})
+	udm, _, _ := newUpDataTrackManagerForTest()
 	pm := NewSubscriptionPermissionManager(SubscriptionPermissionManagerParams{
 		Logger:           logger.GetLogger(),
 		VersionGenerator: utils.NewDefaultTimedVersionGenerator(),
 		GetMediaTracks:   um.GetPublishedTracks,
+		GetDataTracks:    udm.GetPublishedDataTracks,
 	})
 	return pm, um
 }
