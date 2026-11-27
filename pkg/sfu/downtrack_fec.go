@@ -40,7 +40,10 @@ func (d *DownTrack) bindFEC(t webrtc.TrackLocalContext) {
 			encoder := flexfec.NewEncoder(uint8(codec.PayloadType), uint32(t.SSRCForwardErrorCorrection()), d.onFECSent)
 			encoder.SeedState(d.fecState)
 			encoder.SetProtection(d.fecProtection)
-			d.fecNotifiedOverhead.Store(encoder.OverheadPercent())
+			if d.forwarder != nil {
+				encoder.SetMeasurementLayer(d.forwarder.CurrentLayer().Spatial)
+			}
+			d.setFECNotifiedOverhead(encoder.Overhead())
 			d.fecEncoder.Store(encoder)
 			return
 		}
@@ -87,26 +90,79 @@ func (d *DownTrack) onFECSent(packets int, bytes int) {
 		d.params.OnFECSent(packets, bytes)
 	}
 	if encoder := d.fecEncoder.Load(); encoder != nil {
-		percent := encoder.OverheadPercent()
-		if d.fecNotifiedOverhead.Swap(percent) != percent {
-			if listener := d.getStreamAllocatorListener(); listener != nil {
-				listener.OnSubscriptionChanged(d)
-			}
+		d.maybeNotifyFECOverhead(encoder)
+	}
+}
+
+// setFECMeasurementLayer attributes repair overhead measurements to the
+// spatial layer now forwarded. Called when forwarding starts, resumes or
+// switches layers.
+func (d *DownTrack) setFECMeasurementLayer() {
+	encoder := d.fecEncoder.Load()
+	if encoder == nil {
+		return
+	}
+	encoder.SetMeasurementLayer(d.forwarder.CurrentLayer().Spatial)
+	d.maybeNotifyFECOverhead(encoder)
+}
+
+// Reallocate only when the reserved overhead moves by at least this many
+// percentage points, so that per-second measurements and adaptive protection
+// following every receiver report do not re-run allocation and flip layers
+// near a capacity boundary, each switch costing a key frame.
+const fecOverheadNotifyThreshold = 5
+
+func (d *DownTrack) setFECNotifiedOverhead(overhead flexfec.OverheadEstimate) {
+	d.fecNotifyLock.Lock()
+	d.fecNotifiedOverhead = overhead
+	d.fecNotifyLock.Unlock()
+}
+
+// maybeNotifyFECOverhead lets the allocator reserve a changed repair overhead.
+func (d *DownTrack) maybeNotifyFECOverhead(encoder *flexfec.Encoder) {
+	overhead := encoder.Overhead()
+	d.fecNotifyLock.Lock()
+	notified := d.fecNotifiedOverhead
+	changed := overhead.Layer != notified.Layer ||
+		fecOverheadChanged(notified.ConfiguredPercent, overhead.ConfiguredPercent) ||
+		fecOverheadChanged(notified.LayerPercent, overhead.LayerPercent)
+	if changed {
+		d.fecNotifiedOverhead = overhead
+	}
+	d.fecNotifyLock.Unlock()
+	if changed {
+		if listener := d.getStreamAllocatorListener(); listener != nil {
+			listener.OnSubscriptionChanged(d)
 		}
 	}
 }
 
-// Reserve the greater of configured and measured repair overhead in every
-// allocator input. Small frames can require much more than the nominal preset.
-// The pacer/BWE account actual bytes, including all repair headers.
+// fecOverheadChanged reports a change past the threshold; turning repair on
+// or off always counts.
+func fecOverheadChanged(from uint32, to uint32) bool {
+	if (from == 0) != (to == 0) {
+		return true
+	}
+	if from > to {
+		from, to = to, from
+	}
+	return to-from >= fecOverheadNotifyThreshold
+}
+
+// Reserve repair overhead in every allocator input: the measured overhead on
+// the forwarded spatial layer, where small frames can require much more than
+// the nominal preset, and the configured rate on the other layers, whose
+// overhead is not measured. The pacer/BWE account actual bytes, including all
+// repair headers.
 func (d *DownTrack) getLayeredBitrateWithFEC() ([]int32, Bitrates) {
 	layers, bitrates := d.Receiver().GetLayeredBitrate()
 	if encoder := d.fecEncoder.Load(); encoder != nil {
-		percent := int64(encoder.OverheadPercent())
-		if percent == 0 {
-			return layers, bitrates
-		}
+		overhead := encoder.Overhead()
 		for spatial := range bitrates {
+			percent := int64(overhead.PercentForLayer(int32(spatial)))
+			if percent == 0 {
+				continue
+			}
 			for temporal, bitrate := range bitrates[spatial] {
 				bitrates[spatial][temporal] += bitrate * percent / 100
 			}
@@ -161,7 +217,7 @@ func (d *DownTrack) SetFECProtection(fec *livekit.FECProtection) {
 	encoder := d.fecEncoder.Load()
 	if encoder != nil {
 		encoder.SetProtection(protection)
-		d.fecNotifiedOverhead.Store(encoder.OverheadPercent())
+		d.setFECNotifiedOverhead(encoder.Overhead())
 	}
 	d.fecLock.Unlock()
 	if encoder != nil {
@@ -186,12 +242,7 @@ func (d *DownTrack) onFECReceiverReport(fractionLost uint8, rttMs uint32) {
 		Width:        width,
 		Height:       height,
 	})
-	percent := encoder.OverheadPercent()
-	if d.fecNotifiedOverhead.Swap(percent) != percent {
-		if listener := d.getStreamAllocatorListener(); listener != nil {
-			listener.OnSubscriptionChanged(d)
-		}
-	}
+	d.maybeNotifyFECOverhead(encoder)
 }
 
 // getForwardedVideoDimensions returns the published dimensions of the layer

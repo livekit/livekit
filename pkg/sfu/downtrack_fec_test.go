@@ -128,13 +128,18 @@ func TestDownTrackFECMeasuredBandwidthReservation(t *testing.T) {
 	listener := &fecAllocatorListener{}
 	d := &DownTrack{
 		params: DownTrackParams{EnableFlexFEC: true}, kind: webrtc.RTPCodecTypeVideo,
-		receiver:                  &fecTrackReceiver{rates: Bitrates{{100_000}}},
+		receiver:                  &fecTrackReceiver{rates: Bitrates{{100_000}, {300_000}}},
 		negotiatedCodecParameters: []webrtc.RTPCodecParameters{{RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeFlexFEC03}, PayloadType: 115}},
 		streamAllocatorListener:   listener,
 	}
 	d.SetFECProtection(fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_LOW))
 	d.bindFEC(fecTrackContext{ssrcFEC: 456})
 	e := d.fecEncoder.Load()
+	_, rates := d.getLayeredBitrateWithFEC()
+	require.EqualValues(t, 115_000, rates[0][0])
+	require.EqualValues(t, 345_000, rates[1][0])
+	// forwarding the low layer, whose one-packet frames each get a repair
+	e.SetMeasurementLayer(0)
 	p := rtp.Header{Version: 2, SSRC: 123, PayloadType: 96, Marker: true}
 	for range 2 {
 		p.SequenceNumber++
@@ -142,14 +147,60 @@ func TestDownTrackFECMeasuredBandwidthReservation(t *testing.T) {
 		require.Len(t, repairs, 1)
 		e.RecordSent(1, len(repairs[0].Payload), repairs[0].MarshalSize())
 	}
-	_, rates := d.getLayeredBitrateWithFEC()
+	_, rates = d.getLayeredBitrateWithFEC()
 	require.EqualValues(t, 218_000, rates[0][0], "reserve actual small-frame overhead, including RTP/FEC headers")
+	require.EqualValues(t, 345_000, rates[1][0], "do not apply the low layer's overhead to a layer that was not measured")
 	require.Equal(t, 1, listener.changes, "reallocate on an overhead change, not on every repair")
+	// switching to the high layer restarts the measurement there
+	e.SetMeasurementLayer(1)
+	d.maybeNotifyFECOverhead(e)
+	_, rates = d.getLayeredBitrateWithFEC()
+	require.EqualValues(t, 115_000, rates[0][0])
+	require.EqualValues(t, 345_000, rates[1][0])
+	require.Equal(t, 2, listener.changes)
 	d.SetFECProtection(fecDisabled())
 	_, rates = d.getLayeredBitrateWithFEC()
 	require.EqualValues(t, 100_000, rates[0][0])
-	require.Equal(t, 2, listener.changes)
+	require.EqualValues(t, 300_000, rates[1][0])
+	require.Equal(t, 3, listener.changes)
 	d.closeFEC()
+}
+
+func TestDownTrackFECOverheadNotifyHysteresis(t *testing.T) {
+	for _, tc := range []struct {
+		from, to uint32
+		changed  bool
+	}{
+		{15, 15, false},
+		{15, 16, false},
+		{15, 19, false},
+		{19, 15, false},
+		{15, 20, true},
+		{20, 15, true},
+		{0, 1, true},
+		{1, 0, true},
+		{0, 0, false},
+	} {
+		require.Equal(t, tc.changed, fecOverheadChanged(tc.from, tc.to), "%d -> %d", tc.from, tc.to)
+	}
+
+	listener := &fecAllocatorListener{}
+	d := &DownTrack{streamAllocatorListener: listener}
+	e := flexfec.NewEncoder(115, 456, nil)
+	e.SetProtectionPercent(15)
+	d.fecEncoder.Store(e)
+	d.setFECNotifiedOverhead(e.Overhead())
+	d.maybeNotifyFECOverhead(e)
+	require.Zero(t, listener.changes, "an unchanged overhead does not reallocate")
+	e.SetProtectionPercent(18)
+	d.maybeNotifyFECOverhead(e)
+	require.Zero(t, listener.changes, "a small change does not reallocate")
+	e.SetProtectionPercent(20)
+	d.maybeNotifyFECOverhead(e)
+	require.Equal(t, 1, listener.changes, "changes accumulate against the last notified overhead")
+	e.SetMeasurementLayer(0)
+	d.maybeNotifyFECOverhead(e)
+	require.Equal(t, 2, listener.changes, "a new measured layer changes the reservation shape")
 }
 
 func TestDownTrackFECProtectionChanges(t *testing.T) {

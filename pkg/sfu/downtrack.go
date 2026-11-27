@@ -278,10 +278,12 @@ type DownTrack struct {
 	rtxSequenceNumber atomic.Uint64
 	rtxBudget         *rtxBudget
 
-	fecLock             sync.Mutex
-	fecEncoder          atomic.Pointer[flexfec.Encoder]
-	fecProtection       flexfec.Protection
-	fecNotifiedOverhead atomic.Uint32
+	fecLock       sync.Mutex
+	fecEncoder    atomic.Pointer[flexfec.Encoder]
+	fecProtection flexfec.Protection
+	// overhead the stream allocator last reallocated for, see maybeNotifyFECOverhead
+	fecNotifyLock       sync.Mutex
+	fecNotifiedOverhead flexfec.OverheadEstimate
 	fecState            flexfec.EncoderState
 	// loss samples for adaptive protection, accessed only from the RTCP handler
 	fecLoss flexfec.LossAggregator
@@ -1229,6 +1231,10 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 			"rtpsn", tp.rtp.extSequenceNumber,
 			"rtpts", tp.rtp.extTimestamp,
 		)
+	}
+
+	if tp.isSwitching || tp.isStarting || tp.isResuming {
+		d.setFECMeasurementLayer()
 	}
 
 	if tp.isSwitching {

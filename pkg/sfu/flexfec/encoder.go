@@ -84,7 +84,12 @@ type Encoder struct {
 	frameTimestamp uint32
 	frameKey       bool
 
-	overheadPercent   atomic.Uint32
+	// overheadPercent is the larger of configuredPercent and measuredPercent;
+	// the atomics let the allocator read without contending with encoding.
+	overheadPercent    atomic.Uint32
+	configuredOverhead atomic.Uint32
+	// measuredLayer is the forwarded spatial layer measuredPercent belongs to.
+	measuredLayer     atomic.Int32
 	configuredPercent uint32
 	measuredPercent   uint32
 	overheadUpdatedAt int64
@@ -93,13 +98,15 @@ type Encoder struct {
 }
 
 func NewEncoder(payloadType uint8, ssrc uint32, onSent func(packets int, bytes int)) *Encoder {
-	return &Encoder{
+	e := &Encoder{
 		encoder:        pionflexfec.NewFlexEncoder03(payloadType, ssrc),
 		sequenceNumber: uint16(rand.Uint32()),
 		ssrc:           ssrc,
 		onSent:         onSent,
 		adaptive:       newAdaptiveState(mono.UnixNano()),
 	}
+	e.measuredLayer.Store(InvalidLayer)
+	return e
 }
 
 func (e *Encoder) GetState() EncoderState {
@@ -233,11 +240,33 @@ func (e *Encoder) SetProtection(protection Protection) {
 		return
 	}
 	e.protection = protection
+	e.resetMeasurementLocked()
+	e.setFactorsLocked(e.effectiveFactorsLocked())
+}
+
+func (e *Encoder) resetMeasurementLocked() {
 	e.measuredPercent = 0
 	e.overheadUpdatedAt = 0
 	e.sentMediaBytes = 0
 	e.sentRepairBytes = 0
-	e.setFactorsLocked(e.effectiveFactorsLocked())
+}
+
+// InvalidLayer marks a measurement that belongs to no forwarded layer.
+const InvalidLayer = -1
+
+// SetMeasurementLayer attributes overhead measurements to the forwarded
+// spatial layer. Frames of different layers have different packet counts, so
+// the repair overhead measured on one layer does not apply to another; a
+// layer change restarts the measurement.
+func (e *Encoder) SetMeasurementLayer(layer int32) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.measuredLayer.Load() == layer {
+		return
+	}
+	e.measuredLayer.Store(layer)
+	e.resetMeasurementLocked()
+	e.overheadPercent.Store(e.configuredPercent)
 }
 
 // SetProtectionPercent sets a fixed repair-to-media packet percentage; values
@@ -305,21 +334,48 @@ func (e *Encoder) setFactorsLocked(delta uint8, key uint8) {
 	if delta == 0 && key == 0 {
 		// Nothing will be sent, so measurements would never refresh.
 		e.count = 0
-		e.measuredPercent = 0
-		e.overheadUpdatedAt = 0
-		e.sentMediaBytes = 0
-		e.sentRepairBytes = 0
+		e.resetMeasurementLocked()
 	}
 	// Reserve for delta frames; key frames are rare and are not reserved for.
 	e.configuredPercent = protectionFactorToPercent(delta)
+	e.configuredOverhead.Store(e.configuredPercent)
 	e.overheadPercent.Store(max(e.configuredPercent, e.measuredPercent))
 }
 
 // OverheadPercent reserves at least the configured rate, using measured RTP
 // bytes when frame rounding or repair headers increase the actual overhead.
+// The measurement belongs to one spatial layer; see Overhead.
 // Reads by the allocator do not contend with encoding.
 func (e *Encoder) OverheadPercent() uint32 {
 	return e.overheadPercent.Load()
+}
+
+// OverheadEstimate is the repair overhead to reserve per spatial layer.
+type OverheadEstimate struct {
+	// ConfiguredPercent is the nominal repair-to-media rate of every layer.
+	ConfiguredPercent uint32
+	// LayerPercent applies to Layer instead, at least ConfiguredPercent and
+	// raised by the overhead measured while forwarding it.
+	LayerPercent uint32
+	Layer        int32
+}
+
+// PercentForLayer returns the overhead to reserve for a spatial layer.
+func (o OverheadEstimate) PercentForLayer(layer int32) uint32 {
+	if layer == o.Layer {
+		return o.LayerPercent
+	}
+	return o.ConfiguredPercent
+}
+
+// Overhead returns the current estimate without contending with encoding.
+// Fields are read independently and may briefly mix two updates.
+func (e *Encoder) Overhead() OverheadEstimate {
+	return OverheadEstimate{
+		ConfiguredPercent: e.configuredOverhead.Load(),
+		LayerPercent:      e.overheadPercent.Load(),
+		Layer:             e.measuredLayer.Load(),
+	}
 }
 
 // RecordSent accounts successful repairs, including headers for the allocator

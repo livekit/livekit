@@ -342,6 +342,31 @@ func TestEncoderMeasuredOverhead(t *testing.T) {
 	require.EqualValues(t, 25, e.OverheadPercent(), "clear stale measurements on a preset change")
 }
 
+func TestEncoderMeasurementLayer(t *testing.T) {
+	e := NewEncoder(testFECPT, testFECSSRC, nil)
+	e.SetProtectionPercent(15)
+	require.Equal(t, OverheadEstimate{ConfiguredPercent: 15, LayerPercent: 15, Layer: InvalidLayer}, e.Overhead())
+	e.SetMeasurementLayer(0)
+	p := rtp.Header{Version: 2, SSRC: testMediaSSRC, Marker: true}
+	repairs := e.Encode(&p, make([]byte, 100), false)
+	require.Len(t, repairs, 1)
+	e.RecordSent(1, len(repairs[0].Payload), repairs[0].MarshalSize())
+	overhead := e.Overhead()
+	require.Equal(t, OverheadEstimate{ConfiguredPercent: 15, LayerPercent: 118, Layer: 0}, overhead)
+	require.EqualValues(t, 118, overhead.PercentForLayer(0))
+	require.EqualValues(t, 15, overhead.PercentForLayer(1), "other layers use the configured rate")
+
+	e.SetMeasurementLayer(0)
+	require.EqualValues(t, 118, e.OverheadPercent(), "the same layer keeps its measurement")
+	e.SetMeasurementLayer(1)
+	require.Equal(t, OverheadEstimate{ConfiguredPercent: 15, LayerPercent: 15, Layer: 1}, e.Overhead(), "a new layer restarts the measurement")
+	p.SequenceNumber++
+	repairs = e.Encode(&p, make([]byte, 100), false)
+	require.Len(t, repairs, 1)
+	e.RecordSent(1, len(repairs[0].Payload), repairs[0].MarshalSize())
+	require.EqualValues(t, 118, e.OverheadPercent(), "the first repair on the new layer refreshes immediately")
+}
+
 func TestEncoderConcurrentProtectionChangesAndClose(t *testing.T) {
 	e := NewEncoder(testFECPT, testFECSSRC, nil)
 	e.SetProtectionPercent(20)
