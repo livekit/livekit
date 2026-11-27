@@ -343,6 +343,7 @@ func (s *LivekitServer) Start() error {
 	}()
 
 	go s.backgroundWorker()
+	go s.orphanedRoomWorker()
 
 	// give time for Serve goroutine to start
 	time.Sleep(100 * time.Millisecond)
@@ -481,6 +482,20 @@ func (s *LivekitServer) backgroundWorker() {
 			return
 		case <-roomTicker.C:
 			s.roomManager.CloseIdleRooms()
+		}
+	}
+}
+
+// separate from backgroundWorker, as a sweep can wait on room locks
+func (s *LivekitServer) orphanedRoomWorker() {
+	ticker := time.NewTicker(OrphanedRoomSweepInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.doneChan:
+			return
+		case <-ticker.C:
+			s.roomManager.DeleteOrphanedRooms(context.Background())
 		}
 	}
 }
