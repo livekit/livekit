@@ -122,6 +122,7 @@ type Room struct {
 
 	// map of identity -> Participant
 	participants              map[livekit.ParticipantIdentity]types.LocalParticipant
+	participantsByID          map[livekit.ParticipantID]types.LocalParticipant
 	participantOpts           map[livekit.ParticipantIdentity]*ParticipantOptions
 	participantRequestSources map[livekit.ParticipantIdentity]routing.MessageSource
 	hasPublished              map[livekit.ParticipantIdentity]bool
@@ -272,6 +273,7 @@ func NewRoom(
 		agentDispatches:                      make(map[string]*agentDispatch),
 		serverInfo:                           serverInfo,
 		participants:                         make(map[livekit.ParticipantIdentity]types.LocalParticipant),
+		participantsByID:                     make(map[livekit.ParticipantID]types.LocalParticipant),
 		participantOpts:                      make(map[livekit.ParticipantIdentity]*ParticipantOptions),
 		participantRequestSources:            make(map[livekit.ParticipantIdentity]routing.MessageSource),
 		hasPublished:                         make(map[livekit.ParticipantIdentity]bool),
@@ -355,13 +357,7 @@ func (r *Room) GetParticipantByID(participantID livekit.ParticipantID) types.Loc
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	for _, p := range r.participants {
-		if p.ID() == participantID {
-			return p
-		}
-	}
-
-	return nil
+	return r.participantsByID[participantID]
 }
 
 func (r *Room) GetParticipants() []types.LocalParticipant {
@@ -492,6 +488,7 @@ func (r *Room) Join(
 	}
 
 	r.participants[participant.Identity()] = participant
+	r.participantsByID[participant.ID()] = participant
 	r.participantOpts[participant.Identity()] = opts
 	r.participantRequestSources[participant.Identity()] = requestSource
 
@@ -1429,6 +1426,7 @@ func (r *Room) RemoveParticipant(
 	agentJob := r.agentParticpants[identity]
 
 	delete(r.participants, identity)
+	delete(r.participantsByID, p.ID())
 	delete(r.participantOpts, identity)
 	delete(r.participantRequestSources, identity)
 	delete(r.hasPublished, identity)
@@ -2366,7 +2364,7 @@ func PushAndDequeueUpdates(
 }
 
 func SendParticipantUpdates(updates []*ParticipantUpdate, participants []types.LocalParticipant, batchTargetSize int) {
-	if len(updates) == 0 {
+	if len(updates) == 0 || len(participants) == 0 {
 		return
 	}
 
@@ -2376,21 +2374,36 @@ func SendParticipantUpdates(updates []*ParticipantUpdate, participants []types.L
 	//
 	// Filtered updates are used with clients that can handle identity based reconnect and hence those
 	// conditions can be skipped.
-	var filteredUpdates []*livekit.ParticipantInfo
-	for _, update := range updates {
-		if update.IsSynthesizedDisconnect || IsCloseNotifySkippable(update.CloseReason) {
-			continue
-		}
-		filteredUpdates = append(filteredUpdates, update.ParticipantInfo)
-	}
-
+	//
+	// Strip server attributes once per update so each recipient's SendParticipantUpdate
+	// sees no server attributes and avoids redundant deep protobuf clones across all recipients.
+	filteredUpdates := make([]*livekit.ParticipantInfo, 0, len(updates))
 	var fullUpdates []*livekit.ParticipantInfo
 	for _, update := range updates {
-		fullUpdates = append(fullUpdates, update.ParticipantInfo)
+		info := withoutServerAttributes(update.ParticipantInfo)
+		if update.IsSynthesizedDisconnect || IsCloseNotifySkippable(update.CloseReason) {
+			if fullUpdates == nil {
+				fullUpdates = make([]*livekit.ParticipantInfo, 0, len(updates))
+				fullUpdates = append(fullUpdates, filteredUpdates...)
+			}
+			fullUpdates = append(fullUpdates, info)
+			continue
+		}
+		filteredUpdates = append(filteredUpdates, info)
+		if fullUpdates != nil {
+			fullUpdates = append(fullUpdates, info)
+		}
 	}
 
-	filteredUpdateChunks := ChunkProtoBatch(filteredUpdates, batchTargetSize)
-	fullUpdateChunks := ChunkProtoBatch(fullUpdates, batchTargetSize)
+	var filteredUpdateChunks [][]*livekit.ParticipantInfo
+	if len(filteredUpdates) > 0 {
+		filteredUpdateChunks = ChunkProtoBatch(filteredUpdates, batchTargetSize)
+	}
+
+	fullUpdateChunks := filteredUpdateChunks
+	if fullUpdates != nil {
+		fullUpdateChunks = ChunkProtoBatch(fullUpdates, batchTargetSize)
+	}
 
 	for _, op := range participants {
 		updateChunks := fullUpdateChunks
