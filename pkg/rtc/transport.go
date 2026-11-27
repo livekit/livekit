@@ -341,6 +341,14 @@ func newPeerConnection(
 	onBandwidthEstimator func(estimator cc.BandwidthEstimator),
 ) (*webrtc.PeerConnection, *webrtc.MediaEngine, *sfuinterceptor.RTXInfoExtractorFactory, error) {
 	directionConfig := params.DirectionConfig
+	if params.IsSendSide {
+		// A single publisher PC can also carry subscriptions. Register the
+		// union here; generation is gated per subscription, and buffers
+		// ignore upstream FlexFEC unless it is enabled (see the buffer
+		// factory), so a publisher negotiating it only for downstream gets
+		// neither upstream recovery nor loss reported before repair.
+		directionConfig.FlexFEC.Enabled = directionConfig.FlexFEC.Enabled || params.Config.Subscriber.FlexFEC.Enabled
+	}
 	if params.AllowPlayoutDelay {
 		directionConfig.RTPHeaderExtension.Video = append(directionConfig.RTPHeaderExtension.Video, pd.PlayoutDelayURI)
 	}
@@ -1042,6 +1050,12 @@ func (t *PCTransport) queueOrConfigureSender(
 	enableAudioStereo bool,
 	enableAudioNACK bool,
 ) {
+	keepFlexFEC := t.params.Config.Subscriber.FlexFEC.Enabled
+	if transceiver.Direction() == webrtc.RTPTransceiverDirectionSendrecv && t.params.DirectionConfig.FlexFEC.Enabled {
+		// A shared codec list must retain upstream repair support even when
+		// this subscription does not permit downstream FEC generation.
+		keepFlexFEC = true
+	}
 	params := configureSenderParams{
 		transceiver:              transceiver,
 		enabledCodecs:            enabledCodecs,
@@ -1049,7 +1063,7 @@ func (t *PCTransport) queueOrConfigureSender(
 		filterOutH264HighProfile: !t.params.IsOfferer,
 		enableAudioStereo:        enableAudioStereo,
 		enableAudioNACK:          enableAudioNACK,
-		enableFlexFEC:            t.params.DirectionConfig.FlexFEC.Enabled,
+		enableFlexFEC:            keepFlexFEC,
 	}
 	if !t.params.IsOfferer {
 		t.sendersPendingConfigMu.Lock()
@@ -3298,12 +3312,19 @@ func (t *PCTransport) restrictReceiverCodecsToPublishList() {
 		if receiver == nil {
 			continue
 		}
+		keepFlexFEC := t.params.DirectionConfig.FlexFEC.Enabled
+		if tr.Direction() == webrtc.RTPTransceiverDirectionSendrecv && t.params.Config.Subscriber.FlexFEC.Enabled {
+			// Both directions share the codec list on a sendrecv m-section.
+			// Retain repair support for its subscription; buffers still
+			// ignore upstream FlexFEC unless it is enabled.
+			keepFlexFEC = true
+		}
 		filtered := filterCodecs(
 			receiver.GetParameters().Codecs,
 			t.params.EnabledPublishCodecs,
 			t.params.DirectionConfig.RTCPFeedback,
 			false,
-			t.params.DirectionConfig.FlexFEC.Enabled,
+			keepFlexFEC,
 		)
 		if len(filtered) == 0 {
 			continue

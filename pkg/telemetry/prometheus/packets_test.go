@@ -67,3 +67,24 @@ func histogramValue(t *testing.T, histogram promclient.Histogram) (uint64, float
 	require.NoError(t, histogram.Write(metric))
 	return metric.GetHistogram().GetSampleCount(), metric.GetHistogram().GetSampleSum()
 }
+
+func TestFECMetricsCountNodeTraffic(t *testing.T) {
+	require.NoError(t, Init("test", livekit.NodeType_SERVER))
+
+	sentBefore := counterValue(t, promFECDownstreamSent)
+	bytesSentBefore := counterValue(t, promFECDownstreamBytesSent)
+	receivedBefore := counterValue(t, promFECUpstreamReceived)
+	packetsOutBefore, bytesOutBefore := packetsOut.Load(), bytesOut.Load()
+	packetsInBefore, bytesInBefore := packetsIn.Load(), bytesIn.Load()
+
+	RecordFECDownstream(2, 300)
+	RecordFECUpstream(3, 1, 0, 400)
+
+	require.Equal(t, sentBefore+2, counterValue(t, promFECDownstreamSent))
+	require.Equal(t, bytesSentBefore+300, counterValue(t, promFECDownstreamBytesSent))
+	require.Equal(t, receivedBefore+3, counterValue(t, promFECUpstreamReceived))
+	require.Equal(t, packetsOutBefore+2, packetsOut.Load(), "repairs sent are node traffic")
+	require.Equal(t, bytesOutBefore+300, bytesOut.Load())
+	require.Equal(t, packetsInBefore, packetsIn.Load(), "recovered media already counts as ingress")
+	require.Equal(t, bytesInBefore, bytesIn.Load())
+}

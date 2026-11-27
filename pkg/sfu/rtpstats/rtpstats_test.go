@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math/rand"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -275,6 +276,67 @@ func Test_RTPStatsReceiver_UpdateFEC(t *testing.T) {
 	require.EqualValues(t, 1400, stats.FecBytes)
 	require.EqualValues(t, 2, stats.FecPacketsDiscarded)
 	require.EqualValues(t, 3, stats.FecPacketsRecovered)
+}
+
+func Test_RTPStatsReceiver_ReceptionReportCountsRepairedAsLost(t *testing.T) {
+	r := NewRTPStatsReceiver(RTPStatsParams{})
+	r.SetClockRate(90000)
+	snapshotID := r.NewSnapshotId()
+
+	update := func(sn uint16) RTPFlowState {
+		packet := getPacket(sn, 3000*uint32(sn), 1000)
+		return r.Update(
+			time.Now().UnixNano(),
+			packet.SequenceNumber,
+			packet.Timestamp,
+			packet.Marker,
+			packet.Header.MarshalSize(),
+			len(packet.Payload),
+			0,
+		)
+	}
+
+	// 101-104 are lost
+	update(100)
+	for sn := uint16(105); sn < 110; sn++ {
+		require.False(t, update(sn).IsLossFilled)
+	}
+	// 101 and 102 are repaired, 103 is only reordered
+	for _, sn := range []uint16{101, 102} {
+		require.True(t, update(sn).IsLossFilled)
+		r.UpdateRepaired()
+	}
+	require.True(t, update(103).IsLossFilled)
+	// a duplicate does not fill a loss
+	require.False(t, update(102).IsLossFilled)
+	for sn := uint16(110); sn < 120; sn++ {
+		update(sn)
+	}
+
+	// 20 packets expected, 1 still lost and 2 repaired
+	rr := r.GetRtcpReceptionReport(1234, 0, snapshotID)
+	require.NotNil(t, rr)
+	require.EqualValues(t, 38, rr.FractionLost) // 3/20 in Q8
+	require.EqualValues(t, 3, rr.TotalLost)
+
+	// a late repair does not take loss away from the next interval
+	require.True(t, update(104).IsLossFilled)
+	r.UpdateRepaired()
+	for sn := uint16(120); sn < 130; sn++ {
+		update(sn)
+	}
+	rr = r.GetRtcpReceptionReport(1234, 0, snapshotID)
+	require.NotNil(t, rr)
+	require.EqualValues(t, 0, rr.FractionLost)
+	require.EqualValues(t, 3, rr.TotalLost)
+
+	// the proxied loss still applies when it is higher
+	for sn := uint16(130); sn < 140; sn++ {
+		update(sn)
+	}
+	rr = r.GetRtcpReceptionReport(1234, 64, snapshotID)
+	require.NotNil(t, rr)
+	require.EqualValues(t, 64, rr.FractionLost)
 }
 
 func Test_RTPStatsReceiver_Restart(t *testing.T) {
@@ -762,4 +824,58 @@ func Test_RTPStatsSender_ProcessedReceptionReportsLog(t *testing.T) {
 		}
 		r.Stop()
 	}
+}
+
+func Test_RTPStatsSender_Seed(t *testing.T) {
+	newSender := func(startSN uint64) *RTPStatsSender {
+		r := NewRTPStatsSender(RTPStatsParams{}, 128)
+		r.SetClockRate(90000)
+		at := time.Now().UnixNano()
+		for i := range 10 {
+			r.Update(at, startSN+uint64(i), uint64(1000+i*3000), true, 12, 1000, 0, false)
+			at += int64(time.Millisecond)
+		}
+		return r
+	}
+
+	t.Run("copies state", func(t *testing.T) {
+		from := newSender(100)
+		from.UpdateFEC(2, 300, 0, 0)
+		r := NewRTPStatsSender(RTPStatsParams{}, 128)
+		r.Seed(from)
+		require.Equal(t, from.extStartSN, r.extStartSN)
+		require.Equal(t, from.extHighestSN, r.extHighestSN)
+		require.Equal(t, from.bytes, r.bytes)
+		require.EqualValues(t, 2, r.fecPackets)
+		require.Equal(t, from.snInfos, r.snInfos)
+		require.NotSame(t, &from.snInfos[0], &r.snInfos[0], "do not share the packet cache")
+
+		// an initialized sender is not seeded again
+		other := newSender(5000)
+		r.Seed(other)
+		require.Equal(t, from.extStartSN, r.extStartSN)
+	})
+
+	t.Run("mutual seeding does not deadlock", func(t *testing.T) {
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			a, b := newSender(100), newSender(200)
+			var wg sync.WaitGroup
+			wg.Go(func() {
+				for range 100_000 {
+					b.Seed(a)
+				}
+			})
+			for range 100_000 {
+				a.Seed(b)
+			}
+			wg.Wait()
+		}()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("senders seeding from each other deadlocked")
+		}
+	})
 }

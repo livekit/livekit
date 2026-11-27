@@ -117,6 +117,9 @@ type snapshot struct {
 	fecPacketsDiscarded uint64
 	fecPacketsRecovered uint64
 
+	// lost packets filled by a repair (RTX or FEC recovery), see RTPStatsReceiver.UpdateRepaired
+	packetsRepaired uint64
+
 	frames uint32
 
 	plis uint32
@@ -143,6 +146,7 @@ func (s *snapshot) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddUint64("fecBytes", s.fecBytes)
 	e.AddUint64("fecPacketsDiscarded", s.fecPacketsDiscarded)
 	e.AddUint64("fecPacketsRecovered", s.fecPacketsRecovered)
+	e.AddUint64("packetsRepaired", s.packetsRepaired)
 	e.AddUint32("frames", s.frames)
 	e.AddUint32("plis", s.plis)
 	e.AddUint32("firs", s.firs)
@@ -254,6 +258,9 @@ type rtpStatsBase struct {
 	fecPacketsDiscarded uint64
 	fecPacketsRecovered uint64
 
+	// lost packets filled by a repair (RTX or FEC recovery), see RTPStatsReceiver.UpdateRepaired
+	packetsRepaired uint64
+
 	firs    uint32
 	lastFir time.Time
 
@@ -311,6 +318,7 @@ func (r *rtpStatsBase) seed(from *rtpStatsBase) bool {
 	r.fecBytes = from.fecBytes
 	r.fecPacketsDiscarded = from.fecPacketsDiscarded
 	r.fecPacketsRecovered = from.fecPacketsRecovered
+	r.packetsRepaired = from.packetsRepaired
 
 	r.frames = from.frames
 
@@ -646,6 +654,7 @@ func (r *rtpStatsBase) marshalLogObject(
 	e.AddUint64("fecBytes", r.fecBytes)
 	e.AddUint64("fecPacketsDiscarded", r.fecPacketsDiscarded)
 	e.AddUint64("fecPacketsRecovered", r.fecPacketsRecovered)
+	e.AddUint64("packetsRepaired", r.packetsRepaired)
 
 	e.AddUint32("frames", r.frames)
 	e.AddFloat64("frameRate", float64(r.frames)/elapsedSeconds)
@@ -696,6 +705,11 @@ func (r *rtpStatsBase) toProto(
 	p.BytesPadding = r.bytesPadding
 	p.BitratePadding = float64(r.bytesPadding) * 8.0 / p.Duration
 	p.HeaderBytesPadding = r.headerBytesPadding
+
+	p.FecPackets = uint32(r.fecPackets)
+	p.FecBytes = r.fecBytes
+	p.FecPacketsDiscarded = uint32(r.fecPacketsDiscarded)
+	p.FecPacketsRecovered = uint32(r.fecPacketsRecovered)
 
 	p.FecPackets = uint32(r.fecPackets)
 	p.FecBytes = r.fecBytes
@@ -881,6 +895,7 @@ func (r *rtpStatsBase) getSnapshot(startTime int64, extStartSN uint64) snapshot 
 		fecBytes:             r.fecBytes,
 		fecPacketsDiscarded:  r.fecPacketsDiscarded,
 		fecPacketsRecovered:  r.fecPacketsRecovered,
+		packetsRepaired:      r.packetsRepaired,
 		frames:               r.frames,
 		plis:                 r.plis,
 		firs:                 r.firs,

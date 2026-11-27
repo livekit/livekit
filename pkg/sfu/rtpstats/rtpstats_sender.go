@@ -410,11 +410,30 @@ func NewRTPStatsSender(params RTPStatsParams, cacheSize int) *RTPStatsSender {
 }
 
 func (r *RTPStatsSender) Seed(from *RTPStatsSender) {
+	if from == nil || from == r {
+		return
+	}
+	// The previous sender's final stats callback can still update snapshots
+	// after Stop, so copy its state under its own lock first. Then apply the
+	// copy under this sender's lock, never holding both: two senders seeding
+	// from each other would otherwise deadlock.
+	staged := &RTPStatsSender{}
+	from.lock.Lock()
+	ok := staged.seedLocked(from)
+	from.lock.Unlock()
+	if !ok {
+		return
+	}
+
 	r.lock.Lock()
 	defer r.lock.Unlock()
+	r.seedLocked(staged)
+}
 
+// seedLocked copies the state of from, both locked by the caller or private.
+func (r *RTPStatsSender) seedLocked(from *RTPStatsSender) bool {
 	if !r.seed(&from.rtpStatsBase) {
-		return
+		return false
 	}
 
 	// publisher clock rate is not seeded, a pair of publisher reports across nodes does not give a valid rate
@@ -445,6 +464,7 @@ func (r *RTPStatsSender) Seed(from *RTPStatsSender) {
 	r.nextSenderSnapshotID = from.nextSenderSnapshotID
 	r.senderSnapshots = make([]senderSnapshot, cap(from.senderSnapshots))
 	copy(r.senderSnapshots, from.senderSnapshots)
+	return true
 }
 
 func (r *RTPStatsSender) NewSnapshotId() uint32 {
