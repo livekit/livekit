@@ -85,6 +85,6 @@ func TestFECMetricsCountNodeTraffic(t *testing.T) {
 	require.Equal(t, receivedBefore+3, counterValue(t, promFECUpstreamReceived))
 	require.Equal(t, packetsOutBefore+2, packetsOut.Load(), "repairs sent are node traffic")
 	require.Equal(t, bytesOutBefore+300, bytesOut.Load())
-	require.Equal(t, packetsInBefore+3, packetsIn.Load(), "repairs received are node traffic")
-	require.Equal(t, bytesInBefore+400, bytesIn.Load())
+	require.Equal(t, packetsInBefore, packetsIn.Load(), "recovered media already counts as ingress")
+	require.Equal(t, bytesInBefore, bytesIn.Load())
 }

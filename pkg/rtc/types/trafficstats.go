@@ -40,16 +40,6 @@ type TrafficLoad struct {
 	TrafficTypeStats []*TrafficTypeStats
 }
 
-// trafficPackets and trafficBytes count everything sent or received on the
-// wire, including retransmissions, padding and FlexFEC repairs.
-func trafficPackets(s *livekit.RTPStats) uint32 {
-	return s.Packets + s.FecPackets
-}
-
-func trafficBytes(s *livekit.RTPStats) uint64 {
-	return s.Bytes + s.BytesDuplicate + s.BytesPadding + s.FecBytes
-}
-
 func RTPStatsDiffToTrafficStats(before, after *livekit.RTPStats) *TrafficStats {
 	if after == nil {
 		return nil
@@ -64,11 +54,11 @@ func RTPStatsDiffToTrafficStats(before, after *livekit.RTPStats) *TrafficStats {
 		return &TrafficStats{
 			StartTime:         startTime.AsTime(),
 			EndTime:           after.EndTime.AsTime(),
-			Packets:           trafficPackets(after),
+			Packets:           after.Packets,
 			PacketsLost:       after.PacketsLost,
 			PacketsPadding:    after.PacketsPadding,
 			PacketsOutOfOrder: after.PacketsOutOfOrder,
-			Bytes:             trafficBytes(after),
+			Bytes:             after.Bytes + after.BytesDuplicate + after.BytesPadding,
 		}
 	}
 
@@ -76,11 +66,11 @@ func RTPStatsDiffToTrafficStats(before, after *livekit.RTPStats) *TrafficStats {
 		return getAfter()
 	}
 
-	if (trafficPackets(after) - trafficPackets(before)) > (1 << 31) {
+	if (after.Packets - before.Packets) > (1 << 31) {
 		// after packets < before packets, probably got reset, just return after
 		return getAfter()
 	}
-	if (trafficBytes(after) - trafficBytes(before)) > (1 << 63) {
+	if ((after.Bytes + after.BytesDuplicate + after.BytesPadding) - (before.Bytes + before.BytesDuplicate + before.BytesPadding)) > (1 << 63) {
 		// after bytes < before bytes, probably got reset, just return after
 		return getAfter()
 	}
@@ -92,11 +82,11 @@ func RTPStatsDiffToTrafficStats(before, after *livekit.RTPStats) *TrafficStats {
 	return &TrafficStats{
 		StartTime:         startTime.AsTime(),
 		EndTime:           after.EndTime.AsTime(),
-		Packets:           trafficPackets(after) - trafficPackets(before),
+		Packets:           after.Packets - before.Packets,
 		PacketsLost:       packetsLost,
 		PacketsPadding:    after.PacketsPadding - before.PacketsPadding,
 		PacketsOutOfOrder: after.PacketsOutOfOrder - before.PacketsOutOfOrder,
-		Bytes:             trafficBytes(after) - trafficBytes(before),
+		Bytes:             (after.Bytes + after.BytesDuplicate + after.BytesPadding) - (before.Bytes + before.BytesDuplicate + before.BytesPadding),
 	}
 }
 
