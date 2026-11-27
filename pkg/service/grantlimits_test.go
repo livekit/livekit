@@ -82,6 +82,36 @@ func ConnectLimitCases() []ConnectLimitCase {
 			Err:   ErrAttributeExceedsLimits,
 		},
 		{
+			Name:  "room config metadata exceeds",
+			Limit: config.LimitConfig{MaxMetadataSize: 5},
+			Grant: grantWith(func(g *auth.ClaimGrants) { g.RoomConfig = &auth.RoomConfiguration{Metadata: "abcdefg"} }),
+			Err:   ErrMetadataExceedsLimits,
+		},
+		{
+			Name:  "room config agent metadata exceeds",
+			Limit: config.LimitConfig{MaxMetadataSize: 5},
+			Grant: grantWith(func(g *auth.ClaimGrants) {
+				g.RoomConfig = &auth.RoomConfiguration{Agents: []*livekit.RoomAgentDispatch{{Metadata: "abcdefg"}}}
+			}),
+			Err: ErrMetadataExceedsLimits,
+		},
+		{
+			Name:  "room config agent attributes exceeds",
+			Limit: config.LimitConfig{MaxAttributesSize: 5},
+			Grant: grantWith(func(g *auth.ClaimGrants) {
+				g.RoomConfig = &auth.RoomConfiguration{Agents: []*livekit.RoomAgentDispatch{{Attributes: map[string]string{"k": "abcdefg"}}}}
+			}),
+			Err: ErrAttributeExceedsLimits,
+		},
+		{
+			Name:  "room config agent lk attributes exceeds",
+			Limit: config.LimitConfig{MaxLKAttributesSize: 5},
+			Grant: grantWith(func(g *auth.ClaimGrants) {
+				g.RoomConfig = &auth.RoomConfiguration{Agents: []*livekit.RoomAgentDispatch{{Attributes: map[string]string{"lk.k": "abcdefg"}}}}
+			}),
+			Err: ErrAttributeExceedsLimits,
+		},
+		{
 			Name:  "lk attributes exceeds",
 			Limit: config.LimitConfig{MaxAttributesSize: 100, MaxLKAttributesSize: 5},
 			Grant: grantWith(func(g *auth.ClaimGrants) { g.Attributes = map[string]string{"lk.k": "abcdefg"} }),
@@ -140,6 +170,13 @@ func TestConnectLimits(t *testing.T) {
 		_, code, err := ValidateConnectRequest(logger.GetLogger(), grantRequest(baseGrant()), limit, ValidateConnectRequestParams{}, nil, stubRoomAllocator{})
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, code)
+	})
+
+	t.Run("room config with a nil agent", func(t *testing.T) {
+		g := baseGrant()
+		g.RoomConfig = &auth.RoomConfiguration{Agents: []*livekit.RoomAgentDispatch{nil}}
+		limit := config.LimitConfig{MaxMetadataSize: 5, MaxAttributesSize: 5}
+		require.NoError(t, CheckConnectLimits(limit, g.Identity, livekit.RoomName(g.Video.Room), g))
 	})
 
 	t.Run("lk attributes do not count against attributes limit", func(t *testing.T) {
