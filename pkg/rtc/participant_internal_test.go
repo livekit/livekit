@@ -44,6 +44,7 @@ import (
 	"github.com/livekit/protocol/signalling"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
+	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -2201,4 +2202,372 @@ func TestICEConfigChangedReportsOnlyLearned(t *testing.T) {
 	p.SimulateICEFallback(&livekit.ICEConfig{})
 	p.SimulateICEFallback(&livekit.ICEConfig{PreferenceSubscriber: 99, PreferencePublisher: 99})
 	require.Len(t, reported, 4)
+}
+
+func waitForQueuedRpcID(t *testing.T, p *ParticipantImpl) string {
+	t.Helper()
+	var held [][]byte
+	require.Eventually(t, func() bool {
+		p.reliableDataInfo.joiningMessageLock.Lock()
+		defer p.reliableDataInfo.joiningMessageLock.Unlock()
+		held = slices.Clone(p.reliableDataInfo.joiningUnsequencedMessages)
+		return len(held) == 1
+	}, time.Second, 100*time.Microsecond)
+
+	dp := &livekit.DataPacket{}
+	require.NoError(t, proto.Unmarshal(held[0], dp))
+	return dp.GetRpcRequest().GetId()
+}
+
+func requireRpcMapsEmpty(t *testing.T, p *ParticipantImpl) {
+	t.Helper()
+	p.rpcLock.Lock()
+	defer p.rpcLock.Unlock()
+	require.Empty(t, p.rpcPendingAcks)
+	require.Empty(t, p.rpcPendingResponses)
+}
+
+func TestPerformRpcHandlersRegisteredBeforeSend(t *testing.T) {
+	p := newParticipantForTest("test")
+	resultCh := make(chan string, 2)
+	errorCh := make(chan error, 2)
+
+	var id string
+	func() {
+		// Hold joiningMessageLock as a barrier so SendDataMessage cannot return
+		// before we inspect pending handlers and inject the response.
+		p.reliableDataInfo.joiningMessageLock.Lock()
+		defer p.reliableDataInfo.joiningMessageLock.Unlock()
+
+		p.PerformRpc(&livekit.PerformRpcRequest{
+			DestinationIdentity: "test",
+			Method:              "method",
+			ResponseTimeoutMs:   5000,
+		}, resultCh, errorCh)
+
+		require.Eventually(t, func() bool {
+			p.rpcLock.Lock()
+			defer p.rpcLock.Unlock()
+			if len(p.rpcPendingResponses) != 1 || len(p.rpcPendingAcks) != 1 {
+				return false
+			}
+			for k := range p.rpcPendingResponses {
+				id = k
+			}
+			return true
+		}, time.Second, 100*time.Microsecond)
+
+		// Respond immediately while SendDataMessage is still blocked mid-send;
+		// both ACK and response handlers must already be registered.
+		require.True(t, p.handleIncomingRpcResponse(id, "ok", nil))
+
+		select {
+		case res := <-resultCh:
+			require.Equal(t, "ok", res)
+		case err := <-errorCh:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for RPC result")
+		}
+	}()
+
+	require.Equal(t, id, waitForQueuedRpcID(t, p))
+	require.Empty(t, resultCh)
+	require.Empty(t, errorCh)
+	requireRpcMapsEmpty(t, p)
+}
+
+func TestPerformRpcAckAndResponse(t *testing.T) {
+	p := newParticipantForTest("test")
+	resultCh := make(chan string, 1)
+	errorCh := make(chan error, 1)
+
+	p.PerformRpc(&livekit.PerformRpcRequest{
+		DestinationIdentity: "test",
+		Method:              "method",
+		ResponseTimeoutMs:   5000,
+	}, resultCh, errorCh)
+
+	id := waitForQueuedRpcID(t, p)
+
+	require.True(t, p.handleIncomingRpcAck(id))
+	p.rpcLock.Lock()
+	require.Empty(t, p.rpcPendingAcks)
+	require.Len(t, p.rpcPendingResponses, 1)
+	p.rpcLock.Unlock()
+
+	require.True(t, p.handleIncomingRpcResponse(id, "done", nil))
+
+	select {
+	case res := <-resultCh:
+		require.Equal(t, "done", res)
+	case err := <-errorCh:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for RPC result")
+	}
+
+	requireRpcMapsEmpty(t, p)
+}
+
+func TestPerformRpcClosedParticipant(t *testing.T) {
+	expectedErr := utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcRecipientDisconnected, "").PsrpcError()
+
+	t.Run("already closed", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		require.NoError(t, p.Close(false, types.ParticipantCloseReasonClientRequestLeave, false))
+
+		resultCh := make(chan string, 1)
+		errorCh := make(chan error, 1)
+		p.PerformRpc(&livekit.PerformRpcRequest{
+			DestinationIdentity: "test",
+			Method:              "method",
+			ResponseTimeoutMs:   5000,
+		}, resultCh, errorCh)
+
+		select {
+		case err := <-errorCh:
+			require.Equal(t, expectedErr, err)
+		case res := <-resultCh:
+			t.Fatalf("expected error, got result %q", res)
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for RPC disconnect error")
+		}
+
+		requireRpcMapsEmpty(t, p)
+	})
+
+	t.Run("closed while pending", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		resultCh := make(chan string, 1)
+		errorCh := make(chan error, 1)
+
+		p.PerformRpc(&livekit.PerformRpcRequest{
+			DestinationIdentity: "test",
+			Method:              "method",
+			ResponseTimeoutMs:   5000,
+		}, resultCh, errorCh)
+
+		_ = waitForQueuedRpcID(t, p)
+		require.NoError(t, p.Close(false, types.ParticipantCloseReasonClientRequestLeave, false))
+
+		select {
+		case err := <-errorCh:
+			require.Equal(t, expectedErr, err)
+		case res := <-resultCh:
+			t.Fatalf("expected error, got result %q", res)
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for RPC disconnect error")
+		}
+
+		requireRpcMapsEmpty(t, p)
+	})
+}
+
+func TestPerformRpcSendErrorCleansUpHandlers(t *testing.T) {
+	p := newParticipantForTest("test")
+	// Mark reliable channel writable with no transport/active state so SendDataMessage fails immediately.
+	p.replayJoiningReliableMessages()
+
+	resultCh := make(chan string, 1)
+	errorCh := make(chan error, 1)
+	p.PerformRpc(&livekit.PerformRpcRequest{
+		DestinationIdentity: "test",
+		Method:              "method",
+		ResponseTimeoutMs:   5000,
+	}, resultCh, errorCh)
+
+	select {
+	case err := <-errorCh:
+		var psErr psrpc.Error
+		require.ErrorAs(t, err, &psErr)
+		require.Equal(t, psrpc.Internal, psErr.Code())
+	case res := <-resultCh:
+		t.Fatalf("expected error, got result %q", res)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for RPC send error")
+	}
+
+	requireRpcMapsEmpty(t, p)
+}
+
+func TestPerformRpcTimeoutCleansUpAckAndResponse(t *testing.T) {
+	p := newParticipantForTest("test")
+	expectedErr := utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcResponseTimeout, "").PsrpcError()
+
+	resultCh := make(chan string, 1)
+	errorCh := make(chan error, 1)
+	p.PerformRpc(&livekit.PerformRpcRequest{
+		DestinationIdentity: "test",
+		Method:              "method",
+		ResponseTimeoutMs:   20,
+	}, resultCh, errorCh)
+
+	select {
+	case err := <-errorCh:
+		require.Equal(t, expectedErr, err)
+	case res := <-resultCh:
+		t.Fatalf("expected timeout error, got result %q", res)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for RPC timeout error")
+	}
+
+	requireRpcMapsEmpty(t, p)
+}
+
+func TestPerformRpcEndToEndDataPacketHandling(t *testing.T) {
+	t.Run("ack and payload response are not forwarded to room", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		listener := p.listener().(*typesfakes.FakeLocalParticipantListener)
+
+		resultCh := make(chan string, 1)
+		errorCh := make(chan error, 1)
+		p.PerformRpc(&livekit.PerformRpcRequest{
+			DestinationIdentity: "test",
+			Method:              "greet",
+			Payload:             "hi",
+			ResponseTimeoutMs:   5000,
+		}, resultCh, errorCh)
+
+		id := waitForQueuedRpcID(t, p)
+
+		// Deliver incoming RpcAck and RpcResponse through handleReceivedDataMessage
+		p.handleReceivedDataMessage(livekit.DataPacket_RELIABLE, &livekit.DataPacket{
+			Value: &livekit.DataPacket_RpcAck{
+				RpcAck: &livekit.RpcAck{RequestId: id},
+			},
+		})
+		p.handleReceivedDataMessage(livekit.DataPacket_RELIABLE, &livekit.DataPacket{
+			Value: &livekit.DataPacket_RpcResponse{
+				RpcResponse: &livekit.RpcResponse{
+					RequestId: id,
+					Value:     &livekit.RpcResponse_Payload{Payload: "hello"},
+				},
+			},
+		})
+
+		select {
+		case res := <-resultCh:
+			require.Equal(t, "hello", res)
+		case err := <-errorCh:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for RPC result")
+		}
+
+		require.Zero(t, listener.OnDataMessageCallCount())
+		requireRpcMapsEmpty(t, p)
+	})
+
+	t.Run("error response resolves caller without forwarding", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		listener := p.listener().(*typesfakes.FakeLocalParticipantListener)
+
+		resultCh := make(chan string, 1)
+		errorCh := make(chan error, 1)
+		p.PerformRpc(&livekit.PerformRpcRequest{
+			DestinationIdentity: "test",
+			Method:              "fail",
+			ResponseTimeoutMs:   5000,
+		}, resultCh, errorCh)
+
+		id := waitForQueuedRpcID(t, p)
+
+		p.handleReceivedDataMessage(livekit.DataPacket_RELIABLE, &livekit.DataPacket{
+			Value: &livekit.DataPacket_RpcResponse{
+				RpcResponse: &livekit.RpcResponse{
+					RequestId: id,
+					Value: &livekit.RpcResponse_Error{
+						Error: &livekit.RpcError{
+							Code:    1500,
+							Message: "app error",
+							Data:    "detail",
+						},
+					},
+				},
+			},
+		})
+
+		select {
+		case err := <-errorCh:
+			expected := (&utils.DataChannelRpcError{
+				Code:    1500,
+				Message: "app error",
+				Data:    "detail",
+			}).PsrpcError()
+			require.Equal(t, expected, err)
+		case res := <-resultCh:
+			t.Fatalf("expected error, got result %q", res)
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for RPC error")
+		}
+
+		require.Zero(t, listener.OnDataMessageCallCount())
+		requireRpcMapsEmpty(t, p)
+	})
+}
+
+func TestPerformRpcConcurrentCloseAndRespond(t *testing.T) {
+	p := newParticipantForTest("test")
+	const n = 25
+
+	var wg sync.WaitGroup
+	resultChs := make([]chan string, n)
+	errorChs := make([]chan error, n)
+	for i := 0; i < n; i++ {
+		resultChs[i] = make(chan string, 4)
+		errorChs[i] = make(chan error, 4)
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			p.PerformRpc(&livekit.PerformRpcRequest{
+				DestinationIdentity: "test",
+				Method:              "m",
+				ResponseTimeoutMs:   50,
+			}, resultChs[idx], errorChs[idx])
+		}(i)
+	}
+
+	// Concurrently respond to whatever requests hit the queue before Close.
+	doneResponding := make(chan struct{})
+	go func() {
+		defer close(doneResponding)
+		seen := make(map[string]struct{})
+		for i := 0; i < 100; i++ {
+			p.reliableDataInfo.joiningMessageLock.Lock()
+			msgs := slices.Clone(p.reliableDataInfo.joiningUnsequencedMessages)
+			p.reliableDataInfo.joiningMessageLock.Unlock()
+			for _, raw := range msgs {
+				dp := &livekit.DataPacket{}
+				if err := proto.Unmarshal(raw, dp); err == nil {
+					id := dp.GetRpcRequest().GetId()
+					if _, ok := seen[id]; !ok {
+						seen[id] = struct{}{}
+						p.handleIncomingRpcAck(id)
+						p.handleIncomingRpcResponse(id, "ok", nil)
+					}
+				}
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
+
+	time.Sleep(5 * time.Millisecond)
+	require.NoError(t, p.Close(false, types.ParticipantCloseReasonClientRequestLeave, false))
+	wg.Wait()
+	<-doneResponding
+
+	// Every single call must resolve once with either a result or an error.
+	for i := 0; i < n; i++ {
+		select {
+		case <-resultChs[i]:
+		case <-errorChs[i]:
+		case <-time.After(time.Second):
+			t.Fatalf("RPC %d hung", i)
+		}
+		require.Empty(t, resultChs[i], "RPC %d received duplicate completion on resultCh", i)
+		require.Empty(t, errorChs[i], "RPC %d received duplicate completion on errorCh", i)
+	}
+
+	requireRpcMapsEmpty(t, p)
 }
