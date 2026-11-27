@@ -50,4 +50,5 @@ var (
 	ErrNoConnectRequest                 = psrpc.NewErrorf(psrpc.InvalidArgument, "no connect request")
 	ErrNoConnectResponse                = psrpc.NewErrorf(psrpc.InvalidArgument, "no connect response")
 	ErrDestinationIdentityRequired      = psrpc.NewErrorf(psrpc.InvalidArgument, "destination identity is required")
+	ErrDestinationRoomRequired          = psrpc.NewErrorf(psrpc.InvalidArgument, "destination room is required")
 )
