@@ -84,6 +84,56 @@ func TestSIPTrunkSelect(t *testing.T) {
 	}
 }
 
+func TestSIPTrunkAuthenticationNoTrunkMatched(t *testing.T) {
+	unmatchedCall := &rpc.GetSIPTrunkAuthenticationRequest{
+		Call: &rpc.SIPCall{
+			SourceIp: "203.0.113.7",
+			From:     &livekit.SIPUri{User: "caller", Host: "example.com"},
+			To:       &livekit.SIPUri{User: "unknown", Host: "example.com"},
+		},
+	}
+
+	cases := []struct {
+		name  string
+		rules []*livekit.SIPDispatchRuleInfo
+		want  rpc.SIPTrunkAuthenticationError
+	}{
+		{
+			name: "no dispatch rules",
+			want: rpc.SIPTrunkAuthenticationError_SIP_TRUNK_AUTH_ERROR_NO_TRUNK_FOUND,
+		},
+		{
+			name:  "only rules bound to a trunk",
+			rules: []*livekit.SIPDispatchRuleInfo{{SipDispatchRuleId: "R1", TrunkIds: []string{"B"}}},
+			want:  rpc.SIPTrunkAuthenticationError_SIP_TRUNK_AUTH_ERROR_NO_TRUNK_FOUND,
+		},
+		{
+			name: "a wildcard rule",
+			rules: []*livekit.SIPDispatchRuleInfo{
+				{SipDispatchRuleId: "R1", TrunkIds: []string{"B"}},
+				{SipDispatchRuleId: "R2"},
+			},
+			want: rpc.SIPTrunkAuthenticationError_SIP_TRUNK_AUTH_ERROR_NONE,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			ctx := context.Background()
+			s, rs := ioStoreDocker(t)
+
+			err := rs.StoreSIPInboundTrunk(ctx, &livekit.SIPInboundTrunkInfo{SipTrunkId: "B", Numbers: []string{"B1"}})
+			require.NoError(t, err)
+			for _, r := range c.rules {
+				require.NoError(t, rs.StoreSIPDispatchRule(ctx, r))
+			}
+
+			resp, err := s.GetSIPTrunkAuthentication(ctx, unmatchedCall)
+			require.NoError(t, err)
+			require.Equal(t, c.want, resp.ErrorCode)
+		})
+	}
+}
+
 func TestSIPRuleSelect(t *testing.T) {
 	ctx := context.Background()
 	s, rs := ioStoreDocker(t)
