@@ -319,6 +319,7 @@ type TransportParams struct {
 	ClientInfo                        ClientInfo
 	IsOfferer                         bool
 	IsSendSide                        bool
+	Migration                         bool
 	AllowPlayoutDelay                 bool
 	UseOneShotSignallingMode          bool
 	ExcludeIPv6LocalCandidates        bool
@@ -495,7 +496,11 @@ func newPeerConnection(
 		// sfu only use interceptor to send XR but don't read response from it (use buffer instead),
 		// so use a empty callback here
 		ir.Add(lkinterceptor.NewRTTFromXRFactory(func(rtt uint32) {}))
-		se.SetLite(false)
+		// A migrated-in session keeps the ICE Lite. In the client's ICE restart,
+		// a full agent's checks can reach libwebrtc before it applies our answer; it then prunes the
+		// resulting peer reflexive pair behind the still writable pair to the previous node, keeps that
+		// pair and sends the DTLS handshake to the previous node.
+		se.SetLite(params.Migration)
 	}
 	if len(params.SimTracks) > 0 {
 		f, err := sfuinterceptor.NewUnhandleSimulcastInterceptorFactory(sfuinterceptor.UnhandleSimulcastTracks(params.Logger, params.SimTracks))

@@ -354,6 +354,129 @@ func TestSubscribedTrackCloseDuringInstall(t *testing.T) {
 	}
 }
 
+func TestSubscriptionCleanupRemovesObservers(t *testing.T) {
+	for _, kind := range []string{"media", "data"} {
+		t.Run(kind, func(t *testing.T) {
+			sm := newManualSubscriptionManager(t)
+			changed, removed := utils.NewChangeNotifier(), utils.NewChangeNotifier()
+			const trackID livekit.TrackID = "unavailable"
+			var reconcile func()
+			// Unsubscribe while the resolver is in flight. Its returned notifiers
+			// will still be registered before the worker gets to reconcile again.
+			if kind == "media" {
+				sm.params.TrackResolver = func(types.LocalParticipant, livekit.TrackID) types.MediaResolverResult {
+					sm.UnsubscribeFromTrack(trackID)
+					sm.UpdateSubscribedTrackSettings(trackID, &livekit.UpdateTrackSettings{Disabled: true})
+					return types.MediaResolverResult{TrackChangedNotifier: changed, TrackRemovedNotifier: removed}
+				}
+				reconcile = sm.reconcileSubscriptions
+				sm.SubscribeToTrack(trackID, false)
+			} else {
+				sm.params.DataTrackResolver = func(types.LocalParticipant, livekit.TrackID) types.DataResolverResult {
+					sm.UnsubscribeFromDataTrack(trackID)
+					sm.UpdateDataTrackSubscriptionOptions(trackID, &livekit.DataTrackSubscriptionOptions{})
+					return types.DataResolverResult{TrackChangedNotifier: changed, TrackRemovedNotifier: removed}
+				}
+				reconcile = sm.reconcileDataTrackSubscriptions
+				sm.SubscribeToDataTrack(trackID)
+			}
+			reconcile()
+			require.True(t, changed.HasObservers())
+			require.True(t, removed.HasObservers())
+
+			// The full pass (also used after queue overflow) must drop interest
+			// without discarding the settings for a possible resubscribe.
+			reconcile()
+			require.False(t, changed.HasObservers(), "held entry retained change observer")
+			require.False(t, removed.HasObservers(), "held entry retained removal observer")
+			sm.lock.RLock()
+			defer sm.lock.RUnlock()
+			if kind == "media" {
+				require.NotNil(t, sm.subscriptions[trackID])
+			} else {
+				require.NotNil(t, sm.dataTrackSubscriptions[trackID])
+			}
+		})
+	}
+}
+
+func TestDataTrackResubscribeDuringClose(t *testing.T) {
+	sm := newManualSubscriptionManager(t)
+	p := NewMockParticipant("sub", types.CurrentProtocol, false, false, nil)
+	sm.params.Participant = p
+	track := NewDataTrack(DataTrackParams{
+		Logger: logger.GetLogger(), ParticipantIdentity: "pub",
+		ParticipantID: func() livekit.ParticipantID { return "pubID" },
+	}, &livekit.DataTrackInfo{Sid: "track"})
+	t.Cleanup(track.Close)
+	changed, removed := utils.NewChangeNotifier(), utils.NewChangeNotifier()
+	sm.params.DataTrackResolver = func(types.LocalParticipant, livekit.TrackID) types.DataResolverResult {
+		return types.DataResolverResult{
+			DataTrack: track, PublisherIdentity: track.PublisherIdentity(), PublisherID: track.PublisherID(),
+			HasPermission: true, TrackChangedNotifier: changed, TrackRemovedNotifier: removed,
+		}
+	}
+	sm.SubscribeToDataTrack(track.ID())
+	sm.reconcileDataTrackSubscriptions()
+	tracks := sm.GetSubscribedDataTracks()
+	require.Len(t, tracks, 1)
+	old := tracks[0].(*DataDownTrack)
+
+	// The publisher has removed its slot when Close calls back. Drive the
+	// client unsubscribe and resubscribe before the manager handles that close.
+	old.lock.Lock()
+	onClose := old.onClose
+	old.lock.Unlock()
+	var attachedBeforeClose bool
+	old.OnClose(func() {
+		sm.UnsubscribeFromDataTrack(track.ID())
+		sm.reconcileDataTrackSubscriptions()
+		sm.SubscribeToDataTrack(track.ID())
+		sm.reconcileDataTrackSubscriptions()
+		attachedBeforeClose = track.IsSubscriber(p.ID())
+		onClose()
+	})
+	track.RevokeDisallowedSubscribers(nil)
+	sm.reconcileDataTrackSubscriptions()
+	tracks = sm.GetSubscribedDataTracks()
+	require.Len(t, tracks, 1)
+	require.NotSame(t, old, tracks[0])
+	hasChanged, hasRemoved := changed.HasObservers(), removed.HasObservers()
+	require.True(t, hasChanged && hasRemoved, "replacement observers: changed=%t, removed=%t", hasChanged, hasRemoved)
+	require.False(t, attachedBeforeClose, "replacement attached before the old observers retired")
+}
+
+func TestDataTrackUnsubscribeKeepsOptions(t *testing.T) {
+	sm := newManualSubscriptionManager(t)
+	resolver := newTestDataTrackResolver(true, true, "pub", "pubID")
+	fps := uint32(5)
+	options := &livekit.DataTrackSubscriptionOptions{TargetFps: &fps}
+	var once sync.Once
+	sm.params.DataTrackResolver = func(p types.LocalParticipant, id livekit.TrackID) types.DataResolverResult {
+		once.Do(func() {
+			sm.UnsubscribeFromDataTrack(id)
+			sm.UpdateDataTrackSubscriptionOptions(id, options)
+		})
+		return resolver.Resolve(p, id)
+	}
+	resolver.dataTrack.RemoveSubscriberCalls(func(livekit.ParticipantID) {
+		setTestDataDownTrackClosed(t, sm.GetSubscribedDataTracks()[0])
+	})
+	sm.SubscribeToDataTrack("track")
+	sm.reconcileDataTrackSubscriptions()
+	require.Len(t, sm.GetSubscribedDataTracks(), 1, "in-flight subscribe should finish installing its track")
+	sm.reconcileDataTrackSubscriptions()
+	require.Empty(t, sm.GetSubscribedDataTracks())
+
+	sm.SubscribeToDataTrack("track")
+	sm.reconcileDataTrackSubscriptions()
+	tracks := sm.GetSubscribedDataTracks()
+	require.Len(t, tracks, 1)
+	replacement := tracks[0].(*typesfakes.FakeDataDownTrack)
+	require.NotZero(t, replacement.UpdateSubscriptionOptionsCallCount())
+	require.Equal(t, fps, replacement.UpdateSubscriptionOptionsArgsForCall(0).GetTargetFps(), "target FPS lost during unsubscribe")
+}
+
 func TestSubscribeStatusChanged(t *testing.T) {
 	sm := newTestSubscriptionManager()
 	defer sm.Close(false)
