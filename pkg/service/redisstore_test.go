@@ -118,7 +118,8 @@ func TestParticipantPersistence(t *testing.T) {
 func TestRoomLock(t *testing.T) {
 	ctx := context.Background()
 	rs := redisStore(t)
-	lockInterval := 5 * time.Millisecond
+	// Ownership checks should not race a millisecond lease under test load.
+	lockInterval := time.Second
 	roomName := livekit.RoomName("myroom")
 
 	t.Run("normal locking", func(t *testing.T) {
@@ -154,6 +155,7 @@ func TestRoomLock(t *testing.T) {
 	})
 
 	t.Run("lock expires", func(t *testing.T) {
+		lockInterval := 5 * time.Millisecond
 		token, err := rs.LockRoom(ctx, roomName, lockInterval)
 		require.NoError(t, err)
 		defer rs.UnlockRoom(ctx, roomName, token)
