@@ -84,6 +84,7 @@ func TestActiveIngressNoSubscriber(t *testing.T) {
 		store.LoadIngressReturns(ingress(statuses[len(statuses)-1]), nil)
 		svc := service.NewIngressServiceWithIngressLauncher(
 			&config.IngressConfig{},
+			config.LimitConfig{},
 			"nodeID",
 			nil,
 			client,
