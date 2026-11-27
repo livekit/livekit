@@ -306,8 +306,9 @@ type DownTrack struct {
 	absSendTimeExtID   int
 	transportWideExtID int
 	// negotiated transport-cc ID, which an interceptor can write even when
-	// transportWideExtID is zero; FEC protects it as zeros
-	fecTransportWideExtID     int
+	// transportWideExtID is zero; FEC protects it as zeros. Atomic because
+	// extensions can be set again while media is forwarded.
+	fecTransportWideExtID     atomic.Uint32
 	dependencyDescriptorExtID int
 	playoutDelayExtID         int
 	absCaptureTimeExtID       int
@@ -865,7 +866,7 @@ func (d *DownTrack) setRTPHeaderExtensions() {
 	}
 
 	d.bindLock.Lock()
-	d.fecTransportWideExtID = 0
+	fecTransportWideExtID := 0
 	for _, ext := range extensions {
 		switch ext.URI {
 		case sdp.ABSSendTimeURI:
@@ -896,7 +897,7 @@ func (d *DownTrack) setRTPHeaderExtensions() {
 			d.playoutDelayExtID = ext.ID
 
 		case sdp.TransportCCURI:
-			d.fecTransportWideExtID = ext.ID
+			fecTransportWideExtID = ext.ID
 			if sal != nil {
 				if isBWEEnabled && bweType == bwe.BWETypeSendSide {
 					if d.transportWideExtID != 0 && d.transportWideExtID != ext.ID {
@@ -918,6 +919,7 @@ func (d *DownTrack) setRTPHeaderExtensions() {
 			d.absCaptureTimeExtID = ext.ID
 		}
 	}
+	d.fecTransportWideExtID.Store(uint32(fecTransportWideExtID))
 	d.params.Logger.Debugw(
 		"negotiated extension ids",
 		"absSendTimeExtID", d.absSendTimeExtID,
@@ -1128,7 +1130,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		Payload:               payload,
 		FEC:                   d.getActiveFECEncoder(),
 		IsKeyFrame:            extPkt.IsKeyFrame,
-		FECTransportWideExtID: uint8(d.fecTransportWideExtID),
+		FECTransportWideExtID: uint8(d.fecTransportWideExtID.Load()),
 		ProbeClusterId:        ccutils.ProbeClusterId(d.probeClusterId.Load()),
 		AbsSendTimeExtID:      uint8(d.absSendTimeExtID),
 		TransportWideExtID:    uint8(d.transportWideExtID),
