@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math/rand"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -823,4 +824,58 @@ func Test_RTPStatsSender_ProcessedReceptionReportsLog(t *testing.T) {
 		}
 		r.Stop()
 	}
+}
+
+func Test_RTPStatsSender_Seed(t *testing.T) {
+	newSender := func(startSN uint64) *RTPStatsSender {
+		r := NewRTPStatsSender(RTPStatsParams{}, 128)
+		r.SetClockRate(90000)
+		at := time.Now().UnixNano()
+		for i := range 10 {
+			r.Update(at, startSN+uint64(i), uint64(1000+i*3000), true, 12, 1000, 0, false)
+			at += int64(time.Millisecond)
+		}
+		return r
+	}
+
+	t.Run("copies state", func(t *testing.T) {
+		from := newSender(100)
+		from.UpdateFEC(2, 300, 0, 0)
+		r := NewRTPStatsSender(RTPStatsParams{}, 128)
+		r.Seed(from)
+		require.Equal(t, from.extStartSN, r.extStartSN)
+		require.Equal(t, from.extHighestSN, r.extHighestSN)
+		require.Equal(t, from.bytes, r.bytes)
+		require.EqualValues(t, 2, r.fecPackets)
+		require.Equal(t, from.snInfos, r.snInfos)
+		require.NotSame(t, &from.snInfos[0], &r.snInfos[0], "do not share the packet cache")
+
+		// an initialized sender is not seeded again
+		other := newSender(5000)
+		r.Seed(other)
+		require.Equal(t, from.extStartSN, r.extStartSN)
+	})
+
+	t.Run("mutual seeding does not deadlock", func(t *testing.T) {
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			a, b := newSender(100), newSender(200)
+			var wg sync.WaitGroup
+			wg.Go(func() {
+				for range 100_000 {
+					b.Seed(a)
+				}
+			})
+			for range 100_000 {
+				a.Seed(b)
+			}
+			wg.Wait()
+		}()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("senders seeding from each other deadlocked")
+		}
+	})
 }
