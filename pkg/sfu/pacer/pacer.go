@@ -64,6 +64,10 @@ type Packet struct {
 	FEC *flexfec.Encoder
 	// IsKeyFrame selects the key frame protection factor of FEC.
 	IsKeyFrame bool
+	// FECTransportWideExtID is the negotiated transport-wide sequence number
+	// ID, set also when the pacer does not write it, e.g. when a Pion
+	// interceptor does during WriteRTP. FEC protects it as zeros.
+	FECTransportWideExtID uint8
 
 	// per-packet scratch for header extensions held before Enqueue or patched at send time,
 	// the Packet is owned by one send until SendPacket returns

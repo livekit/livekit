@@ -95,8 +95,13 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 		// both in media packets before recovery. Protect them as zeros too, or
 		// recovered packets get wrong bytes there, and in the payload when the
 		// header lengths in a group differ. The media is already written.
+		// A send-side BWE interceptor writes transport-cc in WriteRTP, when
+		// TransportWideExtID is zero, so zero the negotiated ID as well.
 		zeroHeaderExtension(p.Header, p.AbsSendTimeExtID)
 		zeroHeaderExtension(p.Header, p.TransportWideExtID)
+		if p.FECTransportWideExtID != p.TransportWideExtID {
+			zeroHeaderExtension(p.Header, p.FECTransportWideExtID)
+		}
 		repair := p.FEC.Encode(p.Header, p.Payload, p.IsKeyFrame)
 		sent, payloadBytes, rtpBytes := 0, 0, 0
 		for i := range repair {

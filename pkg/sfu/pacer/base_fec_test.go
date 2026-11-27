@@ -39,11 +39,15 @@ func (b *fecTestBWE) RecordPacketSendAndGetSequenceNumber(_ int64, size int, _ b
 }
 
 type fecTestWriter struct {
-	packets        []*rtp.Packet
-	failMedia      bool
-	failRepair     bool
-	noWriter       bool
-	noRepairWriter bool
+	// interceptorTWCC models Pion's TWCC header extension interceptor, which
+	// writes transport-cc (ID 5) on every packet during WriteRTP.
+	interceptorTWCC bool
+	twccSequence    uint16
+	packets         []*rtp.Packet
+	failMedia       bool
+	failRepair      bool
+	noWriter        bool
+	noRepairWriter  bool
 }
 
 func (w *fecTestWriter) WriteRTP(h *rtp.Header, payload []byte) (int, error) {
@@ -53,6 +57,10 @@ func (w *fecTestWriter) WriteRTP(h *rtp.Header, payload []byte) (int, error) {
 	}
 	if (w.failMedia && h.SSRC == 123) || (w.failRepair && h.SSRC == 456) {
 		return 0, io.ErrClosedPipe
+	}
+	if w.interceptorTWCC {
+		w.twccSequence++
+		_ = h.SetExtension(5, binary.BigEndian.AppendUint16(nil, w.twccSequence))
 	}
 	// Model an interceptor changing a header after the pacer has patched it.
 	if h.SSRC == 123 {
@@ -110,6 +118,41 @@ func TestPacerFECFinalHeadersAndAccounting(t *testing.T) {
 	expected, _ := zeroMutableExtensions(w.packets[2]).Marshal()
 	actual, _ := recovered[0].Marshal()
 	require.Equal(t, expected, actual, "FEC must cover post-interceptor headers with zeroed AST/TWCC")
+}
+
+func TestPacerFECZeroesInterceptorTransportWideSequence(t *testing.T) {
+	b := NewBase(logger.GetLogger(), nil)
+	w := &fecTestWriter{interceptorTWCC: true}
+	encoder := flexfec.NewEncoder(115, 456, nil)
+	encoder.SetProtectionPercent(20)
+	for i := range 5 {
+		p := PacketFactory.Get().(*Packet)
+		h := &rtp.Header{Version: 2, SSRC: 123, PayloadType: 96, SequenceNumber: uint16(i), Timestamp: 3000, Marker: i == 4}
+		// the pacer does not write transport-cc, the interceptor does
+		*p = Packet{Header: h, HeaderSize: h.MarshalSize(), Payload: []byte{byte(i), 4, 5}, WriteStream: w, FEC: encoder, FECTransportWideExtID: 5}
+		_, err := b.SendPacket(p)
+		require.NoError(t, err)
+	}
+	require.Len(t, w.packets, 6)
+	media := map[uint16][]byte{}
+	for i, p := range w.packets {
+		require.EqualValues(t, i+1, binary.BigEndian.Uint16(p.GetExtension(5)))
+		if i < 5 && i != 2 {
+			media[p.SequenceNumber], _ = zeroMutableExtensions(p).Marshal()
+		}
+	}
+	decoder := flexfec.NewDecoder(456, 123, func(sn uint16, dst []byte) (int, error) {
+		raw, ok := media[sn]
+		if !ok {
+			return 0, errors.New("missing")
+		}
+		return copy(dst, raw), nil
+	}, logger.GetLogger())
+	recovered := decoder.DecodeFEC(w.packets[5])
+	require.Len(t, recovered, 1)
+	expected, _ := zeroMutableExtensions(w.packets[2]).Marshal()
+	actual, _ := recovered[0].Marshal()
+	require.Equal(t, expected, actual, "FEC must protect interceptor-written transport-cc as zeros")
 }
 
 // zeroMutableExtensions returns a copy of a sent packet with abs-send-time
