@@ -277,6 +277,8 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 func RecordFECUpstream(received int, recovered int, discarded int, bytesReceived uint64) {
 	if received > 0 {
 		promFECUpstreamReceived.Add(float64(received))
+		// node traffic counts repairs like retransmissions and padding
+		packetsIn.Add(uint64(received))
 	}
 	if recovered > 0 {
 		promFECUpstreamRecovered.Add(float64(recovered))
@@ -286,6 +288,7 @@ func RecordFECUpstream(received int, recovered int, discarded int, bytesReceived
 	}
 	if bytesReceived > 0 {
 		promFECUpstreamBytesReceived.Add(float64(bytesReceived))
+		bytesIn.Add(bytesReceived)
 	}
 }
 
@@ -293,6 +296,9 @@ func RecordFECUpstream(received int, recovered int, discarded int, bytesReceived
 func RecordFECDownstream(packets int, bytes int) {
 	promFECDownstreamSent.Add(float64(packets))
 	promFECDownstreamBytesSent.Add(float64(bytes))
+	// node traffic counts repairs like retransmissions and padding
+	packetsOut.Add(uint64(packets))
+	bytesOut.Add(uint64(bytes))
 }
 
 func IncrementPackets(country string, direction Direction, count uint64, retransmit bool) {
