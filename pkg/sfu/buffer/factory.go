@@ -24,6 +24,7 @@ import (
 type FactoryOfBufferFactory struct {
 	trackingPacketsVideo int
 	trackingPacketsAudio int
+	flexFECEnabled       bool
 }
 
 func NewFactoryOfBufferFactory(trackingPacketsVideo int, trackingPacketsAudio int) *FactoryOfBufferFactory {
@@ -33,10 +34,17 @@ func NewFactoryOfBufferFactory(trackingPacketsVideo int, trackingPacketsAudio in
 	}
 }
 
+// WithFlexFEC permits upstream FlexFEC in the buffers of created factories.
+func (f *FactoryOfBufferFactory) WithFlexFEC(enabled bool) *FactoryOfBufferFactory {
+	f.flexFECEnabled = enabled
+	return f
+}
+
 func (f *FactoryOfBufferFactory) CreateBufferFactory() *Factory {
 	return &Factory{
 		trackingPacketsVideo: f.trackingPacketsVideo,
 		trackingPacketsAudio: f.trackingPacketsAudio,
+		flexFECEnabled:       f.flexFECEnabled,
 		rtpBuffers:           make(map[uint32]*Buffer),
 		rtcpReaders:          make(map[uint32]*RTCPReader),
 		rtxPair:              make(map[uint32]uint32),
@@ -48,6 +56,7 @@ type Factory struct {
 	sync.RWMutex
 	trackingPacketsVideo int
 	trackingPacketsAudio int
+	flexFECEnabled       bool
 	rtpBuffers           map[uint32]*Buffer
 	rtcpReaders          map[uint32]*RTCPReader
 	rtxPair              map[uint32]uint32 // repair -> base
@@ -75,6 +84,7 @@ func (f *Factory) GetOrNew(packetType packetio.BufferPacketType, ssrc uint32) io
 			return reader
 		}
 		buffer := NewBuffer(ssrc, f.trackingPacketsVideo, f.trackingPacketsAudio)
+		buffer.SetFlexFECEnabled(f.flexFECEnabled)
 		f.rtpBuffers[ssrc] = buffer
 		for repair, base := range f.rtxPair {
 			if repair == ssrc {

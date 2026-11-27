@@ -168,6 +168,10 @@ type BufferBaseParams struct {
 	IsReportingEnabled  bool
 	IsOOBSequenceNumber bool
 	IsDDRestartEnabled  bool
+	// IsFlexFECEnabled permits upstream FlexFEC. A repair stream can be
+	// negotiated on a transport only because its subscriptions use FEC; it is
+	// then ignored and loss is reported as before.
+	IsFlexFECEnabled bool
 }
 
 type BufferBase struct {
@@ -353,7 +357,7 @@ func (b *BufferBase) BindLocked(rtpParameters webrtc.RTPParameters, codec webrtc
 
 	// find FlexFEC payload type, the repair stream is codec agnostic (no apt)
 	for _, codec := range rtpParameters.Codecs {
-		if strings.EqualFold(codec.MimeType, webrtc.MimeTypeFlexFEC03) {
+		if b.params.IsFlexFECEnabled && strings.EqualFold(codec.MimeType, webrtc.MimeTypeFlexFEC03) {
 			b.fecPayloadType = uint8(codec.PayloadType)
 			break
 		}
@@ -1029,6 +1033,14 @@ func (b *BufferBase) handleIncomingPacketLocked(
 	b.maybeGrowBucket(arrivalTime)
 
 	return ep.ExtSequenceNumber, nil
+}
+
+// SetFlexFECEnabled permits upstream FlexFEC, see BufferBaseParams. It must be
+// called before Bind.
+func (b *BufferBase) SetFlexFECEnabled(enabled bool) {
+	b.Lock()
+	b.params.IsFlexFECEnabled = enabled
+	b.Unlock()
 }
 
 // SetFECSSRC identifies the repair stream protecting this buffer. It can be

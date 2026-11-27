@@ -343,7 +343,10 @@ func newPeerConnection(
 	directionConfig := params.DirectionConfig
 	if params.IsSendSide {
 		// A single publisher PC can also carry subscriptions. Register the
-		// union here; recovery and generation remain independently gated.
+		// union here; generation is gated per subscription, and buffers
+		// ignore upstream FlexFEC unless it is enabled (see the buffer
+		// factory), so a publisher negotiating it only for downstream gets
+		// neither upstream recovery nor loss reported before repair.
 		directionConfig.FlexFEC.Enabled = directionConfig.FlexFEC.Enabled || params.Config.Subscriber.FlexFEC.Enabled
 	}
 	if params.AllowPlayoutDelay {
@@ -3312,8 +3315,8 @@ func (t *PCTransport) restrictReceiverCodecsToPublishList() {
 		keepFlexFEC := t.params.DirectionConfig.FlexFEC.Enabled
 		if tr.Direction() == webrtc.RTPTransceiverDirectionSendrecv && t.params.Config.Subscriber.FlexFEC.Enabled {
 			// Both directions share the codec list on a sendrecv m-section.
-			// Retain repair support for its subscription; upstream recovery
-			// is still gated independently when processing FEC-FR pairs.
+			// Retain repair support for its subscription; buffers still
+			// ignore upstream FlexFEC unless it is enabled.
 			keepFlexFEC = true
 		}
 		filtered := filterCodecs(

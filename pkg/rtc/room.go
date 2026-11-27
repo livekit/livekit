@@ -278,7 +278,7 @@ func NewRoom(
 		launchedParticipantEgress:            make(map[livekit.ParticipantIdentity]bool),
 		launchedTrackEgresses:                make(map[livekit.ParticipantIdentity][]livekit.TrackID),
 		agentParticpants:                     make(map[livekit.ParticipantIdentity]*agentJob),
-		bufferFactory:                        buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSizeVideo, config.Receiver.PacketBufferSizeAudio),
+		bufferFactory:                        buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSizeVideo, config.Receiver.PacketBufferSizeAudio).WithFlexFEC(config.Publisher.FlexFEC.Enabled),
 		batchedUpdates:                       make(map[livekit.ParticipantIdentity]*ParticipantUpdate),
 		closed:                               make(chan struct{}),
 		trailer:                              []byte(utils.RandomSecret()),

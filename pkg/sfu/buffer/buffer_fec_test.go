@@ -165,7 +165,7 @@ func TestBufferFECPendingPacketLimit(t *testing.T) {
 
 	const packetCount = maxPendingFECRepairPackets + 50
 	t.Run("pair declared before repair stream", func(t *testing.T) {
-		factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+		factory := NewFactoryOfBufferFactory(500, 200).WithFlexFEC(true).CreateBufferFactory()
 		factory.SetFECPair(fecTestFECSSRC, fecTestMediaSSRC)
 		fecBuff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestFECSSRC).(*Buffer)
 
@@ -174,7 +174,7 @@ func TestBufferFECPendingPacketLimit(t *testing.T) {
 	})
 
 	t.Run("pair declared after repair packets", func(t *testing.T) {
-		factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+		factory := NewFactoryOfBufferFactory(500, 200).WithFlexFEC(true).CreateBufferFactory()
 		fecBuff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestFECSSRC).(*Buffer)
 		writeRepairPackets(t, fecBuff, packetCount)
 		require.Len(t, fecBuff.pPackets, packetCount)
@@ -186,7 +186,7 @@ func TestBufferFECPendingPacketLimit(t *testing.T) {
 }
 
 func TestBufferFECRecoversDroppedPacket(t *testing.T) {
-	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+	factory := NewFactoryOfBufferFactory(500, 200).WithFlexFEC(true).CreateBufferFactory()
 
 	primary := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
 	fecBuff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestFECSSRC).(*Buffer)
@@ -238,7 +238,7 @@ func TestBufferFECRecoversDroppedPacket(t *testing.T) {
 }
 
 func TestBufferFECRecoversEncryptedPayload(t *testing.T) {
-	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+	factory := NewFactoryOfBufferFactory(500, 200).WithFlexFEC(true).CreateBufferFactory()
 	factory.SetFECPair(fecTestFECSSRC, fecTestMediaSSRC)
 
 	primary := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
@@ -310,6 +310,8 @@ func TestBufferBaseFECRecovery(t *testing.T) {
 				SSRC:         fecTestMediaSSRC,
 				MaxVideoPkts: 500,
 				MaxAudioPkts: 200,
+
+				IsFlexFECEnabled: true,
 			})
 			t.Cleanup(func() { base.CloseWithReason("test") })
 			if test.pairOnBind {
@@ -370,7 +372,7 @@ func TestBufferFECPairAfterPackets(t *testing.T) {
 	// FEC packets arriving before the ssrc-group is known are queued as
 	// pending and replayed when the pair is established. Protected media is
 	// recovered from the primary packet bucket even when pairing is late.
-	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+	factory := NewFactoryOfBufferFactory(500, 200).WithFlexFEC(true).CreateBufferFactory()
 
 	primary := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
 	bindFECTestBuffer(t, primary)
@@ -430,7 +432,7 @@ func TestBufferFECPairAfterPackets(t *testing.T) {
 
 func TestBufferFECCoupledBeforeBuffersExist(t *testing.T) {
 	// pair declared first (from SDP), buffers created later on first packet
-	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+	factory := NewFactoryOfBufferFactory(500, 200).WithFlexFEC(true).CreateBufferFactory()
 	factory.SetFECPair(fecTestFECSSRC, fecTestMediaSSRC)
 
 	primary := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
@@ -461,7 +463,7 @@ func TestBufferFECCoupledBeforeBuffersExist(t *testing.T) {
 }
 
 func TestBufferFECSequenceNumberWrap(t *testing.T) {
-	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+	factory := NewFactoryOfBufferFactory(500, 200).WithFlexFEC(true).CreateBufferFactory()
 	factory.SetFECPair(fecTestFECSSRC, fecTestMediaSSRC)
 
 	primary := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
@@ -491,7 +493,7 @@ func TestBufferFECSequenceNumberWrap(t *testing.T) {
 }
 
 func TestBufferFECRecoveryAfterPaddingRemoval(t *testing.T) {
-	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+	factory := NewFactoryOfBufferFactory(500, 200).WithFlexFEC(true).CreateBufferFactory()
 	factory.SetFECPair(fecTestFECSSRC, fecTestMediaSSRC)
 
 	primary := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
@@ -555,7 +557,7 @@ func TestBufferFECRecoveryAfterPaddingRemoval(t *testing.T) {
 }
 
 func TestBufferFECIgnoresUnexpectedPayloadType(t *testing.T) {
-	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+	factory := NewFactoryOfBufferFactory(500, 200).WithFlexFEC(true).CreateBufferFactory()
 
 	primary := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
 	fecBuff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestFECSSRC).(*Buffer)
@@ -586,7 +588,7 @@ func TestBufferFECIgnoresUnexpectedPayloadType(t *testing.T) {
 }
 
 func TestBufferFECIgnoresShortTWCCExtension(t *testing.T) {
-	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+	factory := NewFactoryOfBufferFactory(500, 200).WithFlexFEC(true).CreateBufferFactory()
 
 	primary := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
 	fecBuff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestFECSSRC).(*Buffer)
@@ -613,7 +615,7 @@ func TestBufferFECIgnoresShortTWCCExtension(t *testing.T) {
 
 func TestBufferFECNACKSuppression(t *testing.T) {
 	// a recovered packet must clear the pending NACK for its sequence number
-	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+	factory := NewFactoryOfBufferFactory(500, 200).WithFlexFEC(true).CreateBufferFactory()
 
 	primary := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
 	fecBuff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestFECSSRC).(*Buffer)
@@ -649,7 +651,7 @@ func TestBufferFECNACKNotSentForRecoveredPacket(t *testing.T) {
 	// A late media arrival can complete a retained FEC window. RTCP feedback
 	// must be generated after FEC recovery so the sequence number repaired by
 	// FEC is not NACKed, while an unrelated unrecoverable gap is still NACKed.
-	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+	factory := NewFactoryOfBufferFactory(500, 200).WithFlexFEC(true).CreateBufferFactory()
 
 	primary := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
 	fecBuff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestFECSSRC).(*Buffer)
@@ -734,13 +736,16 @@ func TestBufferReportsRepairedAsLostOnlyWithFlexFEC(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		codecs    []webrtc.RTPCodecParameters
+		upstream  bool
 		totalLost uint32
 	}{
-		{"without FlexFEC", []webrtc.RTPCodecParameters{vp8Codec, rtxCodec}, 0},
-		{"with FlexFEC", []webrtc.RTPCodecParameters{vp8Codec, rtxCodec, flexFECCodec}, 1},
+		{"without FlexFEC", []webrtc.RTPCodecParameters{vp8Codec, rtxCodec}, true, 0},
+		{"with FlexFEC", []webrtc.RTPCodecParameters{vp8Codec, rtxCodec, flexFECCodec}, true, 1},
+		// negotiated on a shared transport only for downstream FEC
+		{"with FlexFEC, upstream disabled", []webrtc.RTPCodecParameters{vp8Codec, rtxCodec, flexFECCodec}, false, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+			factory := NewFactoryOfBufferFactory(500, 200).WithFlexFEC(tc.upstream).CreateBufferFactory()
 			primary := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
 			rtxBuff := factory.GetOrNew(packetio.RTPBufferPacket, rtxSSRC).(*Buffer)
 			factory.SetRTXPair(rtxSSRC, fecTestMediaSSRC, "")
@@ -774,7 +779,7 @@ func TestBufferReportsRepairedAsLostOnlyWithFlexFEC(t *testing.T) {
 }
 
 func TestBufferFECDecoderRecreatedOnStreamRestart(t *testing.T) {
-	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+	factory := NewFactoryOfBufferFactory(500, 200).WithFlexFEC(true).CreateBufferFactory()
 
 	primary := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
 	fecBuff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestFECSSRC).(*Buffer)
@@ -855,7 +860,7 @@ func newRTXFECTest(t *testing.T) *rtxFECTest {
 		PayloadType: webrtc.PayloadType(rtxFECTestPT),
 	}
 
-	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+	factory := NewFactoryOfBufferFactory(500, 200).WithFlexFEC(true).CreateBufferFactory()
 	r := &rtxFECTest{
 		primary: factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer),
 		fecBuff: factory.GetOrNew(packetio.RTPBufferPacket, fecTestFECSSRC).(*Buffer),
@@ -945,7 +950,7 @@ func TestBufferFECUsesPacketsRetransmittedAfterArrival(t *testing.T) {
 }
 
 func TestBufferBaseRTXRepairedHistory(t *testing.T) {
-	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+	factory := NewFactoryOfBufferFactory(500, 200).WithFlexFEC(true).CreateBufferFactory()
 	buff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
 	bindFECTestBuffer(t, buff)
 
@@ -996,7 +1001,7 @@ func TestBufferBaseRTXRepairedHistory(t *testing.T) {
 // sharing its slot. The newer repair carries the RTX header and must stay
 // excluded from FlexFEC recovery.
 func TestBufferBaseRTXRepairedHistoryLateOlderRepair(t *testing.T) {
-	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+	factory := NewFactoryOfBufferFactory(500, 200).WithFlexFEC(true).CreateBufferFactory()
 	buff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
 	bindFECTestBuffer(t, buff)
 
