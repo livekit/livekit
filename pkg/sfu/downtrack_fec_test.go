@@ -110,6 +110,24 @@ func TestDownTrackFECBandwidthReservation(t *testing.T) {
 	require.Equal(t, rates, unchanged, "do not mutate shared upstream bitrate estimates")
 }
 
+func TestDownTrackFECSkippedWhileDisabled(t *testing.T) {
+	d := &DownTrack{
+		params: DownTrackParams{EnableFlexFEC: true}, kind: webrtc.RTPCodecTypeVideo,
+		negotiatedCodecParameters: []webrtc.RTPCodecParameters{{RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeFlexFEC03}, PayloadType: 115}},
+	}
+	d.bindFEC(fecTrackContext{ssrcFEC: 456})
+	require.NotNil(t, d.fecEncoder.Load())
+	require.Nil(t, d.getActiveFECEncoder(), "negotiated FEC defaults to disabled and skips the encoder")
+	d.SetFECProtection(&livekit.FECProtection{Mode: livekit.FECProtectionMode_FEC_MODE_ADAPTIVE})
+	require.Same(t, d.fecEncoder.Load(), d.getActiveFECEncoder(), "adaptive protection tracks media before loss is reported")
+	d.SetFECProtection(fecFixed(livekit.FECProtectionLevel_FEC_LEVEL_LOW))
+	require.Same(t, d.fecEncoder.Load(), d.getActiveFECEncoder())
+	d.SetFECProtection(fecDisabled())
+	require.Nil(t, d.getActiveFECEncoder())
+	d.closeFEC()
+	require.Nil(t, d.getActiveFECEncoder())
+}
+
 type fecTrackReceiver struct {
 	TrackReceiver
 	rates Bitrates

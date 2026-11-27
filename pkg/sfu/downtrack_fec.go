@@ -50,6 +50,18 @@ func (d *DownTrack) bindFEC(t webrtc.TrackLocalContext) {
 	}
 }
 
+// getActiveFECEncoder returns the encoder for forwarded media, or nil while
+// protection is disabled, the default for negotiated FEC, so that packets do
+// not take the encoder lock without generating repairs. Adaptive protection
+// then sees no media rates; it starts from the loss history and measures
+// rates again once enabled.
+func (d *DownTrack) getActiveFECEncoder() *flexfec.Encoder {
+	if encoder := d.fecEncoder.Load(); encoder != nil && encoder.Enabled() {
+		return encoder
+	}
+	return nil
+}
+
 func (d *DownTrack) closeFEC() {
 	d.fecLock.Lock()
 	defer d.fecLock.Unlock()

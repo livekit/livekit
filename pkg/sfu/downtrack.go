@@ -1126,7 +1126,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		Header:                hdr,
 		HeaderPool:            RTPHeaderFactory,
 		Payload:               payload,
-		FEC:                   d.fecEncoder.Load(),
+		FEC:                   d.getActiveFECEncoder(),
 		IsKeyFrame:            extPkt.IsKeyFrame,
 		FECTransportWideExtID: uint8(d.fecTransportWideExtID),
 		ProbeClusterId:        ccutils.ProbeClusterId(d.probeClusterId.Load()),

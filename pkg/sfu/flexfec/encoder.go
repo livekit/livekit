@@ -73,6 +73,8 @@ type Encoder struct {
 	onSent         func(packets int, bytes int)
 
 	protection Protection
+	// enabled mirrors protection.Mode != ProtectionDisabled for lock-free reads.
+	enabled atomic.Bool
 	// adaptive is updated in every mode, like libwebrtc runs its adaptive
 	// computation before applying a protection override, so that switching
 	// to adaptive or minimum protection starts from the current loss history.
@@ -240,8 +242,16 @@ func (e *Encoder) SetProtection(protection Protection) {
 		return
 	}
 	e.protection = protection
+	e.enabled.Store(protection.Mode != ProtectionDisabled)
 	e.resetMeasurementLocked()
 	e.setFactorsLocked(e.effectiveFactorsLocked())
+}
+
+// Enabled reports whether protection is requested, without taking the encoder
+// lock. Callers may skip Encode while it is false: no repairs are generated,
+// and receiver reports still keep the loss history for adaptive protection.
+func (e *Encoder) Enabled() bool {
+	return e.enabled.Load()
 }
 
 func (e *Encoder) resetMeasurementLocked() {

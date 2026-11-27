@@ -221,6 +221,7 @@ func TestEncoderProtectionModes(t *testing.T) {
 			protection, hasAdaptive := e.protection, e.adaptive != nil
 			e.mu.Unlock()
 			require.Equal(t, tc.want, protection)
+			require.Equal(t, tc.want.Mode != ProtectionDisabled, e.Enabled())
 			require.True(t, hasAdaptive, "the adaptive state is kept in every mode")
 			// Receiver reports only affect adaptive and minimum protection.
 			before, _ := e.ProtectionFactors()
