@@ -1331,7 +1331,7 @@ func TestICELitePlacement(t *testing.T) {
 		{name: "publisher stays full despite lite", configLite: true, isOfferer: false, expectLite: false},
 		{name: "publisher full when off", configLite: false, isOfferer: false, expectLite: false},
 		{name: "migrated publisher honors lite", configLite: true, isOfferer: false, migration: true, expectLite: true},
-		{name: "migrated publisher full when off", configLite: false, isOfferer: false, migration: true, expectLite: false},
+		{name: "migrated publisher lite when off", configLite: false, isOfferer: false, migration: true, expectLite: true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
