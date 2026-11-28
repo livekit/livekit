@@ -1563,12 +1563,13 @@ func (s *mediaTrackSubscription) setSubscribedTrack(track types.SubscribedTrack)
 	s.subscribedTrack = track
 	s.bound = false
 	settings := s.settings
-	s.lock.Unlock()
-
+	// Keep restoration ordered with live updates, including their delivery to the track.
 	if settings != nil && track != nil {
 		s.logger.Debugw("restoring subscriber settings", "settings", logger.Proto(settings))
 		track.UpdateSubscriberSettings(settings, true)
 	}
+	s.lock.Unlock()
+
 	if oldTrack != nil {
 		oldTrack.OnClose(nil)
 	}
