@@ -450,6 +450,10 @@ type MoveToRoomParams struct {
 	Helper            LocalParticipantHelper
 }
 
+type ReceiveFilter interface {
+	CanReceiveDataPacket(grants *auth.ClaimGrants, dp *livekit.DataPacket) bool
+}
+
 type DataMessageCache struct {
 	Data           []byte
 	SenderID       livekit.ParticipantID
@@ -532,6 +536,7 @@ type LocalParticipant interface {
 	CanPublishSource(source livekit.TrackSource) bool
 	CanSubscribe() bool
 	CanPublishData() bool
+	CanReceiveDataPacket(dp *livekit.DataPacket) bool
 
 	// PeerConnection
 	HandleICETrickle(trickleRequest *livekit.TrickleRequest)

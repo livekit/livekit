@@ -107,6 +107,9 @@ func init() {
 	reg[livekit.DeleteSIPDispatchRuleRequest, livekit.SIPDispatchRuleInfo]("livekit.SIP/DeleteSIPDispatchRule")
 	reg[livekit.CreateSIPParticipantRequest, livekit.SIPParticipantInfo]("livekit.SIP/CreateSIPParticipant")
 	reg[livekit.TransferSIPParticipantRequest, livekit.TransferSIPParticipantResponse]("livekit.SIP/TransferSIPParticipant")
+	reg[livekit.StartSIPSecureInputRequest, livekit.SecureInputInfo]("livekit.SIP/StartSIPSecureInput")
+	reg[livekit.StopSIPSecureInputRequest, livekit.StopSecureInputResponse]("livekit.SIP/StopSIPSecureInput")
+	reg[livekit.ListSIPSecureInputsRequest, livekit.ListSecureInputsResponse]("livekit.SIP/ListSIPSecureInputs")
 
 	// Connector
 	reg[livekit.DialWhatsAppCallRequest, livekit.DialWhatsAppCallResponse]("livekit.Connector/DialWhatsAppCall")
@@ -114,6 +117,9 @@ func init() {
 	reg[livekit.ConnectWhatsAppCallRequest, livekit.ConnectWhatsAppCallResponse]("livekit.Connector/ConnectWhatsAppCall")
 	reg[livekit.AcceptWhatsAppCallRequest, livekit.AcceptWhatsAppCallResponse]("livekit.Connector/AcceptWhatsAppCall")
 	reg[livekit.ConnectTwilioCallRequest, livekit.ConnectTwilioCallResponse]("livekit.Connector/ConnectTwilioCall")
+	reg[livekit.StartConnectorSecureInputRequest, livekit.SecureInputInfo]("livekit.Connector/StartConnectorSecureInput")
+	reg[livekit.StopConnectorSecureInputRequest, livekit.StopSecureInputResponse]("livekit.Connector/StopConnectorSecureInput")
+	reg[livekit.ListConnectorSecureInputsRequest, livekit.ListSecureInputsResponse]("livekit.Connector/ListConnectorSecureInputs")
 }
 
 // serveAPI handles a Twirp call end to end: decode the request, enforce the

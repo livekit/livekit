@@ -808,6 +808,18 @@ func (s *SIPService) TransferSIPParticipant(ctx context.Context, req *livekit.Tr
 	}, nil
 }
 
+func (s *SIPService) StartSIPSecureInput(context.Context, *livekit.StartSIPSecureInputRequest) (*livekit.SecureInputInfo, error) {
+	return nil, psrpc.ErrUnimplemented
+}
+
+func (s *SIPService) StopSIPSecureInput(context.Context, *livekit.StopSIPSecureInputRequest) (*livekit.StopSecureInputResponse, error) {
+	return nil, psrpc.ErrUnimplemented
+}
+
+func (s *SIPService) ListSIPSecureInputs(context.Context, *livekit.ListSIPSecureInputsRequest) (*livekit.ListSecureInputsResponse, error) {
+	return nil, psrpc.ErrUnimplemented
+}
+
 func (s *SIPService) transferSIPParticipantRequest(ctx context.Context, req *livekit.TransferSIPParticipantRequest, log logger.UnlikelyLogger) (*rpc.InternalTransferSIPParticipantRequest, error) {
 	if req.RoomName == "" {
 		return nil, psrpc.NewErrorf(psrpc.InvalidArgument, "Missing room name")

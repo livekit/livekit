@@ -40,6 +40,7 @@ func NewMockParticipant(
 	p.StateReturns(livekit.ParticipantInfo_JOINED)
 	p.ProtocolVersionReturns(protocol)
 	p.CanSubscribeReturns(true)
+	p.CanReceiveDataPacketReturns(true)
 	p.CanPublishSourceReturns(!hidden)
 	p.CanPublishDataReturns(!hidden)
 	p.HiddenReturns(hidden)

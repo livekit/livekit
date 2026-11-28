@@ -2176,6 +2176,9 @@ func BroadcastDataPacketForRoom(
 				continue
 			}
 		}
+		if !op.CanReceiveDataPacket(dp) {
+			continue
+		}
 		if dpData == nil {
 			var err error
 			dpData, err = proto.Marshal(dp)
@@ -2226,6 +2229,9 @@ func BroadcastMetricsForRoom(r types.Room, source types.Participant, dp *livekit
 	switch payload := dp.Value.(type) {
 	case *livekit.DataPacket_Metrics:
 		utils.ParallelExec(r.GetLocalParticipants(), dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
+			if !op.CanReceiveDataPacket(dp) {
+				return
+			}
 			// echoing back to sender too
 			op.HandleMetrics(source.ID(), payload.Metrics)
 		})

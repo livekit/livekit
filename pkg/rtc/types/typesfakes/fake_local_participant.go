@@ -129,6 +129,17 @@ type FakeLocalParticipant struct {
 	canPublishSourceReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	CanReceiveDataPacketStub        func(*livekit.DataPacket) bool
+	canReceiveDataPacketMutex       sync.RWMutex
+	canReceiveDataPacketArgsForCall []struct {
+		arg1 *livekit.DataPacket
+	}
+	canReceiveDataPacketReturns struct {
+		result1 bool
+	}
+	canReceiveDataPacketReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	CanSkipBroadcastStub        func() bool
 	canSkipBroadcastMutex       sync.RWMutex
 	canSkipBroadcastArgsForCall []struct {
@@ -2229,6 +2240,67 @@ func (fake *FakeLocalParticipant) CanPublishSourceReturnsOnCall(i int, result1 b
 		})
 	}
 	fake.canPublishSourceReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) CanReceiveDataPacket(arg1 *livekit.DataPacket) bool {
+	fake.canReceiveDataPacketMutex.Lock()
+	ret, specificReturn := fake.canReceiveDataPacketReturnsOnCall[len(fake.canReceiveDataPacketArgsForCall)]
+	fake.canReceiveDataPacketArgsForCall = append(fake.canReceiveDataPacketArgsForCall, struct {
+		arg1 *livekit.DataPacket
+	}{arg1})
+	stub := fake.CanReceiveDataPacketStub
+	fakeReturns := fake.canReceiveDataPacketReturns
+	fake.recordInvocation("CanReceiveDataPacket", []interface{}{arg1})
+	fake.canReceiveDataPacketMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) CanReceiveDataPacketCallCount() int {
+	fake.canReceiveDataPacketMutex.RLock()
+	defer fake.canReceiveDataPacketMutex.RUnlock()
+	return len(fake.canReceiveDataPacketArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) CanReceiveDataPacketCalls(stub func(*livekit.DataPacket) bool) {
+	fake.canReceiveDataPacketMutex.Lock()
+	defer fake.canReceiveDataPacketMutex.Unlock()
+	fake.CanReceiveDataPacketStub = stub
+}
+
+func (fake *FakeLocalParticipant) CanReceiveDataPacketArgsForCall(i int) *livekit.DataPacket {
+	fake.canReceiveDataPacketMutex.RLock()
+	defer fake.canReceiveDataPacketMutex.RUnlock()
+	argsForCall := fake.canReceiveDataPacketArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) CanReceiveDataPacketReturns(result1 bool) {
+	fake.canReceiveDataPacketMutex.Lock()
+	defer fake.canReceiveDataPacketMutex.Unlock()
+	fake.CanReceiveDataPacketStub = nil
+	fake.canReceiveDataPacketReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) CanReceiveDataPacketReturnsOnCall(i int, result1 bool) {
+	fake.canReceiveDataPacketMutex.Lock()
+	defer fake.canReceiveDataPacketMutex.Unlock()
+	fake.CanReceiveDataPacketStub = nil
+	if fake.canReceiveDataPacketReturnsOnCall == nil {
+		fake.canReceiveDataPacketReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.canReceiveDataPacketReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }

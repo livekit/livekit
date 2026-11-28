@@ -251,6 +251,7 @@ type ParticipantParams struct {
 	ExcludeIPv6LocalCandidates        bool
 	EnableWarp                        bool
 	MediaBatchIOEnabled               bool
+	ReceiveFilter                     types.ReceiveFilter
 }
 
 type ParticipantImpl struct {
@@ -2005,6 +2006,10 @@ func (p *ParticipantImpl) CanSubscribe() bool {
 	return p.grants.Load().Video.GetCanSubscribe()
 }
 
+func (p *ParticipantImpl) CanReceiveDataPacket(dp *livekit.DataPacket) bool {
+	return p.params.ReceiveFilter == nil || p.params.ReceiveFilter.CanReceiveDataPacket(p.ClaimGrants(), dp)
+}
+
 func (p *ParticipantImpl) CanPublishData() bool {
 	return p.grants.Load().Video.GetCanPublishData()
 }
@@ -2780,7 +2785,7 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 			return
 		}
 	default:
-		p.pubLogger.Warnw("received unsupported data packet", nil, "payload", payload)
+		p.pubLogger.Warnw("received unsupported data packet", nil, "payloadType", fmt.Sprintf("%T", payload))
 	}
 
 	// SFU typically asserts the sender's identity. However, agents are able to
@@ -4507,6 +4512,12 @@ func (p *ParticipantImpl) replayJoiningReliableMessages() {
 	for _, msgCache := range p.helper().GetCachedReliableDataMessage(p.reliableDataInfo.joiningMessageFirstSeqs) {
 		if len(msgCache.DestIdentities) != 0 && !slices.Contains(msgCache.DestIdentities, p.Identity()) {
 			continue
+		}
+		if p.params.ReceiveFilter != nil {
+			var dp livekit.DataPacket
+			if err := proto.Unmarshal(msgCache.Data, &dp); err != nil || !p.CanReceiveDataPacket(&dp) {
+				continue
+			}
 		}
 		if lastSeq, ok := p.reliableDataInfo.joiningMessageLastWrittenSeqs[msgCache.SenderID]; !ok || lastSeq < msgCache.Seq {
 			p.reliableDataInfo.joiningMessageLastWrittenSeqs[msgCache.SenderID] = msgCache.Seq

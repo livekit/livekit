@@ -103,6 +103,9 @@ var methodPerms = map[string]perm{
 	// Placing a call requires sip.call; transfer also requires room admin.
 	"livekit.SIP/CreateSIPParticipant":   {sipCall: true},
 	"livekit.SIP/TransferSIPParticipant": {sipCall: true, roomAdmin: true},
+	"livekit.SIP/StartSIPSecureInput":    {sipCall: true},
+	"livekit.SIP/StopSIPSecureInput":     {sipCall: true},
+	"livekit.SIP/ListSIPSecureInputs":    {sipCall: true},
 
 	// AgentDispatch — room admin scoped to the dispatch's room
 	"livekit.AgentDispatchService/CreateDispatch": {roomAdmin: true},
@@ -115,6 +118,10 @@ var methodPerms = map[string]perm{
 	"livekit.Connector/ConnectWhatsAppCall":    {roomCreate: true},
 	"livekit.Connector/AcceptWhatsAppCall":     {roomCreate: true},
 	"livekit.Connector/ConnectTwilioCall":      {roomCreate: true},
+
+	"livekit.Connector/StartConnectorSecureInput": {roomCreate: true},
+	"livekit.Connector/StopConnectorSecureInput":  {roomCreate: true},
+	"livekit.Connector/ListConnectorSecureInputs": {roomCreate: true},
 }
 
 // authorize enforces the permissions a method requires. It returns the HTTP

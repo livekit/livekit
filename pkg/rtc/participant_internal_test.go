@@ -1574,6 +1574,29 @@ func TestUnsequencedReliableDataBufferedWhileJoining(t *testing.T) {
 	})
 }
 
+type denySequence uint32
+
+func (s denySequence) CanReceiveDataPacket(_ *auth.ClaimGrants, dp *livekit.DataPacket) bool {
+	return dp.Sequence != uint32(s)
+}
+
+func TestJoiningReplaySkipsPacketsTheReceiveFilterDenies(t *testing.T) {
+	const sender = livekit.ParticipantID("PA_sender")
+	var cached []*types.DataMessageCache
+	for seq := uint32(1); seq <= 2; seq++ {
+		data, err := proto.Marshal(&livekit.DataPacket{Sequence: seq})
+		require.NoError(t, err)
+		cached = append(cached, &types.DataMessageCache{SenderID: sender, Seq: seq, Data: data})
+	}
+	p := newParticipantForTest("joiner")
+	p.params.ReceiveFilter = denySequence(2)
+	p.params.ParticipantHelper.(*typesfakes.FakeLocalParticipantHelper).GetCachedReliableDataMessageReturns(cached)
+
+	p.replayJoiningReliableMessages()
+
+	require.Equal(t, uint32(1), p.reliableDataInfo.joiningMessageLastWrittenSeqs[sender])
+}
+
 func TestMigratingInParticipantWaitsForReconnectResponse(t *testing.T) {
 	// a migrating in participant resumes on a ReconnectResponse, the client takes it only
 	// as the first message on the resumed signal connection, so everything else waits

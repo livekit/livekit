@@ -899,6 +899,28 @@ func TestDataChannel(t *testing.T) {
 	})
 }
 
+func TestBroadcastSkipsParticipantsTheReceiveFilterDenies(t *testing.T) {
+	t.Parallel()
+
+	rm := newRoomWithParticipants(t, testRoomOpts{num: 3})
+	sender := rm.GetParticipant("p0").(*typesfakes.FakeLocalParticipant)
+	allowed := rm.GetParticipant("p1").(*typesfakes.FakeLocalParticipant)
+	denied := rm.GetParticipant("p2").(*typesfakes.FakeLocalParticipant)
+	denied.CanReceiveDataPacketReturns(false)
+
+	BroadcastDataPacketForRoom(rm, sender, livekit.DataPacket_RELIABLE, &livekit.DataPacket{
+		Value: &livekit.DataPacket_ChatMessage{ChatMessage: &livekit.ChatMessage{Message: "hi"}},
+	}, rm.logger)
+	BroadcastMetricsForRoom(rm, sender, &livekit.DataPacket{
+		Value: &livekit.DataPacket_Metrics{Metrics: &livekit.MetricsBatch{}},
+	}, rm.logger)
+
+	require.Equal(t, 1, allowed.SendDataMessageCallCount())
+	require.Equal(t, 1, allowed.HandleMetricsCallCount())
+	require.Zero(t, denied.SendDataMessageCallCount())
+	require.Zero(t, denied.HandleMetricsCallCount())
+}
+
 func TestHiddenParticipants(t *testing.T) {
 	t.Run("other participants don't receive hidden updates", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, numHidden: 1})
