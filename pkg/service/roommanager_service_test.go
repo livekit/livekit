@@ -17,6 +17,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 	"github.com/livekit/livekit-server/pkg/sfu"
 )
@@ -42,6 +43,105 @@ func (s *lockFailingObjectStore) UnlockRoom(context.Context, livekit.RoomName, s
 func (s *lockFailingObjectStore) DeleteRoom(context.Context, livekit.RoomName) error {
 	s.deleteRoomCalls.Inc()
 	return nil
+}
+
+type recordingObjectStore struct {
+	ObjectStore
+	lockCalls       atomic.Int32
+	unlockCalls     atomic.Int32
+	deleteRoomCalls atomic.Int32
+}
+
+func (s *recordingObjectStore) LockRoom(context.Context, livekit.RoomName, time.Duration) (string, error) {
+	s.lockCalls.Inc()
+	return "lock", nil
+}
+
+func (s *recordingObjectStore) UnlockRoom(context.Context, livekit.RoomName, string) error {
+	s.unlockCalls.Inc()
+	return nil
+}
+
+func (s *recordingObjectStore) DeleteRoom(context.Context, livekit.RoomName) error {
+	s.deleteRoomCalls.Inc()
+	return nil
+}
+
+func newTestRoomForService(t *testing.T, roomName livekit.RoomName, sid string) *rtc.Room {
+	t.Helper()
+	room := rtc.NewRoom(
+		&livekit.Room{Name: string(roomName), Sid: sid},
+		nil,
+		rtc.WebRTCConfig{},
+		config.RoomConfig{},
+		&sfu.AudioConfig{},
+		&livekit.ServerInfo{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	t.Cleanup(func() { room.Close(types.RoomCloseReasonUnknown) })
+	return room
+}
+
+// TestDeleteRoomClearsStateBeforeParticipantsClose reproduces the #4726
+// window: a same-name CreateRoom can arrive while DeleteRoom is still closing
+// participants. The old room's persistent state must already be gone by then,
+// and its delayed teardown must not delete the room that replaced it.
+func TestDeleteRoomClearsStateBeforeParticipantsClose(t *testing.T) {
+	ctx := t.Context()
+	roomName := livekit.RoomName("test-room")
+
+	oldRoom := newTestRoomForService(t, roomName, "RM_old")
+	participant := rtc.NewMockParticipant("p1", types.CurrentProtocol, false, true, oldRoom.LocalParticipantListener())
+	closeStarted := make(chan struct{})
+	releaseClose := make(chan struct{})
+	participant.CloseCalls(func(bool, types.ParticipantCloseReason, bool) error {
+		close(closeStarted)
+		<-releaseClose
+		return nil
+	})
+	require.NoError(t, oldRoom.Join(participant, nil, &rtc.ParticipantOptions{AutoSubscribe: true}, nil))
+
+	store := &recordingObjectStore{}
+	manager := &RoomManager{
+		router:    &routingfakes.FakeRouter{},
+		roomStore: store,
+		rooms:     map[livekit.RoomName]*rtc.Room{roomName: oldRoom},
+	}
+	oldRoom.OnClose(func(types.RoomCloseReason) {
+		manager.deleteRoomIfCurrent(ctx, roomName, oldRoom)
+	})
+
+	deleteDone := make(chan error, 1)
+	go func() {
+		_, err := manager.DeleteRoom(ctx, &livekit.DeleteRoomRequest{Room: string(roomName)})
+		deleteDone <- err
+	}()
+
+	select {
+	case <-closeStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("DeleteRoom never started closing participants")
+	}
+
+	// The in-memory room and the store must be clear while the old room's
+	// participant close is still blocked, so a recreate in this window gets a
+	// fresh SID instead of loading the old record.
+	require.Nil(t, manager.GetRoom(ctx, roomName))
+	require.Equal(t, int32(1), store.deleteRoomCalls.Load())
+
+	recreated := newTestRoomForService(t, roomName, "RM_new")
+	manager.lock.Lock()
+	manager.rooms[roomName] = recreated
+	manager.lock.Unlock()
+
+	close(releaseClose)
+	require.NoError(t, <-deleteDone)
+
+	// The old room's delayed OnClose teardown must leave the replacement alone.
+	require.Same(t, recreated, manager.GetRoom(ctx, roomName))
 }
 
 func TestDeleteRoomIfCurrentLockFailure(t *testing.T) {
