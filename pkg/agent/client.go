@@ -131,17 +131,11 @@ func NewAgentClient(bus psrpc.MessageBus, config Config) (Client, error) {
 }
 
 func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverutils.IncrementalDispatcher[*livekit.Job] {
-	var wg sync.WaitGroup
 	ret := serverutils.NewIncrementalDispatcher[*livekit.Job]()
-	defer func() {
-		c.workers.Submit(func() {
-			wg.Wait()
-			ret.Done()
-		})
-	}()
 
 	jobTypeTopic, ok := jobTypeTopics[desc.JobType]
 	if !ok {
+		ret.Done()
 		return ret
 	}
 
@@ -153,10 +147,12 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverut
 			"jobType", desc.JobType,
 			"room", desc.Room.Name,
 			"roomID", desc.Room.Sid)
+		ret.Done()
 		return ret
 	}
 
-	dispatcher.ForEach(func(curNs string) {
+	var wg sync.WaitGroup
+	launch := func(curNs string) {
 		topic := GetAgentTopic(desc.AgentName, curNs, desc.Deployment)
 
 		wg.Add(1)
@@ -186,7 +182,15 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverut
 			job.State = resp.State
 			ret.Add(job)
 		})
-	})
+	}
+
+	// The namespace dispatcher is done only when checkEnabled returns, after
+	// CheckEnabledTimeout, so do not make the caller wait for it.
+	go func() {
+		dispatcher.ForEach(launch)
+		wg.Wait()
+		ret.Done()
+	}()
 
 	return ret
 }

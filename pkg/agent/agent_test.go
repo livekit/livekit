@@ -258,6 +258,43 @@ func TestAgent(t *testing.T) {
 		}, 2*agent.CheckEnabledTimeout, 10*time.Millisecond)
 		require.Less(t, time.Since(start), 2*time.Second)
 	})
+
+	t.Run("a launched job is returned before the CheckEnabled timeout", func(t *testing.T) {
+		bus := psrpc.NewLocalMessageBus()
+		server := testutils.NewTestServer(bus)
+		t.Cleanup(server.Close)
+
+		rpcClient := must.Get(rpc.NewAgentInternalClient(bus))
+		registered := must.Get(rpcClient.SubscribeWorkerRegistered(context.Background(), agent.DefaultHandlerNamespace))
+		defer registered.Close()
+
+		worker := server.SimulateAgentWorker()
+		worker.Register(testAgentName, livekit.JobType_JT_ROOM)
+		select {
+		case <-registered.Channel():
+		case <-time.After(time.Second):
+			require.Fail(t, "registration timeout")
+		}
+
+		client := must.Get(agent.NewAgentClient(bus, agent.Config{}))
+		t.Cleanup(func() { _ = client.Stop() })
+
+		jobs := make(chan *livekit.Job, 1)
+		go func() {
+			client.LaunchJob(context.Background(), &agent.JobRequest{
+				JobType:   livekit.JobType_JT_ROOM,
+				Room:      &livekit.Room{},
+				AgentName: testAgentName,
+			}).ForEach(func(job *livekit.Job) { jobs <- job })
+		}()
+
+		select {
+		case job := <-jobs:
+			require.Equal(t, testAgentName, job.AgentName)
+		case <-time.After(agent.CheckEnabledTimeout / 2):
+			require.Fail(t, "the job was not returned before the CheckEnabled timeout")
+		}
+	})
 }
 
 func testBatchJobRequest(t require.TestingT, batchSize int, totalJobs int, client rpc.AgentInternalClient, workers []*testutils.AgentWorker) <-chan struct{} {
